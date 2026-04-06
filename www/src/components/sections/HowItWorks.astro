@@ -6,7 +6,7 @@
     <div class="text-center mb-12">
       <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-4" style="font-family: 'Outfit', sans-serif">Target &rarr; Scan &rarr; Triage &rarr; Verify &rarr; Outputs</h2>
       <p class="text-ash text-sm max-w-2xl mx-auto leading-relaxed">
-        The same plan-discover-attack-verify-report loop a real pentester runs &mdash; with an 11-layer FP filter between raw findings and the report.
+        The same plan-discover-attack-verify-report loop a real pentester runs.
       </p>
     </div>
 
@@ -24,7 +24,7 @@
         <div class="self-center text-ash hidden sm:block">&rarr;</div>
         <div class="flex-1 bg-night border border-border rounded-lg p-5 text-center">
           <div class="text-[10px] uppercase tracking-wider text-ash mb-2">Triage</div>
-          <div class="text-xs text-white">11-layer<br/>FP filter</div>
+          <div class="text-xs text-white">reject &amp;<br/>downgrade</div>
         </div>
         <div class="self-center text-ash hidden sm:block">&rarr;</div>
         <div class="flex-1 bg-night border border-border rounded-lg p-5 text-center">
@@ -38,19 +38,9 @@
         </div>
       </div>
 
-      <div class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
-        <div class="text-center text-ash"><span class="text-white">~50%</span> raw FP baseline</div>
-        <div class="text-center text-ash"><span class="text-white">11 layers</span> reject &amp; downgrade</div>
-        <div class="text-center text-ash"><span class="text-white">&lt;5%</span> end-to-end FP target</div>
-        <div class="text-center text-ash"><span class="text-white">&gt;=95%</span> recall maintained</div>
-      </div>
     </div>
 
     <p class="text-center text-xs text-ash mt-6">
-      <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Triage docs</a>
-      &middot;
-      <a href="https://docs.pwnkit.com/research/fp-reduction-moat/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">FP reduction moat</a>
-      &middot;
       <a href="https://docs.pwnkit.com/architecture/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Architecture</a>
     </p>
 

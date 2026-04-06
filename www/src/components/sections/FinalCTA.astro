@@ -6,21 +6,14 @@
     <h2 class="text-3xl sm:text-4xl md:text-5xl font-bold tracking-tight mb-10 leading-[1.05]" style="font-family: 'Outfit', sans-serif">
       Stop guessing.<br/>Start <span class="text-crimson">proving</span>.
     </h2>
-    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 max-w-xl mx-auto mb-10">
-      {[
-        { cmd: "pwnkit-cli https://api.example.com/chat", label: "Scan an LLM API" },
-        { cmd: "pwnkit-cli express", label: "Audit a package" },
-        { cmd: "pwnkit-cli ./my-repo", label: "Review source code" },
-        { cmd: "pwnkit-cli https://github.com/org/repo", label: "Review a GitHub repo" },
-      ].map((item) => (
-        <div class="copy-wrap relative flex items-center group">
-          <code class="block w-full bg-night-lighter border border-border rounded-lg px-4 py-3 pr-10 font-mono text-xs text-white text-left select-all cursor-pointer hover:border-crimson/40 transition-colors" data-copy={item.cmd}>{item.cmd}</code>
-          <button class="copy-btn absolute right-2 p-1 rounded-md text-ash hover:text-white hover:bg-white/10 transition-all" aria-label="Copy command" data-copy={item.cmd}>
-            <svg class="w-3.5 h-3.5 copy-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-            <svg class="w-3.5 h-3.5 check-icon hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
-          </button>
-        </div>
-      ))}
+    <div class="flex justify-center mb-10">
+      <div class="copy-wrap relative inline-flex items-center group">
+        <code class="block bg-night-lighter border border-border rounded-lg px-6 py-4 pr-12 font-mono text-base text-white text-left select-all cursor-pointer hover:border-crimson/40 transition-colors" data-copy="npx pwnkit-cli">npx pwnkit-cli</code>
+        <button class="copy-btn absolute right-3 p-1.5 rounded-md text-ash hover:text-white hover:bg-white/10 transition-all" aria-label="Copy command" data-copy="npx pwnkit-cli">
+          <svg class="w-4 h-4 copy-icon" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          <svg class="w-4 h-4 check-icon hidden" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></svg>
+        </button>
+      </div>
     </div>
     <a href="https://github.com/peaktwilight/pwnkit" target="_blank" rel="noopener" class="inline-flex items-center gap-2 bg-white hover:bg-white/90 text-black font-medium rounded-lg px-6 py-3 transition-colors">
       Star on GitHub
