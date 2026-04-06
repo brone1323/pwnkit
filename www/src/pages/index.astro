@@ -26,8 +26,8 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
           <p class="text-smoke text-lg mb-4 max-w-2xl mx-auto">Fully autonomous agentic pentesting framework. Attacks AI/LLM apps, web apps, npm packages, and source code. Blind PoC verification to minimize false positives.</p>
           <div class="flex flex-wrap items-center justify-center gap-2 mb-4">
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-crimson/40 bg-crimson/10 text-xs font-mono text-white">
-              <span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>
-              86.5% on XBOW (90/104)
+              <span class="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse"></span>
+              <span data-counter="86.5" data-suffix="% on XBOW (90/104)">86.5% on XBOW (90/104)</span>
             </span>
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-xs font-mono text-smoke">
               188 tests passing
@@ -316,112 +316,83 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
       </div>
     </section>
 
-    <!-- Features -->
+    <!-- What's inside -->
     <section id="features" data-section="features" class="py-16 sm:py-24 border-t border-white/5">
       <div class="max-w-5xl mx-auto px-6">
-        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">Everything in the box</h2>
-        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
-          Detection, triage, verification, output and integrations &mdash; all open source, all in one binary.
+        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">What's inside</h2>
+        <p class="text-center text-ash text-sm mb-12 max-w-2xl mx-auto">
+          Six things that make pwnkit different from every other open-source pentest agent.
         </p>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-crimson font-semibold mb-2">Detection</div>
-            <h3 class="font-semibold text-sm text-white mb-2">Shell-first agent loop</h3>
-            <ul class="text-xs text-ash space-y-1 leading-relaxed">
-              <li>&middot; Bash + Read + Edit &mdash; minimal tools</li>
-              <li>&middot; White-box mode reads source before attacking</li>
-              <li>&middot; MCP server for IDE integrations</li>
-              <li>&middot; npm package audit pipeline</li>
-            </ul>
-          </div>
-
-          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-purple-400 font-semibold mb-2">Triage moat</div>
-            <h3 class="font-semibold text-sm text-white mb-2">11-layer FP filter</h3>
-            <ul class="text-xs text-ash space-y-1 leading-relaxed">
-              <li>&middot; Holding-it-wrong blocklist</li>
-              <li>&middot; 45-feature extractor (VulnBERT-style)</li>
-              <li>&middot; Reachability gate &middot; per-class oracles</li>
-              <li>&middot; Triage memories &middot; consensus voting</li>
-            </ul>
-            <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="inline-block mt-3 text-[11px] text-purple-300 hover:text-white">Read the moat doc &rarr;</a>
-          </div>
-
-          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-blue-400 font-semibold mb-2">Verification</div>
-            <h3 class="font-semibold text-sm text-white mb-2">Blind re-exploit</h3>
-            <ul class="text-xs text-ash space-y-1 leading-relaxed">
-              <li>&middot; Structured 4-step verify pipeline</li>
-              <li>&middot; Per-class deterministic oracles</li>
-              <li>&middot; PoV gate &mdash; no PoC = no finding</li>
-              <li>&middot; Adversarial debate tie-breaker</li>
-            </ul>
-          </div>
-
-          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold mb-2">Output</div>
-            <h3 class="font-semibold text-sm text-white mb-2">Reports your team will actually read</h3>
-            <ul class="text-xs text-ash space-y-1 leading-relaxed">
-              <li>&middot; Terminal &middot; JSON &middot; HTML</li>
-              <li>&middot; SARIF for GitHub Security tab</li>
-              <li>&middot; PDF pentest reports</li>
-              <li>&middot; Triage workbench dashboard</li>
-            </ul>
-          </div>
-
-          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-amber-400 font-semibold mb-2">Integrations</div>
-            <h3 class="font-semibold text-sm text-white mb-2">Plug into your workflow</h3>
-            <ul class="text-xs text-ash space-y-1 leading-relaxed">
-              <li>&middot; GitHub Issues export &middot; SARIF upload</li>
-              <li>&middot; OpenAPI 3.x / Swagger 2.0 import</li>
-              <li>&middot; Authenticated scanning (cookies, headers)</li>
-              <li>&middot; foxguard cross-validation</li>
-            </ul>
-          </div>
-
-          <div class="bg-night-lighter border border-crimson/30 rounded-xl p-5 hover:border-crimson/60 transition-colors">
-            <div class="text-[10px] uppercase tracking-wider text-crimson font-semibold mb-2">Trinity exclusive</div>
-            <h3 class="font-semibold text-sm text-white mb-2">foxguard &times; pwnkit cross-validation</h3>
-            <p class="text-xs text-ash leading-relaxed">
-              No other open-source pentest agent runs a second, fully independent scanner for cross-validation.
-              The open-source analogue of Endor Labs' rules + neural agreement architecture.
-            </p>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- What's new -->
-    <section id="whats-new" class="py-16 sm:py-24 border-t border-white/5">
-      <div class="max-w-4xl mx-auto px-6">
-        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">What's new</h2>
-        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
-          Recent ships &mdash; the techniques behind the 86.5% jump.
-        </p>
-
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { tag: "agent", title: "LLM context compaction", body: "LLM-based compression of middle messages at 30k tokens. Lets the agent run twice as long without losing the early plan." },
-            { tag: "triage", title: "11-layer FP reduction moat", body: "Drives raw ~50% FP rate toward <5% &mdash; matching Endor Labs' 95% and Semgrep Assistant's 96%, fully open source." },
-            { tag: "agent", title: "EGATS attack tree search", body: "Evidence-Gated Attack Tree Search &mdash; beam-search over a hypothesis tree, expanding only branches backed by observed evidence." },
-            { tag: "agent", title: "Best-of-N strategy racing", body: "Run multiple attack strategies in parallel and keep whichever lands first. The free-tier version of BoxPwnr's racing." },
-            { tag: "output", title: "PDF pentest reports", body: "Print-ready reports for client deliverables &mdash; severity-ranked, with PoCs and remediation." },
-            { tag: "scan", title: "Authenticated scanning", body: "Cookies, headers, and bearer tokens passed to every request. Scan the post-login surface area." },
-            { tag: "scan", title: "OpenAPI / Swagger import", body: "Pre-load endpoint knowledge from OpenAPI 3.x or Swagger 2.0 specs. Skips discovery on documented APIs." },
-            { tag: "output", title: "GitHub Issues export", body: "One verified finding becomes one triaged GitHub issue, with PoC, severity, and remediation." },
-          ].map((item) => (
-            <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
-              <div class="flex items-center gap-2 mb-2">
-                <span class="text-[10px] uppercase tracking-wider text-crimson font-mono">{item.tag}</span>
-                <span class="text-ash">&middot;</span>
-                <h3 class="font-semibold text-sm text-white">{item.title}</h3>
-              </div>
-              <p class="text-xs text-ash leading-relaxed">{item.body}</p>
+          <!-- 1. 86.5% XBOW -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
             </div>
-          ))}
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">86.5%</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">on XBOW &mdash; single model</h3>
+            <p class="text-xs text-smoke leading-relaxed">90 of 104 unique flags. Beats every open-source single-model competitor on the public benchmark.</p>
+          </div>
+
+          <!-- 2. 11-layer FP moat -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">11&times;</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">FP reduction moat</h3>
+            <p class="text-xs text-smoke leading-relaxed">Eleven independent triage layers drive raw ~50% FP rate to under 5%. The OSS analogue of Endor Labs' agreement stack.</p>
+          </div>
+
+          <!-- 3. Per-class oracles -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">PoV</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">Per-class oracles</h3>
+            <p class="text-xs text-smoke leading-relaxed">Deterministic verifiers for SQLi, SSRF, XSS, RCE, prompt injection &mdash; and more. No exploit, no report. Period.</p>
+          </div>
+
+          <!-- 4. foxguard cross-validation -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3-3m0 6l3-3"/></svg>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">2&times;</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">foxguard cross-validation</h3>
+            <p class="text-xs text-smoke leading-relaxed">A second, fully independent scanner verifies every finding. Multi-modal agreement &mdash; rules plus neural, both must agree.</p>
+          </div>
+
+          <!-- 5. Adversarial debate -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">vs</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">Adversarial debate</h3>
+            <p class="text-xs text-smoke leading-relaxed">Prosecutor vs defender LLMs argue every borderline finding. The judge sees both sides before any verdict ships.</p>
+          </div>
+
+          <!-- 6. Self-consistency voting -->
+          <div class="group relative bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/40 transition-all">
+            <div class="w-9 h-9 mb-4 text-crimson">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            </div>
+            <div class="text-2xl font-bold text-white mb-1 font-mono tracking-tight">N=3</div>
+            <h3 class="font-semibold text-sm text-white mb-1.5" style="font-family: 'Outfit', sans-serif">Self-consistency voting</h3>
+            <p class="text-xs text-smoke leading-relaxed">Three independent triage passes per finding. Majority wins. Single-vote anomalies are quietly killed.</p>
+          </div>
         </div>
+
+        <p class="text-center text-xs text-ash mt-8">
+          <a href="https://docs.pwnkit.com/research/fp-reduction-moat/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">FP reduction moat</a>
+          &middot;
+          <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Triage architecture</a>
+          &middot;
+          <a href="https://docs.pwnkit.com/architecture/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Full architecture</a>
+        </p>
       </div>
     </section>
 
@@ -748,26 +719,58 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
     </section>
   </main>
 
-  <!-- Portfolio -->
-  <section class="border-t border-white/5 py-12">
-    <div class="max-w-5xl mx-auto px-6 text-center">
-      <p class="text-xs uppercase tracking-widest text-ash mb-3">Part of the open-source modern SOC</p>
-      <h3 class="text-xl sm:text-2xl font-semibold text-white mb-6" style="font-family: 'Outfit', sans-serif">Detect. Prevent. Respond.</h3>
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-3xl mx-auto">
-        <a href="https://github.com/peaktwilight/pwnkit" target="_blank" rel="noopener" class="rounded-lg border border-crimson/30 bg-night-lighter px-4 py-4 text-left hover:border-crimson/60 transition-colors">
-          <div class="text-xs uppercase tracking-wider text-crimson mb-1">Detect</div>
-          <div class="font-semibold text-white mb-1">pwnkit</div>
-          <div class="text-xs text-ash">AI agent pentester</div>
+  <!-- Modern SOC trinity -->
+  <section class="border-t border-white/5 py-16 sm:py-24">
+    <div class="max-w-5xl mx-auto px-6">
+      <div class="text-center mb-12">
+        <p class="text-[10px] uppercase tracking-[0.2em] text-crimson font-mono mb-3">The open-source modern SOC</p>
+        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight text-white mb-3" style="font-family: 'Outfit', sans-serif">
+          Detect. <span class="text-ash">Prevent.</span> <span class="text-ash">Respond.</span>
+        </h2>
+        <p class="text-sm text-ash max-w-xl mx-auto">Three tools, one philosophy: open source, agentic, no vendor lock-in.</p>
+      </div>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <!-- Detect -->
+        <a href="https://github.com/peaktwilight/pwnkit" target="_blank" rel="noopener" class="group bg-white/5 border border-crimson/30 rounded-xl p-6 hover:border-crimson/60 transition-all">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-[10px] uppercase tracking-[0.15em] text-crimson font-mono font-semibold">Detect</span>
+            <svg class="w-4 h-4 text-ash group-hover:text-crimson transition-colors" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2" style="font-family: 'Outfit', sans-serif">pwnkit</h3>
+          <p class="text-xs text-smoke leading-relaxed mb-4">Autonomous AI pentester. Attacks web apps, LLM apps, npm packages, source code &mdash; then re-exploits to verify.</p>
+          <div class="flex items-center gap-2 text-[10px] text-ash font-mono">
+            <span class="w-1 h-1 rounded-full bg-crimson"></span>
+            <span>86.5% on XBOW</span>
+          </div>
         </a>
-        <a href="https://github.com/peaktwilight/foxguard" target="_blank" rel="noopener" class="rounded-lg border border-white/10 bg-night-lighter px-4 py-4 text-left hover:border-white/30 transition-colors">
-          <div class="text-xs uppercase tracking-wider text-ash mb-1">Prevent</div>
-          <div class="font-semibold text-white mb-1">foxguard</div>
-          <div class="text-xs text-ash">Rust security scanner</div>
+
+        <!-- Prevent -->
+        <a href="https://github.com/peaktwilight/foxguard" target="_blank" rel="noopener" class="group bg-white/5 border border-white/10 rounded-xl p-6 hover:border-white/30 transition-all">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-[10px] uppercase tracking-[0.15em] text-ash font-mono font-semibold">Prevent</span>
+            <svg class="w-4 h-4 text-ash group-hover:text-white transition-colors" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2" style="font-family: 'Outfit', sans-serif">foxguard</h3>
+          <p class="text-xs text-smoke leading-relaxed mb-4">Rust-native SAST. The cross-validator behind pwnkit's findings. Rules + neural agreement, fully deterministic.</p>
+          <div class="flex items-center gap-2 text-[10px] text-ash font-mono">
+            <span class="w-1 h-1 rounded-full bg-white/40"></span>
+            <span>Cross-validates pwnkit</span>
+          </div>
         </a>
-        <a href="https://github.com/opensoar-hq/opensoar-core" target="_blank" rel="noopener" class="rounded-lg border border-white/10 bg-night-lighter px-4 py-4 text-left hover:border-white/30 transition-colors">
-          <div class="text-xs uppercase tracking-wider text-ash mb-1">Respond</div>
-          <div class="font-semibold text-white mb-1">opensoar</div>
-          <div class="text-xs text-ash">Python-native SOAR</div>
+
+        <!-- Respond -->
+        <a href="https://github.com/opensoar-hq/opensoar-core" target="_blank" rel="noopener" class="group bg-white/5 border border-white/10 rounded-xl p-6 hover:border-white/30 transition-all">
+          <div class="flex items-center justify-between mb-4">
+            <span class="text-[10px] uppercase tracking-[0.15em] text-ash font-mono font-semibold">Respond</span>
+            <svg class="w-4 h-4 text-ash group-hover:text-white transition-colors" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M7 17L17 7M17 7H8M17 7v9"/></svg>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-2" style="font-family: 'Outfit', sans-serif">opensoar</h3>
+          <p class="text-xs text-smoke leading-relaxed mb-4">Python-native SOAR. Playbook-driven incident response. Closes the loop from detection to remediation.</p>
+          <div class="flex items-center gap-2 text-[10px] text-ash font-mono">
+            <span class="w-1 h-1 rounded-full bg-white/40"></span>
+            <span>Playbook automation</span>
+          </div>
         </a>
       </div>
     </div>
@@ -792,6 +795,26 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
   <DockNav client:load />
 
 <script>
+  // Animate the hero number counter once on mount
+  (() => {
+    const el = document.querySelector('[data-counter]') as HTMLElement | null;
+    if (!el) return;
+    const target = parseFloat(el.dataset.counter || '0');
+    const suffix = el.dataset.suffix || '';
+    const duration = 1400;
+    const start = performance.now();
+    const tick = (now: number) => {
+      const t = Math.min(1, (now - start) / duration);
+      // ease-out cubic
+      const eased = 1 - Math.pow(1 - t, 3);
+      const value = (target * eased).toFixed(1);
+      el.textContent = `${value}${suffix.startsWith('%') ? suffix : '% on XBOW (90/104)'}`;
+      if (t < 1) requestAnimationFrame(tick);
+      else el.textContent = `${target}% on XBOW (90/104)`;
+    };
+    requestAnimationFrame(tick);
+  })();
+
   document.querySelectorAll('.copy-btn').forEach(btn => {
     btn.addEventListener('click', async (e) => {
       e.stopPropagation();
