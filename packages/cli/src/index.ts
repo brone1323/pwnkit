@@ -16,6 +16,7 @@ import {
   registerOrchestrateCommand,
   registerDbCommand,
   registerMcpServerCommand,
+  registerTriageCommand,
 } from "./commands/index.js";
 import { detectAndRoute } from "./routing.js";
 import { preloadBanner } from "./ui/banner.js";
@@ -42,6 +43,7 @@ registerDashboardCommand(program);
 registerOrchestrateCommand(program);
 registerDbCommand(program);
 registerMcpServerCommand(program);
+registerTriageCommand(program);
 
 // ── Interactive menu (Ink) ──
 async function showInteractiveMenu(): Promise<void> {

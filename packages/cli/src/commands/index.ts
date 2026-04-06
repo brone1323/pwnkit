@@ -10,4 +10,5 @@ export { registerDashboardCommand } from "./dashboard.js";
 export { registerOrchestrateCommand } from "./orchestrate.js";
 export { registerDbCommand } from "./db.js";
 export { registerMcpServerCommand } from "./mcp-server.js";
+export { registerTriageCommand } from "./triage.js";
 export { runUnified } from "./run.js";
