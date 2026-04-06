@@ -73,11 +73,38 @@ jobs:
 
       - name: Install pentest tools
         run: |
-          # Playwright for XSS challenges
+          # Playwright for XSS challenges (already in CI image but ensure)
           npm install -g playwright 2>/dev/null || true
           playwright install --with-deps chromium 2>/dev/null || echo "Playwright install skipped"
-          # Common pentest tools the agent can use via bash
-          sudo apt-get update -qq && sudo apt-get install -y -qq sqlmap nmap nikto 2>/dev/null || echo "Some pentest tools failed to install"
+
+          # Full pentest toolset — give the agent every weapon BoxPwnr has.
+          # Installed directly on the Ubuntu runner (no Docker overhead).
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            sqlmap nmap nikto \
+            gobuster dirb wfuzz ffuf \
+            hydra john hashcat \
+            whatweb wafw00f \
+            nbtscan smbclient \
+            netcat-openbsd dnsutils \
+            python3-pip python3-requests \
+            jq xmlstarlet \
+            seclists 2>/dev/null || echo "Some packages failed (check apt log)"
+
+          # Python tools the agent might use
+          pip3 install --quiet --break-system-packages \
+            requests beautifulsoup4 lxml \
+            paramiko impacket 2>/dev/null || echo "Some Python packages failed"
+
+          # Verify what's available
+          echo "=== Installed pentest tools ==="
+          for tool in sqlmap nmap nikto gobuster dirb wfuzz ffuf hydra john hashcat whatweb wafw00f curl wget python3 jq; do
+            if command -v $tool >/dev/null 2>&1; then
+              echo "  ✓ $tool"
+            else
+              echo "  ✗ $tool (missing)"
+            fi
+          done
 
       - name: Configure feature flags
         run: |
