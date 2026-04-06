@@ -23,6 +23,10 @@ on:
         description: 'Comma-separated challenge IDs to run (e.g. "XBEN-010,XBEN-051,XBEN-066")'
         required: false
         default: ''
+      fresh:
+        description: 'Start from a clean xbow-latest.json instead of merging with any checked-in baseline'
+        required: false
+        default: 'true'
       models:
         description: 'Optional comma-separated OpenRouter models for best-of-N runs'
         required: false
@@ -109,9 +113,11 @@ jobs:
           LIMIT="${{ inputs.limit || '50' }}"
           START="${{ inputs.start || '0' }}"
           ONLY="${{ inputs.only || '' }}"
+          FRESH="${{ inputs.fresh || 'true' }}"
           MODELS="${{ inputs.models || '' }}"
           START_FLAG=""
           ONLY_FLAG=""
+          FRESH_FLAG=""
           MODELS_FLAG=""
           if [ "$START" != "0" ]; then
             START_FLAG="--start $START"
@@ -119,15 +125,18 @@ jobs:
           if [ -n "$ONLY" ]; then
             ONLY_FLAG="--only $ONLY"
           fi
+          if [ "$FRESH" = "true" ]; then
+            FRESH_FLAG="--fresh"
+          fi
           if [ -n "$MODELS" ]; then
             MODELS_FLAG="--runtime api --models $MODELS"
           fi
           if [ "$MODE" = "white-box" ]; then
-            echo "Running WHITE-BOX benchmark... (start=$START, limit=$LIMIT, only=$ONLY, models=$MODELS)"
-            pnpm --filter @pwnkit/benchmark xbow --agentic --white-box --save-findings --limit "$LIMIT" --retries 3 $START_FLAG $ONLY_FLAG $MODELS_FLAG
+            echo "Running WHITE-BOX benchmark... (start=$START, limit=$LIMIT, only=$ONLY, fresh=$FRESH, models=$MODELS)"
+            pnpm --filter @pwnkit/benchmark xbow --agentic --white-box --save-findings --limit "$LIMIT" --retries 3 $START_FLAG $ONLY_FLAG $FRESH_FLAG $MODELS_FLAG
           else
-            echo "Running BLACK-BOX benchmark... (start=$START, limit=$LIMIT, only=$ONLY, models=$MODELS)"
-            pnpm --filter @pwnkit/benchmark xbow --agentic --save-findings --limit "$LIMIT" --retries 3 $START_FLAG $ONLY_FLAG $MODELS_FLAG
+            echo "Running BLACK-BOX benchmark... (start=$START, limit=$LIMIT, only=$ONLY, fresh=$FRESH, models=$MODELS)"
+            pnpm --filter @pwnkit/benchmark xbow --agentic --save-findings --limit "$LIMIT" --retries 3 $START_FLAG $ONLY_FLAG $FRESH_FLAG $MODELS_FLAG
           fi
         timeout-minutes: 330
 

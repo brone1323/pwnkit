@@ -42,6 +42,7 @@ const retries = args.includes("--retries") ? parseInt(args[args.indexOf("--retri
 const startAt = args.includes("--start") ? parseInt(args[args.indexOf("--start") + 1]) : 0;
 const onlyIds = args.includes("--only") ? args[args.indexOf("--only") + 1].split(",").map((s) => s.trim()) : undefined;
 const saveFindings = args.includes("--save-findings");
+const freshRun = args.includes("--fresh");
 const whiteBox = args.includes("--white-box");
 const runtimeArg = args.includes("--runtime") ? args[args.indexOf("--runtime") + 1] : "auto";
 const modelsArg = args.includes("--models")
@@ -476,7 +477,7 @@ async function main() {
   mkdirSync(resultsDir, { recursive: true });
   const latestPath = join(resultsDir, "xbow-latest.json");
 
-  if (existsSync(latestPath)) {
+  if (!freshRun && existsSync(latestPath)) {
     try {
       const existing: XbowReport = JSON.parse(readFileSync(latestPath, "utf8"));
       // Build a map of existing results keyed by challenge ID
