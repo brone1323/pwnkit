@@ -1,0 +1,124 @@
+---
+// Lightweight inline-SVG replacement for the WebGL PwnkitHero3D.
+// Renders the same 22x20 pixelated fang/ghost grid using <rect> elements.
+// No JS required. Subtle CSS animations: float + eye pulse.
+//
+// Grid legend (matches PwnkitHero3D.tsx):
+//   0 = empty
+//   1 = outline (solid crimson)
+//   2 = body fill (low-opacity crimson — keeps "crimson only" constraint)
+//   3 = eye (solid crimson, animated)
+const GRID: number[][] = [
+  [0,0,0,0,0,0,0,0,1,1,1,1,0,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,0,1,1,1,1,1,1,0,0,0,0,0,0,0],
+  [0,0,0,0,0,0,1,1,2,2,2,2,1,1,0,0,0,0,0,0],
+  [0,0,0,0,0,1,1,2,2,2,2,2,2,1,1,0,0,0,0,0],
+  [0,0,0,0,1,1,2,2,2,2,2,2,2,2,1,1,0,0,0,0],
+  [0,0,0,1,1,2,2,2,2,2,2,2,2,2,2,1,1,0,0,0],
+  [0,0,1,1,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0,0],
+  [0,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [1,1,2,2,2,2,3,3,2,2,2,2,3,3,2,2,2,2,1,1],
+  [1,1,2,2,2,2,3,3,2,2,2,2,3,3,2,2,2,2,1,1],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1],
+  [0,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,0],
+  [0,0,1,1,2,2,2,2,2,1,1,2,2,2,2,2,1,1,0,0],
+  [0,0,0,1,1,2,2,2,1,1,1,1,2,2,2,1,1,0,0,0],
+  [0,0,0,0,1,1,2,1,1,0,0,1,1,2,1,1,0,0,0,0],
+  [0,0,0,0,0,1,1,1,0,0,0,0,1,1,1,0,0,0,0,0],
+  [0,0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0,0,0,0],
+];
+
+const ROWS = GRID.length;
+const COLS = GRID[0].length;
+const CELL = 10; // SVG units per grid cell
+const W = COLS * CELL;
+const H = ROWS * CELL;
+
+type Rect = { x: number; y: number; cls: string };
+const outlineRects: Rect[] = [];
+const fillRects: Rect[] = [];
+const eyeRects: Rect[] = [];
+
+for (let r = 0; r < ROWS; r++) {
+  for (let c = 0; c < COLS; c++) {
+    const t = GRID[r][c];
+    if (!t) continue;
+    const rect: Rect = { x: c * CELL, y: r * CELL, cls: '' };
+    if (t === 1) outlineRects.push(rect);
+    else if (t === 2) fillRects.push(rect);
+    else if (t === 3) eyeRects.push(rect);
+  }
+}
+---
+
+<div class="pwnkit-hero-svg mx-auto mb-4 w-[160px] h-[180px] sm:w-[240px] sm:h-[280px]">
+  <svg
+    viewBox={`0 0 ${W} ${H}`}
+    xmlns="http://www.w3.org/2000/svg"
+    role="img"
+    aria-label="pwnkit fang character"
+    width="100%"
+    height="100%"
+    shape-rendering="crispEdges"
+  >
+    <g class="pk-fill">
+      {fillRects.map((r) => (
+        <rect x={r.x} y={r.y} width={CELL} height={CELL} />
+      ))}
+    </g>
+    <g class="pk-outline">
+      {outlineRects.map((r) => (
+        <rect x={r.x} y={r.y} width={CELL} height={CELL} />
+      ))}
+    </g>
+    <g class="pk-eyes">
+      {eyeRects.map((r) => (
+        <rect x={r.x} y={r.y} width={CELL} height={CELL} />
+      ))}
+    </g>
+  </svg>
+</div>
+
+<style>
+  .pwnkit-hero-svg {
+    /* Gentle float — same vibe as the 3D version's sin float */
+    animation: pk-float 4s ease-in-out infinite;
+    will-change: transform;
+  }
+
+  .pk-outline rect {
+    fill: #DC2626;
+  }
+  .pk-fill rect {
+    fill: #DC2626;
+    fill-opacity: 0.12;
+  }
+  .pk-eyes rect {
+    fill: #DC2626;
+    transform-box: fill-box;
+    transform-origin: center;
+    animation: pk-blink 3.2s ease-in-out infinite;
+  }
+
+  @keyframes pk-float {
+    0%, 100% { transform: translateY(0); }
+    50%      { transform: translateY(-4px); }
+  }
+
+  @keyframes pk-blink {
+    0%, 92%, 100% { opacity: 1; transform: scaleY(1); }
+    95%           { opacity: 0.9; transform: scaleY(0.1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pwnkit-hero-svg,
+    .pk-eyes rect {
+      animation: none;
+    }
+  }
+</style>

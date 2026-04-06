@@ -1,12 +1,12 @@
 ---
-import PwnkitHero3D from '../PwnkitHero3D';
+import PwnkitHeroSVG from '../PwnkitHeroSVG.astro';
 ---
 
 <section data-section="hero" class="relative min-h-screen pt-16 sm:pt-24 pb-12 sm:pb-16 overflow-hidden">
   <div class="max-w-5xl mx-auto px-6 text-center">
-    <!-- 3D pwnkit character -->
+    <!-- pwnkit fang character (inline SVG, no JS) -->
     <div class="animate-fade-up">
-      <PwnkitHero3D client:only="react" />
+      <PwnkitHeroSVG />
     </div>
 
     <div class="animate-fade-up">
