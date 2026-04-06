@@ -1,0 +1,80 @@
+---
+---
+
+<section class="py-16 sm:py-24 md:py-32 border-t border-white/5">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="text-center mb-12">
+      <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-4" style="font-family: 'Outfit', sans-serif">Target &rarr; Scan &rarr; Triage &rarr; Verify &rarr; Outputs</h2>
+      <p class="text-ash text-sm max-w-2xl mx-auto leading-relaxed">
+        The same plan-discover-attack-verify-report loop a real pentester runs &mdash; with an 11-layer FP filter between raw findings and the report.
+      </p>
+    </div>
+
+    <div class="bg-night-lighter border border-border rounded-xl p-6 sm:p-10 overflow-x-auto">
+      <div class="flex flex-col sm:flex-row items-stretch gap-4 min-w-[640px]">
+        <div class="flex-1 bg-night border border-crimson/40 rounded-lg p-5 text-center">
+          <div class="text-[10px] uppercase tracking-wider text-crimson mb-2">Target</div>
+          <div class="text-xs text-white font-mono">web / LLM<br/>npm / code</div>
+        </div>
+        <div class="self-center text-ash hidden sm:block">&rarr;</div>
+        <div class="flex-1 bg-night border border-border rounded-lg p-5 text-center">
+          <div class="text-[10px] uppercase tracking-wider text-ash mb-2">Scan</div>
+          <div class="text-xs text-white">shell-first<br/>agent loop</div>
+        </div>
+        <div class="self-center text-ash hidden sm:block">&rarr;</div>
+        <div class="flex-1 bg-night border border-border rounded-lg p-5 text-center">
+          <div class="text-[10px] uppercase tracking-wider text-ash mb-2">Triage</div>
+          <div class="text-xs text-white">11-layer<br/>FP filter</div>
+        </div>
+        <div class="self-center text-ash hidden sm:block">&rarr;</div>
+        <div class="flex-1 bg-night border border-border rounded-lg p-5 text-center">
+          <div class="text-[10px] uppercase tracking-wider text-ash mb-2">Verify</div>
+          <div class="text-xs text-white">blind<br/>re-exploit</div>
+        </div>
+        <div class="self-center text-ash hidden sm:block">&rarr;</div>
+        <div class="flex-1 bg-night border border-crimson/40 rounded-lg p-5 text-center">
+          <div class="text-[10px] uppercase tracking-wider text-crimson mb-2">Outputs</div>
+          <div class="text-xs text-white">SARIF/MD/PDF<br/>JSON/Issues</div>
+        </div>
+      </div>
+
+      <div class="mt-8 grid grid-cols-2 sm:grid-cols-4 gap-3 text-[11px]">
+        <div class="text-center text-ash"><span class="text-white">~50%</span> raw FP baseline</div>
+        <div class="text-center text-ash"><span class="text-white">11 layers</span> reject &amp; downgrade</div>
+        <div class="text-center text-ash"><span class="text-white">&lt;5%</span> end-to-end FP target</div>
+        <div class="text-center text-ash"><span class="text-white">&gt;=95%</span> recall maintained</div>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-ash mt-6">
+      <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Triage docs</a>
+      &middot;
+      <a href="https://docs.pwnkit.com/research/fp-reduction-moat/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">FP reduction moat</a>
+      &middot;
+      <a href="https://docs.pwnkit.com/architecture/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Architecture</a>
+    </p>
+
+    <!-- 5 commands -->
+    <div class="mt-20">
+      <h3 class="text-xl sm:text-2xl font-bold tracking-tight mb-10 text-center" style="font-family: 'Outfit', sans-serif">Just give it a target.</h3>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {[
+          { cmd: "pwnkit-cli express", desc: "Audit an npm package", color: "text-ash" },
+          { cmd: "pwnkit-cli ./my-repo", desc: "Review source code", color: "text-ash" },
+          { cmd: "pwnkit-cli https://api.com/chat", desc: "Scan an LLM API", color: "text-crimson" },
+          { cmd: "pwnkit-cli https://example.com --mode web", desc: "Pentest a web app", color: "text-ash" },
+          { cmd: "pwnkit-cli dashboard", desc: "Local mission control", color: "text-ash" },
+          { cmd: "pwnkit-cli findings list --severity critical", desc: "Triage across scans", color: "text-ash" },
+        ].map((item) => (
+          <div class="bg-night-lighter border border-border rounded-xl p-5 hover:border-crimson/30 transition-colors">
+            <code class="text-sm font-mono text-white">{item.cmd}</code>
+            <p class={`text-xs mt-2 ${item.color}`}>{item.desc}</p>
+          </div>
+        ))}
+      </div>
+
+      <p class="text-xs text-ash text-center mt-6">Auto-detects target type. No subcommands needed for most targets.</p>
+    </div>
+  </div>
+</section>

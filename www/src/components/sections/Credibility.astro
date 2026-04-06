@@ -1,0 +1,37 @@
+---
+---
+
+<section id="about" data-section="about" class="py-16 sm:py-24 md:py-32 border-t border-white/5">
+  <div class="max-w-4xl mx-auto px-6 text-center">
+    <div class="inline-flex items-center gap-2 text-white bg-crimson/10 px-2.5 py-1 rounded font-medium text-xs mb-6 border border-crimson/20">
+      <span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+      7 CVEs &middot; 40M+ weekly downloads
+    </div>
+    <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-6" style="font-family: 'Outfit', sans-serif">Built from real security research</h2>
+    <p class="text-smoke text-lg mb-10 max-w-2xl mx-auto">
+      <span class="text-white font-semibold">7 CVEs</span> found in packages with <span class="text-white font-semibold">40M+ weekly downloads</span>.
+    </p>
+
+    <div class="flex flex-wrap justify-center gap-2 mb-10">
+      {[
+        { name: "node-forge", detail: "32M/week" },
+        { name: "mysql2", detail: "5M/week" },
+        { name: "Uptime Kuma", detail: "86K stars" },
+        { name: "LiquidJS", detail: "CVE" },
+        { name: "jsPDF", detail: "2 CVEs" },
+        { name: "picomatch", detail: "CVE" },
+      ].map((item) => (
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg border border-border text-xs text-smoke font-mono">
+          <span class="w-1 h-1 rounded-full bg-crimson"></span>
+          {item.name}
+          <span class="text-ash">{item.detail}</span>
+        </span>
+      ))}
+    </div>
+
+    <a href="https://doruk.ch/blog" target="_blank" rel="noopener" class="inline-flex items-center gap-2 text-crimson hover:text-crimson-light transition-colors text-sm">
+      Full CVE writeups
+      <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+    </a>
+  </div>
+</section>

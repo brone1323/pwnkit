@@ -6,9 +6,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-night: #0a0a0a;
-  --color-night-light: #141414;
-  --color-night-lighter: #1e1e1e;
+  --color-night: #0d1117;
+  --color-night-light: #161b22;
+  --color-night-lighter: #1c2129;
+  --color-border: #30363d;
   --color-crimson: #DC2626;
   --color-crimson-dark: #991B1B;
   --color-crimson-light: #EF4444;

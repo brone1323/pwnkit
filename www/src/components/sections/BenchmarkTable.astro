@@ -1,0 +1,112 @@
+---
+---
+
+<section id="benchmark" data-section="benchmark" class="py-16 sm:py-24 md:py-32 border-t border-white/5">
+  <div class="max-w-5xl mx-auto px-6">
+    <div class="text-center mb-12">
+      <div class="inline-flex items-center gap-2 text-white bg-crimson/10 px-2.5 py-1 rounded font-medium text-xs mb-6 border border-crimson/20">
+        <span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+        XBOW Validation Benchmark &middot; 90 / 104
+      </div>
+      <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-4" style="font-family: 'Outfit', sans-serif">
+        <span class="text-crimson">86.5%</span> on standard XBOW. One config. Still shipping.
+      </h2>
+      <p class="text-ash text-sm max-w-2xl mx-auto leading-relaxed">
+        90 of 104 challenges on the unmodified XBOW validation benchmark. Single model, single command, single configuration.
+        The only maintained open-source agent above 85% on the standard benchmark.
+      </p>
+    </div>
+
+    <!-- Comparison table -->
+    <div class="bg-night-lighter border border-border rounded-xl p-4 sm:p-8 overflow-x-auto mb-8">
+      <p class="text-[10px] text-ash mb-2 sm:hidden">Scroll to compare &rarr;</p>
+      <table class="w-full text-sm min-w-[760px]">
+        <thead>
+          <tr class="border-b border-border text-ash">
+            <th class="text-left py-3 pr-4 font-medium">System</th>
+            <th class="text-right py-3 px-3 font-medium">XBOW score</th>
+            <th class="text-center py-3 px-3 font-medium">Maintained?</th>
+            <th class="text-center py-3 px-3 font-medium">Comparable?</th>
+            <th class="text-left py-3 pl-3 font-medium">Notes</th>
+          </tr>
+        </thead>
+        <tbody class="text-smoke">
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">BoxPwnr (best-of-N)</td>
+            <td class="py-2.5 px-3 text-right font-mono">97.1%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Best-of-N across 10+ model+solver configs</td>
+          </tr>
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">Shannon</td>
+            <td class="py-2.5 px-3 text-right font-mono">96.15%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Modified hint-free fork + white-box source access</td>
+          </tr>
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">KinoSec</td>
+            <td class="py-2.5 px-3 text-right font-mono">92.3%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Proprietary, closed source</td>
+          </tr>
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">XBOW (own agent)</td>
+            <td class="py-2.5 px-3 text-right font-mono">85%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Built by XBOW for their own benchmark</td>
+          </tr>
+          <tr class="border-b-2 border-crimson/40 bg-crimson/10">
+            <td class="py-3 pr-4 text-white font-semibold">pwnkit</td>
+            <td class="py-3 px-3 text-right font-mono text-crimson font-bold">86.5%</td>
+            <td class="py-3 px-3 text-center text-xs text-white font-semibold">Yes</td>
+            <td class="py-3 px-3 text-center text-xs text-white font-semibold">Yes</td>
+            <td class="py-3 pl-3 text-xs text-white/80">Single model, single command, standard benchmark &middot; <span class="text-crimson">open source</span></td>
+          </tr>
+          <tr class="border-b border-white/5 opacity-60">
+            <td class="py-2.5 pr-4 line-through">Cyber-AutoAgent</td>
+            <td class="py-2.5 px-3 text-right font-mono line-through">85%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-crimson font-semibold">Archived Nov 2025</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Repo archived 2025-11-29 &mdash; project is dead</td>
+          </tr>
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">BoxPwnr (single config)</td>
+            <td class="py-2.5 px-3 text-right font-mono">~80-82%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Apples-to-apples single-config baseline</td>
+          </tr>
+          <tr class="border-b border-white/5">
+            <td class="py-2.5 pr-4">deadend-cli</td>
+            <td class="py-2.5 px-3 text-right font-mono">~80%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Open source agent</td>
+          </tr>
+          <tr>
+            <td class="py-2.5 pr-4">MAPTA</td>
+            <td class="py-2.5 px-3 text-right font-mono">76.9%</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 px-3 text-center text-xs text-white/70">Yes</td>
+            <td class="py-2.5 pl-3 text-xs text-ash">Academic agent (arXiv:2508.20816)</td>
+          </tr>
+        </tbody>
+      </table>
+      <p class="text-[11px] text-ash mt-4 leading-relaxed">
+        <span class="text-white">Comparable</span> = standard 104-challenge XBOW, single reproducible configuration, no white-box source access.
+        Higher scores above pwnkit either run on a modified fork, aggregate across many configurations, or are closed source.
+      </p>
+    </div>
+
+    <p class="text-center text-xs text-ash">
+      Run it yourself: <code class="text-smoke">pnpm bench --agentic</code> &middot;
+      <a href="https://docs.pwnkit.com/benchmark/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Full benchmark writeup</a>
+      &middot;
+      <a href="https://github.com/peaktwilight/pwnkit/tree/main/packages/benchmark" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Source</a>
+    </p>
+  </div>
+</section>

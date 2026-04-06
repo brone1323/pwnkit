@@ -1,0 +1,87 @@
+---
+---
+
+<section id="features" data-section="features" class="py-16 sm:py-24 md:py-32 border-t border-white/5">
+  <div class="max-w-6xl mx-auto px-6">
+    <div class="text-center mb-12">
+      <div class="inline-flex items-center gap-2 text-white bg-crimson/10 px-2.5 py-1 rounded font-medium text-xs mb-6 border border-crimson/20">
+        <span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+        What's inside
+      </div>
+      <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-4" style="font-family: 'Outfit', sans-serif">Six things that make pwnkit different</h2>
+      <p class="text-ash text-sm max-w-2xl mx-auto">
+        Every other open-source pentest agent picks one of these. We ship all six.
+      </p>
+    </div>
+
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 sm:gap-8">
+      <!-- 1. 86.5% XBOW -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">86.5%</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">on XBOW &mdash; single model</h3>
+        <p class="text-sm text-smoke leading-relaxed">90 of 104 unique flags. Beats every open-source single-model competitor on the public benchmark.</p>
+      </div>
+
+      <!-- 2. 11-layer FP moat -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">11&times;</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">FP reduction moat</h3>
+        <p class="text-sm text-smoke leading-relaxed">Eleven independent triage layers drive raw ~50% FP rate to under 5%. The OSS analogue of Endor Labs' agreement stack.</p>
+      </div>
+
+      <!-- 3. Per-class oracles -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9 12l2 2 4-4"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">PoV</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">Per-class oracles</h3>
+        <p class="text-sm text-smoke leading-relaxed">Deterministic verifiers for SQLi, SSRF, XSS, RCE, prompt injection &mdash; and more. No exploit, no report. Period.</p>
+      </div>
+
+      <!-- 4. foxguard cross-validation -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 11l-3-3m0 6l3-3"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">2&times;</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">foxguard cross-validation</h3>
+        <p class="text-sm text-smoke leading-relaxed">A second, fully independent scanner verifies every finding. Multi-modal agreement &mdash; rules plus neural, both must agree.</p>
+      </div>
+
+      <!-- 5. Adversarial debate -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">vs</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">Adversarial debate</h3>
+        <p class="text-sm text-smoke leading-relaxed">Prosecutor vs defender LLMs argue every borderline finding. The judge sees both sides before any verdict ships.</p>
+      </div>
+
+      <!-- 6. Self-consistency voting -->
+      <div class="group relative bg-night-lighter border border-border rounded-xl p-8 hover:border-crimson/40 transition-all">
+        <div class="w-10 h-10 mb-5 text-crimson">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        </div>
+        <div class="text-3xl font-bold text-white mb-2 font-mono tracking-tight">N=3</div>
+        <h3 class="font-semibold text-base text-white mb-2" style="font-family: 'Outfit', sans-serif">Self-consistency voting</h3>
+        <p class="text-sm text-smoke leading-relaxed">Three independent triage passes per finding. Majority wins. Single-vote anomalies are quietly killed.</p>
+      </div>
+    </div>
+
+    <p class="text-center text-xs text-ash mt-10">
+      <a href="https://docs.pwnkit.com/research/fp-reduction-moat/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">FP reduction moat</a>
+      &middot;
+      <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Triage architecture</a>
+      &middot;
+      <a href="https://docs.pwnkit.com/architecture/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Full architecture</a>
+    </p>
+  </div>
+</section>
