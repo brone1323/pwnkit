@@ -5,6 +5,61 @@ description: How the 5-stage pipeline, runtime adapters, and MCP integration wor
 
 pwnkit is a fully autonomous agentic pentesting framework that covers AI/LLM apps, web applications, npm packages, and source code. It runs autonomous AI agents in a plan-discover-attack-verify-report pipeline. For web pentesting, the agent uses a shell-first approach -- `bash` (curl, python3, bash) is the primary tool, not structured APIs. For LLM and code targets, the agent uses specialized tools (`send_prompt`, `read_file`). Blind verification kills false positives -- every finding is independently re-exploited by a second agent that never sees the original reasoning.
 
+## System architecture
+
+```mermaid
+flowchart TB
+    subgraph Entry[Entry points]
+        CLI[pwnkit-cli]
+        API[Node SDK / GitHub Action]
+    end
+
+    subgraph Runtimes[Runtime adapters]
+        AZ[Azure OpenAI]
+        OAI[OpenAI]
+        ANT[Anthropic]
+        OR[OpenRouter]
+        PROC[Process runtimes<br/>Claude / Codex / Gemini CLI]
+    end
+
+    ORCH[Scanner orchestrator<br/>mode + budget + flags]
+
+    subgraph Pipeline[5-stage pipeline]
+        direction LR
+        P1[Plan] --> P2[Discover] --> P3[Attack] --> P4[Triage] --> P5[Verify] --> P6[Report]
+    end
+
+    subgraph Stores[Data stores]
+        FDB[(SQLite<br/>findings)]
+        MDB[(Memories DB<br/>FP context)]
+    end
+
+    subgraph Ext[External integrations]
+        GH[GitHub Issues<br/>SARIF upload]
+        FX[foxguard<br/>Rust pattern scanner]
+    end
+
+    CLI --> ORCH
+    API --> ORCH
+    ORCH --> Runtimes
+    Runtimes --> Pipeline
+    Pipeline <--> FDB
+    P4 <--> MDB
+    P4 <--> FX
+    P6 --> GH
+
+    style CLI fill:#1a1a2e,stroke:#e94560,color:#fff
+    style API fill:#1a1a2e,stroke:#e94560,color:#fff
+    style ORCH fill:#533483,stroke:#e94560,color:#fff
+    style P4 fill:#533483,stroke:#e94560,color:#fff
+    style P5 fill:#533483,stroke:#e94560,color:#fff
+    style P6 fill:#10b981,stroke:#059669,color:#fff
+    style FDB fill:#0f3460,stroke:#10b981,color:#fff
+    style MDB fill:#0f3460,stroke:#10b981,color:#fff
+    style GH fill:#16213e,stroke:#10b981,color:#fff
+    style FX fill:#16213e,stroke:#10b981,color:#fff
+```
+
 ## The pipeline
 
 The core pipeline has five stages:
@@ -42,38 +97,46 @@ The agent adapts its strategy based on what it discovers -- if a naive prompt in
 
 Between the research agent's raw findings and the final report, findings flow through a multi-layer triage pipeline. Each layer rejects, downgrades, or confirms findings based on independent signals — the goal is to drive false positives toward zero without losing true positives. See the [FP Reduction Moat](/research/fp-reduction-moat/) page for published FP reduction numbers per layer, and the [Finding Triage ML](/research/finding-triage-ml/) design doc for the underlying research.
 
-```
-Attack Agent -> Findings
-                   |
-                   v
-              Triage Stage
-                   |
-                   v
-[holding-it-wrong filter]    -> rejected     -> info-level
-                   |
-                   v
-[feature extraction + evidence completeness]
-                   |
-                   v
-[reachability gate]          -> unreachable  -> suppressed
-                   |
-                   v
-[multi-modal: foxguard cross-validation]
-                   |
-                   v
-[per-class oracles]          -> verified     -> accepted
-                   |
-                   v
-[consensus verify OR blind verify]
-                   |
-                   v
-[memories lookup + few-shot]
-                   |
-                   v
-[adversarial debate] (optional)
-                   |
-                   v
-           Verified Findings
+```mermaid
+flowchart TD
+    AA[Attack agent] --> F[Raw findings]
+    F --> L1[1. Holding-it-wrong]
+    L1 -->|library misuse| INFO[Downgrade to info]
+    L1 --> L2[2. Feature extractor<br/>45 features]
+    L2 --> L3[3. Reachability gate]
+    L3 -->|unreachable| SUP[Suppressed]
+    L3 --> L4[4. Multi-modal<br/>foxguard cross-check]
+    L4 --> L5[5. Per-class oracles]
+    L5 -->|exploit verified| ACC[Auto-accept]
+    L5 --> L6[6. PoV gate]
+    L6 -->|no working PoC| INFO
+    L6 --> L7[7. Structured 4-step verify]
+    L7 --> L8[8. Consensus voting]
+    L8 --> L9[9. Triage memories]
+    L9 -->|known FP match| REJ[Rejected]
+    L9 --> L10[10. EGATS tree search]
+    L10 --> L11[11. Adversarial debate]
+    L11 --> VF[Verified findings]
+    ACC --> VF
+
+    style AA fill:#1a1a2e,stroke:#e94560,color:#fff
+    style F fill:#16213e,stroke:#e94560,color:#fff
+    style VF fill:#10b981,stroke:#059669,color:#fff
+    style ACC fill:#10b981,stroke:#059669,color:#fff
+    style INFO fill:#64748b,stroke:#334155,color:#fff
+    style SUP fill:#64748b,stroke:#334155,color:#fff
+    style REJ fill:#64748b,stroke:#334155,color:#fff
+    style L1 fill:#533483,stroke:#e94560,color:#fff
+    style L2 fill:#533483,stroke:#e94560,color:#fff
+    style L3 fill:#533483,stroke:#e94560,color:#fff
+    style L4 fill:#533483,stroke:#e94560,color:#fff
+    style L5 fill:#533483,stroke:#e94560,color:#fff
+    style L6 fill:#533483,stroke:#e94560,color:#fff
+    style L7 fill:#533483,stroke:#e94560,color:#fff
+    style L8 fill:#533483,stroke:#e94560,color:#fff
+    style L9 fill:#533483,stroke:#e94560,color:#fff
+    style L10 fill:#533483,stroke:#e94560,color:#fff
+    style L11 fill:#533483,stroke:#e94560,color:#fff
 ```
 
 | Layer | Module | Purpose |

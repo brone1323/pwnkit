@@ -32,6 +32,27 @@
 
 Autonomous AI agents that pentest **web apps**, **AI/LLM apps**, **npm packages**, and **source code**. The agent gets a `bash` tool and works like a real pentester -- writing curl commands, Python exploit scripts, and chaining vulnerabilities. Every finding is independently re-exploited by a blind verify agent to kill false positives.
 
+```mermaid
+flowchart LR
+    T[Target<br/>web / LLM / npm / code] --> S[Scan<br/>shell-first agent loop]
+    S --> R[Raw findings<br/>~50% FP baseline]
+    R --> TR[Triage<br/>11-layer FP filter]
+    TR --> V[Blind verify<br/>independent re-exploit]
+    V --> OUT{Verified<br/>findings}
+    OUT --> REP[Reports<br/>SARIF / MD / PDF / JSON]
+    OUT --> REM[Remediation<br/>GitHub Issues export]
+    OUT --> DASH[Dashboard<br/>triage workbench]
+
+    style T fill:#1a1a2e,stroke:#e94560,color:#fff
+    style S fill:#16213e,stroke:#0f3460,color:#fff
+    style TR fill:#533483,stroke:#e94560,color:#fff
+    style V fill:#533483,stroke:#e94560,color:#fff
+    style OUT fill:#10b981,stroke:#059669,color:#fff
+    style REP fill:#0f3460,stroke:#10b981,color:#fff
+    style REM fill:#0f3460,stroke:#10b981,color:#fff
+    style DASH fill:#0f3460,stroke:#10b981,color:#fff
+```
+
 ```bash
 npx pwnkit-cli
 ```

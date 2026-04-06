@@ -16,25 +16,51 @@ runs on your laptop.
 
 ## Pipeline overview
 
-```text
-Research Agent
-     │
-     ▼
-┌────────────────────────────┐
-│ 1. Holding-it-wrong filter │
-│ 2. 45-feature extractor    │
-│ 3. Per-class oracles       │
-│ 4. Reachability gate       │
-│ 5. Multi-modal agreement   │
-│ 6. PoV generation gate     │
-│ 7. Structured 4-step verify│
-│ 8. Self-consistency voting │
-│ 9. Assistant memories      │
-│ 10. EGATS tree search      │
-└────────────────────────────┘
-     │
-     ▼
-Confirmed finding
+```mermaid
+flowchart TD
+    RA[Research agent] --> F[Raw finding]
+    F --> S1{1. Holding-it-wrong?}
+    S1 -->|library misuse| D1[Downgrade to info]
+    S1 -->|ok| S2[2. Feature extractor]
+    S2 --> S3{3. Per-class oracle?}
+    S3 -->|exploit proven| ACC[Auto-accept]
+    S3 -->|no oracle| S4{4. Reachable?}
+    S4 -->|dead code| R1[Suppressed]
+    S4 -->|reachable| S5{5. foxguard agrees?}
+    S5 -->|clean on file| R2[Down-weighted / rejected]
+    S5 -->|agree or unknown| S6{6. PoV builds?}
+    S6 -->|no working PoC| D2[Downgrade to info]
+    S6 -->|PoC works| S7[7. Structured 4-step verify]
+    S7 -->|step fails| R3[Rejected as FP]
+    S7 --> S8[8. Self-consistency vote]
+    S8 -->|minority| R4[Rejected]
+    S8 -->|majority| S9{9. Memory match?}
+    S9 -->|strong FP match| R5[Auto-rejected]
+    S9 -->|no match| S10[10. EGATS tree search]
+    S10 --> CF[Confirmed finding]
+    ACC --> CF
+
+    style RA fill:#1a1a2e,stroke:#e94560,color:#fff
+    style F fill:#16213e,stroke:#e94560,color:#fff
+    style CF fill:#10b981,stroke:#059669,color:#fff
+    style ACC fill:#10b981,stroke:#059669,color:#fff
+    style D1 fill:#64748b,stroke:#334155,color:#fff
+    style D2 fill:#64748b,stroke:#334155,color:#fff
+    style R1 fill:#ef4444,stroke:#991b1b,color:#fff
+    style R2 fill:#ef4444,stroke:#991b1b,color:#fff
+    style R3 fill:#ef4444,stroke:#991b1b,color:#fff
+    style R4 fill:#ef4444,stroke:#991b1b,color:#fff
+    style R5 fill:#ef4444,stroke:#991b1b,color:#fff
+    style S1 fill:#533483,stroke:#e94560,color:#fff
+    style S2 fill:#533483,stroke:#e94560,color:#fff
+    style S3 fill:#533483,stroke:#e94560,color:#fff
+    style S4 fill:#533483,stroke:#e94560,color:#fff
+    style S5 fill:#533483,stroke:#e94560,color:#fff
+    style S6 fill:#533483,stroke:#e94560,color:#fff
+    style S7 fill:#533483,stroke:#e94560,color:#fff
+    style S8 fill:#533483,stroke:#e94560,color:#fff
+    style S9 fill:#533483,stroke:#e94560,color:#fff
+    style S10 fill:#533483,stroke:#e94560,color:#fff
 ```
 
 Each stage is independently configurable via environment variables and

@@ -11,17 +11,40 @@ The core loop lives in `packages/core/src/agent/native-loop.ts` (`runNativeAgent
 
 ```mermaid
 flowchart TD
-    A[Build system prompt + initial user message] --> B[Call LLM API]
-    B --> C{Response type?}
-    C -->|tool_use| D[Execute each tool call]
-    D --> E[Append tool results as user message]
+    A[Build system prompt<br/>+ initial user message] --> RACE{--race?}
+    RACE -->|yes| PAR[Spawn N strategy agents<br/>in parallel]
+    RACE -->|no| B[Call LLM API]
+    PAR --> B
+    B --> CTX{Context near limit?}
+    CTX -->|yes| COMP[Compact history<br/>summary + recent turns]
+    COMP --> C{Response type?}
+    CTX -->|no| C
+    C -->|tool_use| LOOP{Loop detector<br/>same call N times?}
+    LOOP -->|yes| NUDGE[Inject switch-strategy nudge]
+    NUDGE --> B
+    LOOP -->|no| D[Execute each tool call]
+    D --> E[Append tool results]
     E --> F{Agent called done?}
-    F -->|no| B
-    F -->|yes| G[Return findings + summary]
-    C -->|text only| H{Budget remaining + min turns met?}
+    F -->|no| EG{EGATS enabled?}
+    EG -->|yes| TREE[Update hypothesis tree<br/>prune dead branches]
+    TREE --> B
+    EG -->|no| B
+    F -->|yes| W[First racer wins<br/>cancel others]
+    W --> G[Return findings + summary]
+    C -->|text only| H{Budget + min turns met?}
     H -->|yes| G
-    H -->|no| I[Inject budget-aware continue prompt]
+    H -->|no| I[Budget-aware continue prompt<br/>30 / 50 / 70 / 85 / 100 pct]
     I --> B
+
+    style A fill:#1a1a2e,stroke:#e94560,color:#fff
+    style B fill:#16213e,stroke:#e94560,color:#fff
+    style COMP fill:#533483,stroke:#e94560,color:#fff
+    style NUDGE fill:#533483,stroke:#e94560,color:#fff
+    style TREE fill:#533483,stroke:#e94560,color:#fff
+    style PAR fill:#533483,stroke:#e94560,color:#fff
+    style I fill:#533483,stroke:#e94560,color:#fff
+    style G fill:#10b981,stroke:#059669,color:#fff
+    style W fill:#10b981,stroke:#059669,color:#fff
 ```
 
 Each iteration of this loop is one **turn**. The agent has a configurable turn budget (`maxTurns`), typically 15-100 depending on scan depth and mode. The loop exits when the agent calls the `done` tool, produces a text-only response after enough turns, or exhausts its budget.
