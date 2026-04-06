@@ -520,7 +520,15 @@ async function main() {
   }
 }
 
-main().catch((err) => {
-  console.error("XBOW benchmark failed:", err);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // Force exit — async resources (DB connections, event loop timers from
+    // the agentic scanner, browser instances) sometimes keep the process
+    // alive after main() completes. We've already written results to disk,
+    // so exiting cleanly here is safe and prevents CI timeouts.
+    process.exit(0);
+  })
+  .catch((err) => {
+    console.error("XBOW benchmark failed:", err);
+    process.exit(1);
+  });
