@@ -38,7 +38,60 @@ The agent adapts its strategy based on what it discovers -- if a naive prompt in
 
 **Turn budget.** [MAPTA](https://arxiv.org/abs/2508.20816) data shows 40 tool calls is the sweet spot for CTF-style challenges -- enough to complete multi-step exploit chains without wasting tokens on dead ends. Deep mode uses a budget of 40 turns (increased from the original 20).
 
-### 2. Verify agent (Blind validation)
+### 2. Triage stage (Finding verification pipeline)
+
+Between the research agent's raw findings and the final report, findings flow through a multi-layer triage pipeline. Each layer rejects, downgrades, or confirms findings based on independent signals — the goal is to drive false positives toward zero without losing true positives. See the [FP Reduction Moat](/research/fp-reduction-moat/) page for published FP reduction numbers per layer, and the [Finding Triage ML](/research/finding-triage-ml/) design doc for the underlying research.
+
+```
+Attack Agent -> Findings
+                   |
+                   v
+              Triage Stage
+                   |
+                   v
+[holding-it-wrong filter]    -> rejected     -> info-level
+                   |
+                   v
+[feature extraction + evidence completeness]
+                   |
+                   v
+[reachability gate]          -> unreachable  -> suppressed
+                   |
+                   v
+[multi-modal: foxguard cross-validation]
+                   |
+                   v
+[per-class oracles]          -> verified     -> accepted
+                   |
+                   v
+[consensus verify OR blind verify]
+                   |
+                   v
+[memories lookup + few-shot]
+                   |
+                   v
+[adversarial debate] (optional)
+                   |
+                   v
+           Verified Findings
+```
+
+| Layer | Module | Purpose |
+|-------|--------|---------|
+| Holding-it-wrong filter | `packages/core/src/triage/holding-it-wrong.ts` | Rejects findings where the "vulnerability" is the documented behaviour of the called function (e.g. `eval`, `writeFile`, `compile`). Downgrades to `info`. |
+| Feature extractor | `packages/core/src/triage/feature-extractor.ts` | 45 handcrafted features (response, request, metadata, text quality, cross-field) for fast first-pass signal. |
+| Reachability gate | `packages/core/src/triage/reachability.ts` | Suppresses findings whose sink is not reachable from an application entry point. Open-source mirror of Endor Labs' "Code API" moat. |
+| Multi-modal agreement | `packages/core/src/triage/multi-modal.ts` | Cross-validates against [foxguard](https://github.com/opensoar-hq/foxguard) (Rust pattern scanner). Both fire = strong signal; foxguard silent on scanned file = likely FP. |
+| Per-class oracles | `packages/core/src/triage/oracles.ts` | Deterministic exploit oracles per category (SQLi, XSS, SSRF, RCE, path traversal, IDOR). Verified = accept with no LLM call. |
+| PoV gate | `packages/core/src/triage/pov-gate.ts` | Narrowly-scoped mini agent loop must produce a working executable PoC. No PoV = downgrade to `info`. Based on "All You Need Is A Fuzzing Brain". |
+| Structured verify pipeline | `packages/core/src/triage/verify-pipeline.ts` | 4-step LLM verification: reachability -> payload validation -> impact assessment -> exploit confirmation. Category-specific addendums per vuln class. |
+| Consensus verify | `packages/core/src/triage/verify-pipeline.ts` (`runSelfConsistencyVerify`) | Runs the structured verify pipeline N times in parallel and takes the majority vote with early termination. |
+| Triage memories | `packages/core/src/triage/memories.ts` | Semgrep-style per-target FP memories. Injected as few-shot into the verify prompt; strong matches auto-reject without an LLM call. |
+| Adversarial debate | (planned) | Prosecutor vs. defender vs. judge, based on Anthropic's debate paper (arXiv:2402.06782). Feature flag wired, runtime pending. |
+
+Most layers are gated by feature flags (`PWNKIT_FEATURE_REACHABILITY_GATE`, `PWNKIT_FEATURE_MULTIMODAL`, `PWNKIT_FEATURE_CONSENSUS_VERIFY`, `PWNKIT_FEATURE_POV_GATE`, `PWNKIT_FEATURE_TRIAGE_MEMORIES`, `PWNKIT_FEATURE_DEBATE`) so they can be A/B tested independently. See `packages/core/src/agent/features.ts` for the full list.
+
+### 3. Verify agent (Blind validation)
 
 The verify agent receives **only** the PoC code and the file path. It never sees the research agent's reasoning, chain of thought, or attack strategy. This is the same principle as double-blind peer review.
 
@@ -50,7 +103,7 @@ The verify agent independently:
 
 If the verify agent cannot reproduce the vulnerability, it is killed as a false positive. This eliminates the noise that plagues other scanners.
 
-### 3. Report (Output)
+### 4. Report (Output)
 
 Only confirmed findings (those that survived blind verification) are included in the final report. Output formats:
 

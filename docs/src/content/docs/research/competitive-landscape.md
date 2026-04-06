@@ -89,12 +89,18 @@ Ranked by expected impact and implementation complexity. Estimates based on chal
 | 3 | Patched fork for all 104 challenges | +10-15 flags | 1x | **Shipped** |
 | 4 | Context compaction at 60% window | +3-5 flags | 1x | **Shipped** |
 | 5 | Loop/oscillation detection | +2-3 flags | 1x | **Shipped** |
-| 6 | Dynamic playbooks after recon | +3-5 flags | 1x | Planned |
-| 7 | EGATS tree search | +5-9 flags | 2-3x | Planned |
-| 8 | Best-of-3 racing | +5-8 flags | 3x | Evaluating |
-| 9 | External working memory | +2-3 flags | 1x | Planned |
-| 10 | Confidence-gated spawn_agent | +2-4 flags | 1.5x | Planned |
-| 11 | RAG from prior solves | +2-4 flags | 1x | Planned |
+| 6 | Dynamic playbooks after recon (13 playbooks) | +3-5 flags | 1x | **Shipped** |
+| 7 | EGATS tree search | +5-9 flags | 2-3x | **Shipped** |
+| 8 | Best-of-N strategy racing | +5-8 flags | 3x | **Shipped** |
+| 9 | Progress handoff on retry | +3-5 flags | 1x | **Shipped** |
+| 10 | Reachability gate | FP reduction | 1x | **Shipped** |
+| 11 | foxguard multi-modal agreement | FP reduction | 1x | **Shipped** |
+| 12 | Consensus (self-consistency) verify | FP reduction | Nx verify cost | **Shipped** |
+| 13 | Triage memories (Semgrep-style) | FP reduction | 1x | **Shipped** |
+| 14 | PoV gate | FP reduction | 1x | **Shipped** |
+| 15 | External working memory | +2-3 flags | 1x | Planned |
+| 16 | RAG from prior solves | +2-4 flags | 1x | Planned |
+| 17 | Adversarial debate verification | FP reduction | 2x verify cost | Planned |
 
 ### Shipped
 
@@ -108,19 +114,31 @@ Ranked by expected impact and implementation complexity. Estimates based on chal
 
 **Context compaction at 60% window.** When the context window reaches 60% capacity, summarize the current state (discovered endpoints, credentials, attack progress) and continue with a compacted context. Prevents the quality degradation that occurs past 40-60% fill. Based on BoxPwnr's `single_loop_compactation` solver, which triggers compaction at 60% and has proven effective across hundreds of challenges. More aggressive than the originally planned 30k-token relay -- compaction preserves the full conversation thread rather than doing a hard reset.
 
+**Dynamic playbooks after recon.** `packages/core/src/agent/playbooks.ts` — 13 playbooks (sqli, ssti, idor, xss, ssrf, lfi, auth_bypass, blind_exploitation, cve_exploitation, command_injection, deserialization, request_smuggling, creative_idor). `detectPlaybooks()` matches tool-result text against per-type patterns and injects at most 3 into the conversation. The XSS playbook alone cracked XBEN-011 and XBEN-018.
+
+**EGATS tree search.** `packages/core/src/agent/egats.ts` — evidence-gated attack tree search. Each node is a hypothesis; a mini agent loop gathers evidence; only branches whose evidence score clears the threshold are expanded. Beam search keeps the top-K branches per level.
+
+**Best-of-N strategy racing.** `packages/core/src/racing.ts` — runs the same target with multiple different strategies in parallel (aggressive, methodical, creative, each with its own system-prompt override and temperature hint), takes the first vulnerability. Inspired by BoxPwnr running ~10 solver configs.
+
+**Progress handoff.** `packages/core/src/agent/native-loop.ts` + `agentic-scanner.ts` — the prior attempt's structured progress (endpoints, credentials, confirmed vulns, failed approaches, tech stack) is injected into the retry's "Prior Attempt Results" section.
+
+**Reachability gate.** `packages/core/src/triage/reachability.ts` — suppresses findings whose sink is not reachable from an application entry point. The open-source version of Endor Labs' "Code API" moat.
+
+**foxguard multi-modal agreement.** `packages/core/src/triage/multi-modal.ts` — for every pwnkit finding, run foxguard against the same source tree and require agreement before auto-accepting. Endor Labs' rules-plus-neural architecture, open-source.
+
+**Consensus (self-consistency) verification.** `packages/core/src/triage/verify-pipeline.ts` — `runSelfConsistencyVerify` runs the structured verify pipeline N times in parallel, takes the majority vote, with early termination when a verdict locks up an unreachable lead.
+
+**Triage memories.** `packages/core/src/triage/memories.ts` — Semgrep-style per-target persistent FP context. User marks a finding as FP with a reason; the reason becomes a `TriageMemory` scoped to `global`, `package`, or `target`. Strong matches auto-reject future findings without any LLM call.
+
+**PoV gate.** `packages/core/src/triage/pov-gate.ts` — a narrowly-scoped mini agent loop must produce a concrete executable exploit; no PoV → severity downgrade to `info`. Based on "All You Need Is A Fuzzing Brain" (arXiv:2509.07225).
+
 ### Planned
-
-**Dynamic playbooks after recon.** After the initial recon phase, generate a challenge-specific playbook based on what the agent found (tech stack, endpoints, auth mechanism). Replaces the generic 25-line prompt with targeted instructions. Cyber-AutoAgent's self-rewriting prompts are the extreme version of this.
-
-**EGATS tree search.** Explore-Generate-Assess Tree Search. Instead of linear turn-by-turn execution, branch at decision points and explore multiple exploit paths in parallel. Prune low-confidence branches early. Based on the EGATS paper's application to code generation, adapted for exploit generation. Expected 5-9 flag improvement at 2-3x cost.
-
-**Best-of-3 racing.** Run 3 independent attempts at each challenge, take the best result. Simple but expensive (3x cost). Effective because pentesting has high variance -- the same agent with the same prompt solves different challenges on different runs. Diminishing returns past 3 attempts.
 
 **External working memory.** Persist structured notes (discovered endpoints, credentials, observed behaviors) in a memory store the agent can query. Prevents the agent from re-discovering information it already found. Inspired by Cyber-AutoAgent's mem0 integration.
 
-**Confidence-gated spawn_agent.** When the primary agent is stuck, spawn a sub-agent for a specific sub-task (e.g., "decode this JWT" or "find the admin endpoint"). Only spawn when the primary agent's confidence is low. Avoids the coordination overhead of always-on multi-agent while getting the benefit when needed.
-
 **RAG from prior solves.** Build a vector index of successful exploit chains from prior runs. When the agent encounters a similar challenge, retrieve relevant prior solves as context. Bootstraps experience without increasing the model's context window.
+
+**Adversarial debate verification.** Prosecutor vs. defender agents debate each finding; a skeptical judge decides. Based on Anthropic's debate paper (arXiv:2402.06782). Feature flag wired, runtime not yet implemented.
 
 ## Key research papers
 
@@ -141,24 +159,42 @@ CHAP at NDSS 2026 introduces challenge-aware heuristic planning -- the agent cla
 
 ## What we've shipped
 
-| Feature | Based on | Impact |
-|---------|----------|--------|
-| Early-stop + retry | MAPTA turn budget data | +3-5 flags |
-| Blind SQLi templates | deadend-cli blind SQLi solves | +2-4 flags |
+### Attack-phase techniques
+| Feature | Based on | Notes |
+|---------|----------|-------|
+| Early-stop + retry | MAPTA turn budget data | `native-loop.ts`, `agentic-scanner.ts` |
+| Blind SQLi templates | deadend-cli | `prompts.ts` |
 | Patched XBOW fork | Challenge-level bug analysis | +10-15 flags |
 | Shell-first architecture | TermiAgent, meta-analysis | Foundation -- 7.4% cost of multi-agent |
-| Loop detection | BoxPwnr oscillation detection | +2-3 flags |
-| Context compaction | BoxPwnr 60% window compaction | +3-5 flags |
+| Loop detection | BoxPwnr oscillation detection | `native-loop.ts` |
+| Context compaction (LLM-based, multi-recompaction) | BoxPwnr | `native-loop.ts` |
+| Dynamic playbooks (13 types) | CurriculumPT, Cyber-AutoAgent | `agent/playbooks.ts` |
+| EGATS attack tree search | MAPTA | `agent/egats.ts` |
+| Best-of-N strategy racing | BoxPwnr | `racing.ts` |
+| Progress handoff on retry | BoxPwnr | `native-loop.ts`, `agentic-scanner.ts` |
+
+### Triage-stage techniques (FP reduction moat)
+See [FP Reduction Moat](/research/fp-reduction-moat/) for the full stack and published numbers.
+
+| Feature | Based on | Notes |
+|---------|----------|-------|
+| Holding-it-wrong filter | Internal CVE-hunt analysis | `triage/holding-it-wrong.ts` |
+| Feature extractor (45 features) | VulnBERT hybrid | `triage/feature-extractor.ts` |
+| Reachability gate | Endor Labs "Code API" moat | `triage/reachability.ts` |
+| Per-class exploit oracles | MAPTA evidence-gated branching | `triage/oracles.ts` |
+| foxguard multi-modal agreement | Endor Labs rules+neural | `triage/multi-modal.ts` |
+| Structured 4-step verify | GitHub Security Lab taskflow-agent | `triage/verify-pipeline.ts` |
+| Consensus (self-consistency) verify | Self-consistency decoding | `triage/verify-pipeline.ts` |
+| PoV gate | Fuzzing Brain (arXiv:2509.07225) | `triage/pov-gate.ts` |
+| Triage memories | Semgrep Assistant | `triage/memories.ts` |
 
 ## What's next
 
-**Near-term (next 2 weeks):**
-- Dynamic playbooks after recon -- leverage the agent's own recon to specialize its prompt
+**Near-term:**
+- Adversarial debate verification — Anthropic debate (arXiv:2402.06782), prosecutor vs. defender vs. judge
+- External working memory — agent writes plan/creds to disk, injected at reflection checkpoints
+- Layer 2 CodeBERT fine-tune on D2A labels
 
-**Medium-term (next month):**
-- EGATS tree search -- the highest expected flag improvement (+5-9) of any planned technique
-- External working memory -- prevents re-discovery, enables cross-run learning
-
-**Longer-term:**
-- RAG from prior solves -- requires a corpus of successful runs to bootstrap
-- Confidence-gated sub-agents -- requires reliable confidence estimation, which is an open research problem
+**Medium-term:**
+- RAG from prior solves — requires a corpus of successful runs to bootstrap
+- Tree-sitter-based interprocedural reachability to replace the grep-based first pass
