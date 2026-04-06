@@ -46,7 +46,10 @@ jobs:
 
     env:
       XBOW_PATH: /tmp/xbow-benchmarks
-      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+      # Azure OpenAI is the primary runtime for XBOW benchmarks.
+      # Do NOT set OPENROUTER_API_KEY here — pwnkit prioritizes OpenRouter
+      # over Azure when both are present, which would route benchmark
+      # traffic to OpenRouter instead of our Azure deployment.
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
       AZURE_OPENAI_MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
