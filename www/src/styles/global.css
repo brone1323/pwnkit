@@ -6,10 +6,10 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme {
-  --color-night: #0d1117;
-  --color-night-light: #161b22;
-  --color-night-lighter: #1c2129;
-  --color-border: #30363d;
+  --color-night: #0a0a0a;
+  --color-night-light: #171717;
+  --color-night-lighter: #262626;
+  --color-border: #404040;
   --color-crimson: #DC2626;
   --color-crimson-dark: #991B1B;
   --color-crimson-light: #EF4444;
@@ -96,11 +96,11 @@ html {
  */
 :root {
   /* Surfaces */
-  --background: #0d1117;        /* --color-night */
+  --background: #0a0a0a;        /* --color-night */
   --foreground: #ffffff;
-  --card: #161b22;              /* --color-night-light */
+  --card: #171717;              /* --color-night-light */
   --card-foreground: #ffffff;
-  --popover: #161b22;
+  --popover: #171717;
   --popover-foreground: #ffffff;
 
   /* Brand */
@@ -108,22 +108,22 @@ html {
   --primary-foreground: #ffffff;
 
   /* Secondary surface */
-  --secondary: #1c2129;         /* --color-night-lighter */
+  --secondary: #262626;         /* --color-night-lighter */
   --secondary-foreground: #ffffff;
 
   /* Muted */
-  --muted: #1c2129;
+  --muted: #262626;
   --muted-foreground: #a3a3a3;  /* --color-smoke */
 
   /* Accent (hovers, subtle highlights) */
-  --accent: #1c2129;
+  --accent: #262626;
   --accent-foreground: #ffffff;
 
   /* Status */
   --destructive: #EF4444;       /* --color-crimson-light */
 
   /* Borders / inputs / focus */
-  --border: #30363d;
+  --border: #404040;
   --input: rgba(255, 255, 255, 0.15);
   --ring: #DC2626;              /* crimson focus ring */
 
@@ -137,13 +137,13 @@ html {
   --radius: 0.625rem;
 
   /* Sidebar (unused on www today, kept for shadcn parity) */
-  --sidebar: #0d1117;
+  --sidebar: #0a0a0a;
   --sidebar-foreground: #ffffff;
   --sidebar-primary: #DC2626;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1c2129;
+  --sidebar-accent: #262626;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #30363d;
+  --sidebar-border: #404040;
   --sidebar-ring: #DC2626;
 }
 
