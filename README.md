@@ -16,6 +16,7 @@
  <a href="https://github.com/peaktwilight/pwnkit/stargazers"><img src="https://img.shields.io/github/stars/peaktwilight/pwnkit?style=flat-square&color=gold" alt="stars" /></a>
  <img src="https://img.shields.io/badge/XBOW-87.5%25%20(91%2F104)-e63946?style=flat-square" alt="XBOW score" />
  <img src="https://img.shields.io/badge/Cybench-80%25%20(8%2F10)-e63946?style=flat-square" alt="Cybench score" />
+ <img src="https://img.shields.io/badge/npm--bench-F1%200.444%20(15%2F30)-e63946?style=flat-square" alt="npm-bench score" />
  <img src="https://img.shields.io/badge/tests-188%20passing-2a9d8f?style=flat-square" alt="tests" />
 </p>
 

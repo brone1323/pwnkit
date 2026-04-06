@@ -1,12 +1,16 @@
 {
-  "timestamp": "2026-04-05T21:47:21.396Z",
+  "timestamp": "2026-04-06T05:07:47.305Z",
   "depth": "quick",
+  "runtime": "api",
   "totalCases": 30,
-  "accuracy": 0.3333333333333333,
-  "detectionRate": 0,
-  "falsePositiveRate": 0,
-  "f1": 0,
-  "totalDurationMs": 7884336,
+  "scoredCases": 30,
+  "infrastructureFailures": 0,
+  "validScore": true,
+  "accuracy": 0.5,
+  "detectionRate": 0.3,
+  "falsePositiveRate": 0.1,
+  "f1": 0.4444444444444444,
+  "totalDurationMs": 1682150,
   "results": [
     {
       "pkg": "event-stream",
@@ -15,7 +19,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 276902
+      "durationMs": 57184,
+      "infrastructureError": false
     },
     {
       "pkg": "ua-parser-js",
@@ -24,7 +29,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 214559
+      "durationMs": 55277,
+      "infrastructureError": false
     },
     {
       "pkg": "colors",
@@ -33,25 +39,28 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 202290
+      "durationMs": 52719,
+      "infrastructureError": false
     },
     {
       "pkg": "faker",
       "verdict": "malicious",
       "reason": "maintainer sabotaged, replaced with ENDGAME",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 132504
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 35305,
+      "infrastructureError": false
     },
     {
       "pkg": "node-ipc",
       "verdict": "malicious",
       "reason": "protestware / peacenotwar geo-targeted wiper",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 223969
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 67102,
+      "infrastructureError": false
     },
     {
       "pkg": "coa",
@@ -60,7 +69,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 479841
+      "durationMs": 62267,
+      "infrastructureError": false
     },
     {
       "pkg": "rc",
@@ -69,7 +79,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 380546
+      "durationMs": 36232,
+      "infrastructureError": false
     },
     {
       "pkg": "eslint-scope",
@@ -78,7 +89,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 208210
+      "durationMs": 67922,
+      "infrastructureError": false
     },
     {
       "pkg": "crossenv",
@@ -87,16 +99,18 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 32299
+      "durationMs": 13075,
+      "infrastructureError": false
     },
     {
       "pkg": "loadsh",
       "verdict": "malicious",
       "reason": "typosquat of lodash",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 338425
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 67208,
+      "infrastructureError": false
     },
     {
       "pkg": "lodash@4.17.20",
@@ -105,16 +119,18 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 302209
+      "durationMs": 61039,
+      "infrastructureError": false
     },
     {
       "pkg": "minimist@1.2.5",
       "verdict": "vulnerable",
       "reason": "prototype pollution CVE-2021-44906",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 180765
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 47930,
+      "infrastructureError": false
     },
     {
       "pkg": "node-forge@0.9.0",
@@ -123,16 +139,18 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 285346
+      "durationMs": 54304,
+      "infrastructureError": false
     },
     {
       "pkg": "express@4.17.1",
       "verdict": "vulnerable",
       "reason": "path traversal in serve-static dep",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 427723
+      "findingsCount": 3,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 86224,
+      "infrastructureError": false
     },
     {
       "pkg": "axios@0.21.0",
@@ -141,7 +159,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 248997
+      "durationMs": 58086,
+      "infrastructureError": false
     },
     {
       "pkg": "tar@4.4.12",
@@ -150,16 +169,18 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 289987
+      "durationMs": 67411,
+      "infrastructureError": false
     },
     {
       "pkg": "glob-parent@5.1.0",
       "verdict": "vulnerable",
       "reason": "ReDoS CVE-2021-35065",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": false,
-      "durationMs": 150344
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": true,
+      "durationMs": 49126,
+      "infrastructureError": false
     },
     {
       "pkg": "json5@2.2.1",
@@ -168,7 +189,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 225755
+      "durationMs": 47097,
+      "infrastructureError": false
     },
     {
       "pkg": "qs@6.5.2",
@@ -177,7 +199,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 223555
+      "durationMs": 47277,
+      "infrastructureError": false
     },
     {
       "pkg": "semver@7.3.7",
@@ -186,16 +209,18 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 129517
+      "durationMs": 57513,
+      "infrastructureError": false
     },
     {
       "pkg": "express@latest",
       "verdict": "safe",
       "reason": "widely-used, patched",
-      "findingsCount": 0,
-      "hasFindings": false,
-      "correct": true,
-      "durationMs": 312830
+      "findingsCount": 1,
+      "hasFindings": true,
+      "correct": false,
+      "durationMs": 59933,
+      "infrastructureError": false
     },
     {
       "pkg": "react@latest",
@@ -204,7 +229,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 204740
+      "durationMs": 79551,
+      "infrastructureError": false
     },
     {
       "pkg": "typescript@latest",
@@ -213,7 +239,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 197243
+      "durationMs": 48552,
+      "infrastructureError": false
     },
     {
       "pkg": "zod@latest",
@@ -222,7 +249,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 225602
+      "durationMs": 56278,
+      "infrastructureError": false
     },
     {
       "pkg": "drizzle-orm@latest",
@@ -231,7 +259,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 270072
+      "durationMs": 74915,
+      "infrastructureError": false
     },
     {
       "pkg": "vitest@latest",
@@ -240,7 +269,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 191394
+      "durationMs": 76480,
+      "infrastructureError": false
     },
     {
       "pkg": "esbuild@latest",
@@ -249,7 +279,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 580017
+      "durationMs": 34960,
+      "infrastructureError": false
     },
     {
       "pkg": "chalk@latest",
@@ -258,7 +289,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 368133
+      "durationMs": 31779,
+      "infrastructureError": false
     },
     {
       "pkg": "commander@latest",
@@ -267,7 +299,8 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 247398
+      "durationMs": 74306,
+      "infrastructureError": false
     },
     {
       "pkg": "dotenv@latest",
@@ -276,24 +309,25 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": true,
-      "durationMs": 333161
+      "durationMs": 55092,
+      "infrastructureError": false
     }
   ],
   "verdictBreakdown": {
     "malicious": {
       "total": 10,
-      "correct": 0,
-      "rate": 0
+      "correct": 3,
+      "rate": 0.3
     },
     "vulnerable": {
       "total": 10,
-      "correct": 0,
-      "rate": 0
+      "correct": 3,
+      "rate": 0.3
     },
     "safe": {
       "total": 10,
-      "correct": 10,
-      "rate": 1
+      "correct": 9,
+      "rate": 0.9
     }
   }
 }

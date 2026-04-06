@@ -3,7 +3,7 @@ title: Benchmark
 description: Comprehensive benchmark results for pwnkit across five domains -- AI/LLM security, web pentesting, network/CVE pentesting, LLM safety, and npm auditing.
 ---
 
-pwnkit is benchmarked against five test suites: a custom AI/LLM security benchmark (10 challenges), the XBOW traditional web vulnerability benchmark (104 challenges), AutoPenBench network/CVE pentesting (33 tasks), HarmBench LLM safety (510 behaviors), and an npm audit benchmark (30 packages). This page is the single source of truth for all benchmark results.
+pwnkit is benchmarked against five test suites: a custom AI/LLM security benchmark (10 challenges), the XBOW traditional web vulnerability benchmark (104 challenges), AutoPenBench network/CVE pentesting (33 tasks), HarmBench LLM safety (510 behaviors), and an npm audit benchmark (81 packages). This page is the single source of truth for all benchmark results.
 
 > **Latest (April 2026).** **91 unique flags / 104 = 87.5%** on XBOW across all runs (best-of-N). All 104 challenges now tested. The latest unsolved-challenges run cracked **XBEN-042 "Too Much Trust"** with 2 findings in 92s, taking the total from 90 to 91. The new XSS playbook also cracked previously-impossible XBEN-011 and XBEN-018. Only 13 challenges remain unsolved. This score beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), and XBOW (85%) — and beats BoxPwnr's best single-model score (GLM-5: 81.7%). First Cybench run: **8/10 = 80%** including a Medium-difficulty solve.
 
@@ -238,21 +238,47 @@ pnpm --filter @pwnkit/benchmark harmbench --target <url>
 
 ## npm Audit Benchmark
 
-30 packages (10 known-malicious, 10 with real CVEs, 10 safe/benign) designed to test pwnkit's npm audit mode. This is the first npm security benchmark we're aware of -- no competitor has one. The benchmark measures whether the scanner correctly flags malicious and vulnerable packages while avoiding false positives on safe ones.
+81 packages (27 known-malicious, 27 with real CVEs, 27 safe/benign) designed to test pwnkit's npm audit mode. **This is the first open-source AI npm-audit benchmark with public scores** — Snyk, Socket.dev, and npm audit publish marketing claims but no head-to-head ground-truth dataset, and no other open-source AI scanner has published an npm benchmark at all.
+
+The benchmark measures whether the scanner correctly flags malicious and vulnerable packages while avoiding false positives on safe ones. Each malicious case is verified against npm advisories, GitHub Security Advisories (GHSA), Socket.dev, ReversingLabs, or Phylum reports. CVE cases are verified against NVD.
 
 ```bash
 pnpm --filter @pwnkit/benchmark npm-bench
 ```
 
+### First published score (April 2026, 30-package baseline)
+
+The first scored CI run on the original 30-package set produced:
+
 | Metric | Value |
 |--------|-------|
-| Total packages | 30 |
-| Malicious packages | 10 |
-| CVE packages | 10 |
-| Safe packages | 10 |
-| Metric | Precision, recall, F1 |
-| pwnkit score | TBD |
-| Competitors with npm benchmark | 0 |
+| Test set | 30 packages (10 malicious / 10 CVE / 10 safe) |
+| Accuracy | **50.0%** (15/30) |
+| Detection rate (recall) | **30.0%** |
+| False positive rate | **10.0%** |
+| F1 score | **0.444** |
+| Total runtime | ~28 min on `quick` depth |
+| Infrastructure errors | 0 / 30 (valid score) |
+
+By verdict: **safe 9/10 (90%)**, **malicious 3/10 (30%)** (faker, node-ipc, loadsh), **vulnerable 3/10 (30%)** (minimist@1.2.5, express@4.17.1, glob-parent@5.1.0). The single false positive was `express@latest`, which our scanner flagged due to a transitive dependency advisory.
+
+This is a pwnkit-vs-pwnkit baseline — the bar to beat in subsequent runs. The 30% malicious detection rate is honest: most known-malicious packages have been removed from the registry, so a passive metadata scan can't see them. Closing this gap is the next milestone (registry-tarball cache + behavioral analysis).
+
+### Expanded test set (in progress)
+
+The benchmark was expanded to **81 packages** (27 malicious / 27 CVE / 27 safe) on 2026-04-06 to make it credibly publishable. Additional malicious cases include `flatmap-stream` (the actual event-stream payload), `electron-native-notify`, `discord.dll`, `twilio-npm`, `ffmepg`, and 12 others sourced from GHSA, Socket.dev, ReversingLabs, and Phylum 2023-2025 reports. Additional CVE cases cover CVE-2019-10744 (lodash), CVE-2021-3803 (nth-check), CVE-2022-0235 (node-fetch), CVE-2022-25881 (http-cache-semantics), and 13 more. The first scored run on the expanded set is in progress; results will replace the 30-package baseline above when CI completes.
+
+### Comparison to other npm scanners
+
+| Tool | Open source | Public benchmark? | Approach |
+|------|-------------|-------------------|----------|
+| **pwnkit npm-bench** | Yes | **Yes** (this page) | AI agent + GHSA + heuristics |
+| `npm audit` | Yes | No | GHSA database lookup |
+| Snyk | No | No | Proprietary DB + SCA |
+| Socket.dev | No | No | Static + behavioral + AI |
+| Dependabot | No | No | GHSA database lookup |
+
+No npm scanner — open or commercial — publishes a head-to-head benchmark with a fixed ground-truth set. This is the first.
 
 ---
 
