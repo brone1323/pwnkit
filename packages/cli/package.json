@@ -1,6 +1,7 @@
 {
   "name": "pwnkit-cli",
   "version": "0.5.0",
+  "description": "The leading open-source agentic AI pentest framework. Autonomously discover, exploit, and verify vulnerabilities in web apps, AI/LLM apps, npm packages, and source code.",
   "type": "module",
   "bin": {
     "pwnkit-cli": "dist/index.js"

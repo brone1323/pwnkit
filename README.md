@@ -32,9 +32,11 @@
 
 ---
 
+> **The leading open-source agentic AI pentest framework.** 86.5% on XBOW (90/104) — the highest score for any single-model open-source agent. Detects, verifies, and reports vulnerabilities autonomously through an 11-layer FP reduction pipeline.
+
 Autonomous AI agents that pentest **web apps**, **AI/LLM apps**, **npm packages**, and **source code**. The agent gets a `bash` tool and works like a real pentester — writing curl commands, Python exploit scripts, and chaining vulnerabilities. Every finding walks through an 11-layer triage pipeline, then gets independently re-exploited by a blind verify agent that never sees the original reasoning.
 
-> **86.5% on XBOW (90/104 flags)** with a single model and 3 tools. Beats XBOW (85%), MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), and BoxPwnr's best single-model score (81.7%).
+> Beats XBOW (85%), Cyber-AutoAgent (84.6%), MAPTA (76.9%), deadend-cli (77.6%), and BoxPwnr's best single-model score (81.7%).
 
 ## Quick Start
 
