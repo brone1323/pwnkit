@@ -5,6 +5,8 @@ description: Competitor analysis, evidence-based improvement techniques, and res
 
 Synthesis of competitive intelligence and published research on autonomous pentesting agents, benchmarked against the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Data current as of April 2026.
 
+> **pwnkit status (April 2026):** 86.5% on XBOW (90/104). Beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), XBOW's own agent (85%), and **BoxPwnr's best single-model score of 81.7%** (GLM-5). Still behind BoxPwnr's 97.1% best-of-N aggregate and Shannon's 96.15% white-box score.
+
 For pwnkit's own benchmark scores, see the [Benchmark](/benchmark/) page. For the Shannon-specific gap analysis, see [XBOW Analysis](/research/xbow-analysis/).
 
 ## Competitor breakdown
@@ -45,6 +47,22 @@ Single-agent CLI using ADaPT (Adaptive Decomposition and Planning for Tasks) rec
 ### MAPTA (76.9%)
 
 Academic 3-role system: coordinator, sandbox executor, and validator. The coordinator plans attack strategy, the sandbox runs exploits in isolation, and the validator checks whether output constitutes a real flag. Evidence-gated branching means the system only pursues exploitation paths backed by concrete evidence from prior steps -- no speculative tool calls. Runs on GPT-5 for $21.38 total across all 104 challenges ($0.21/challenge). Published as a research paper with full methodology.
+
+## pwnkit's differentiators
+
+### Reachability gate matches Endor Labs' "Code API" moat (open-source)
+
+Endor Labs' disclosed ~95% false-positive elimination depends on a proprietary "Code API" reachability signal — they check whether a flagged sink is actually callable from an application entry point before they spend LLM tokens on it. pwnkit implements the same idea as a zero-dependency grep/pattern-based first pass in `packages/core/src/triage/reachability.ts`. This is the only open-source reachability gate for LLM pentest findings we are aware of.
+
+### foxguard × pwnkit cross-validation (unique)
+
+Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit has the open-source version: for every finding, run [foxguard](https://github.com/opensoar-hq/foxguard) (Rust pattern scanner) against the same source tree and require agreement. Both fire → strong signal. Foxguard silent → likely false positive. Nobody else in the open-source pentest-agent space runs a second, independent scanner for cross-validation — this is unique to the pwnkit / foxguard / opensoar trinity.
+
+Implementation: `packages/core/src/triage/multi-modal.ts`.
+
+### 86.5% XBOW — beats BoxPwnr's best single-model
+
+BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's 86.5% with a single model beats that single-model number by ~5pp, while trailing the best-of-N aggregate.
 
 ## The meta-finding
 

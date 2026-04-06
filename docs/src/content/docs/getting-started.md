@@ -3,7 +3,7 @@ title: Getting Started
 description: Install pwnkit, set up your API key, and run your first scan.
 ---
 
-pwnkit is a general-purpose autonomous pentesting framework. It scans AI/LLM apps, web applications, npm packages, and source code using an agentic pipeline that discovers, attacks, verifies, and reports -- with blind verification to kill false positives. It ships as an npm package. You can run it directly with `npx` or install it globally.
+pwnkit is a general-purpose autonomous pentesting framework. It scans AI/LLM apps, web applications, REST/OpenAPI APIs, npm packages, and source code using an agentic pipeline that discovers, attacks, verifies, and reports — with blind verification to kill false positives. It ships as an npm package. You can run it directly with `npx` or install it globally.
 
 ## Installation
 
@@ -42,7 +42,7 @@ See [API Keys](/api-keys/) for full details on supported providers.
 npx pwnkit-cli scan --target https://your-app.com/api/chat
 ```
 
-This discovers the attack surface, launches targeted attacks (prompt injection, jailbreaks, data exfiltration), verifies every finding, and generates a report -- typically in under 5 minutes.
+This discovers the attack surface, launches targeted attacks (prompt injection, jailbreaks, data exfiltration), verifies every finding, and generates a report — typically in under 5 minutes.
 
 ### Scan a web application
 
@@ -100,8 +100,95 @@ npx pwnkit-cli scan --target https://api.example.com/chat --depth quick
 npx pwnkit-cli scan --target https://api.example.com/chat --depth deep
 ```
 
+## Common scenarios
+
+### Scan a REST API with an OpenAPI spec
+
+Point pwnkit at an OpenAPI 3.x or Swagger 2.0 document and it will pre-load every endpoint, parameter schema, and auth requirement before attacking — no crawl phase needed.
+
+```bash
+npx pwnkit-cli scan \
+  --target https://api.example.com \
+  --api-spec ./openapi.yaml \
+  --mode web
+```
+
+### Authenticated scanning (login-protected app)
+
+Use `--auth` to pass credentials. Four types are supported: `bearer`, `cookie`, `basic`, and `header`.
+
+```bash
+# Bearer token (OAuth / JWT)
+npx pwnkit-cli scan --target https://app.example.com \
+  --auth '{"type":"bearer","token":"eyJhbGciOi..."}'
+
+# Session cookie
+npx pwnkit-cli scan --target https://app.example.com \
+  --auth '{"type":"cookie","value":"session=abc123"}'
+
+# Custom header (API key)
+npx pwnkit-cli scan --target https://api.example.com \
+  --auth '{"type":"header","name":"X-API-Key","value":"sk_live_..."}'
+
+# Or load from a file to avoid leaking to shell history
+npx pwnkit-cli scan --target https://app.example.com --auth ./auth.json
+```
+
+### Multi-model ensemble via OpenRouter
+
+Set `OPENROUTER_API_KEY` and pass `--model` to mix models across runs. OpenRouter gives you access to Claude, GPT-4, Gemini, Llama, DeepSeek, and more with one key.
+
+```bash
+export OPENROUTER_API_KEY="sk-or-..."
+
+# Use Claude Sonnet for hard targets
+npx pwnkit-cli scan --target https://example.com --mode web \
+  --model anthropic/claude-sonnet-4-5
+
+# Cheap and fast for CI
+npx pwnkit-cli scan --target https://example.com --mode web \
+  --model deepseek/deepseek-chat --depth quick
+```
+
+### Best-of-N strategy racing
+
+Spawn 5 attack agents in parallel and let the fastest one win. Great for hard targets where a linear attack plan gets stuck.
+
+```bash
+npx pwnkit-cli scan --target https://example.com --mode web --race
+```
+
+### Kali Docker executor
+
+Enable `PWNKIT_FEATURE_DOCKER_EXECUTOR=1` to run every bash command inside a Kali Linux container with the full pentesting toolset (nmap, sqlmap, nikto, gobuster, ffuf, hydra, etc.) already installed. No host pollution, reproducible tool versions.
+
+```bash
+export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
+npx pwnkit-cli scan --target https://example.com --mode web --verbose
+```
+
+### Export findings to GitHub Issues
+
+Push every confirmed finding to a GitHub repo as a labelled issue with evidence and reproduction steps. Requires a `GITHUB_TOKEN` with `repo` scope.
+
+```bash
+export GITHUB_TOKEN="ghp_..."
+npx pwnkit-cli scan --target https://example.com --mode web \
+  --export github:myorg/myrepo
+```
+
+### Generate a client-ready PDF report
+
+```bash
+npx pwnkit-cli scan --target https://example.com --mode web \
+  --depth deep \
+  --format pdf \
+  --output example-pentest.pdf
+```
+
 ## Next steps
 
 - [Commands](/commands/) — full reference for every CLI command
-- [Configuration](/configuration/) — runtime modes, depth settings, and options
+- [Configuration](/configuration/) — runtime modes, feature flags, and options
+- [Recipes](/recipes/) — real-world scan recipes for common scenarios
 - [Architecture](/architecture/) — how the 4-stage pipeline works

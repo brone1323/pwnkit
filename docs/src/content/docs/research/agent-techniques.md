@@ -71,9 +71,9 @@ A catalog of every technique we have evaluated for improving pwnkit's autonomous
 
 ---
 
-### 4. Context Compaction
+### 4. Context Compaction (LLM-based, multi-recompaction)
 
-**What:** When input tokens exceed 30k and message count exceeds 15, compress the middle of the conversation to a regex-extracted summary. Preserves: the system prompt / initial message, the last 8 messages, and any messages containing critical patterns (credentials, flags, findings). No extra LLM call -- pure regex extraction.
+**What:** When input tokens exceed the threshold, summarize the middle of the conversation via a single LLM call to a structured "findings / credentials / endpoints / failed approaches" format, then splice the summary back into the conversation in place of the middle messages. The system prompt / initial message and the last 8 messages are preserved verbatim; messages containing critical patterns (credentials, flags, findings) are also pinned verbatim. Unlike the original regex-only version, the current implementation uses an LLM for the summary and allows **multiple recompactions** during a single run — the `contextCompacted` flag has been replaced with a compaction counter so long sessions stay under the limit.
 
 **Source:** BoxPwnr (60% context threshold triggers compaction); CHAP paper (NDSS 2026) documenting context window degradation in long agent sessions.
 
@@ -90,16 +90,64 @@ A catalog of every technique we have evaluated for improving pwnkit's autonomous
 | `compactMessages()` | Rebuilds conversation: first message + assistant ack + summary + critical messages + tail 8 |
 
 **Key details:**
-- Only compacts once per session (`contextCompacted` flag) to avoid cascading information loss.
+- Multiple recompactions allowed per session (counter-based, not the old one-shot flag) so long sessions stay under the token budget.
 - Role alternation is maintained after compaction (user/assistant/user/...) to satisfy the API contract.
 - The summary is inserted as a user message so the model treats it as ground truth, not its own prior reasoning.
 - `save_finding` calls found in the middle are preserved verbatim in the summary (not just the regex-extracted lines).
 
 ---
 
+### 5. Dynamic Vulnerability Playbooks — SHIPPED
+
+**What:** After the initial recon phase, pattern-match tool-result text against a library of per-vulnerability playbooks and inject the best 1–3 matches into the conversation as a focused cheat-sheet. 13 playbooks are in the library: `sqli`, `ssti`, `idor`, `xss`, `ssrf`, `lfi`, `auth_bypass`, `blind_exploitation`, `cve_exploitation`, `command_injection`, `deserialization`, `request_smuggling`, `creative_idor`.
+
+**Source:** CurriculumPT; Cyber-AutoAgent's self-rewriting prompts (this is the simpler cousin).
+
+**Impact:** Measured on pwnkit's XBOW runs, the XSS playbook alone cracked previously impossible XBEN-011 and XBEN-018.
+
+**Implementation:** `packages/core/src/agent/playbooks.ts` — exports `PLAYBOOKS` (keyed by vuln type), `detectPlaybooks(toolResultTexts)` (pattern matcher, caps at 3 playbooks to avoid prompt bloat), and `buildPlaybookInjection(types)`. Feature flag: `PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS`.
+
+---
+
+### 6. EGATS — Evidence-Gated Attack Tree Search — SHIPPED
+
+**What:** Model the attack as a tree where each node is a hypothesis ("SQLi via /login username param"). A mini agent loop runs at each node to gather evidence, the evidence is scored against the hypothesis (0-1), and only branches whose evidence exceeds a threshold are expanded. Beam search keeps the top-K branches per level. The tree terminates when a flag is found, all branches die, or max depth is reached.
+
+**Source:** MAPTA paper (arXiv:2508.20816); EGATS adapted from code-generation tree-search literature.
+
+**Impact:** Expected +5-9pp on targets with large attack surfaces. Generalises pwnkit's early-stop mechanism: early-stop gates a single linear run, EGATS gates every branch.
+
+**Implementation:** `packages/core/src/agent/egats.ts` — `AttackNode`, `EGATSConfig`, `scoreEvidence`, `hasFlag`, `runEGATS`, `runEGATSWithDefaults`, `summariseTree`. Feature flag: `PWNKIT_FEATURE_EGATS`.
+
+---
+
+### 7. Best-of-N Strategy Racing — SHIPPED
+
+**What:** Run the same target with multiple different attack strategies in parallel, take the first one that finds a vulnerability. Inspired by BoxPwnr running ~10 solver configs in parallel. Default strategies include `aggressive`, `methodical`, `creative`, with different system-prompt overrides, models, turn budgets, and temperature hints.
+
+**Source:** BoxPwnr; Pass@N vs Pass@1 gap analysis.
+
+**Impact:** +5-8 flags at 3x cost. Converts probabilistic solves into reliable ones.
+
+**Implementation:** `packages/core/src/racing.ts` — `AttackStrategy`, `RaceConfig`, `StrategyResult`, `RaceResult`, `DEFAULT_STRATEGIES`, `raceStrategies`.
+
+---
+
+### 8. Progress Handoff Between Attempts — SHIPPED
+
+**What:** When retrying (after early-stop or failure), the prior attempt's structured progress — discovered endpoints, credentials, confirmed vulns, failed approaches, tech stack — is injected into the new session as a "Prior Attempt Results" section. Richer than the original single-line `attemptSummary`.
+
+**Source:** BoxPwnr's `{{ progress_content }}` template variable.
+
+**Impact:** Observed conversion of roughly 20% of retries into successes.
+
+**Implementation:** Progress extraction lives in `packages/core/src/agent/native-loop.ts`; injection happens in `packages/core/src/agentic-scanner.ts` when building the retry prompt. Feature flag: `PWNKIT_FEATURE_PROGRESS_HANDOFF`.
+
+---
+
 ## Not Yet Implemented
 
-### 5. Context Relay / Cognitive Refresh
+### Context Relay / Cognitive Refresh
 
 **What:** Full context reset with a structured handoff summary generated by an LLM call. Unlike compaction (technique 4), this starts an entirely new conversation. The current session is summarized into a structured handoff document (discovered endpoints, confirmed vulns, credentials, failed approaches), then a fresh agent session is initialized with that summary as its starting context.
 
@@ -117,68 +165,7 @@ A catalog of every technique we have evaluated for improving pwnkit's autonomous
 
 ---
 
-### 6. Dynamic Vulnerability Playbooks
-
-**What:** In turns 1-3, classify the target's vulnerability profile from initial recon output (curl response headers, error messages, tech stack identifiers). Then inject a focused playbook for the detected vuln class (SQLi, SSTI, IDOR, XSS, SSRF, LFI) into the conversation as a user message.
-
-**Source:** CurriculumPT: +18 percentage points on their benchmark with curriculum-style targeted guidance.
-
-**Impact:** Expected +10-15pp on challenges where the vuln class is identifiable from recon. Reduces wasted turns on irrelevant attack vectors.
-
-**Implementation sketch:**
-- Create `packages/core/src/agent/playbooks.ts` with a `classifyVulnType(reconOutput: string): VulnType[]` function using keyword/pattern matching (no LLM call needed).
-- Detection signals: `PHPSESSID` + form fields = SQLi likely; `{{` in reflected output = SSTI; sequential IDs in URLs = IDOR; `Jinja2`/`Flask` in headers = SSTI; file parameter names = LFI.
-- Each `VulnType` maps to a playbook string (similar to existing templates in `shellPentestPrompt` but more detailed and vuln-specific).
-- Inject the playbook as a user message after turn 3 if classification confidence > 0.7.
-- Playbooks should include: detection confirmation steps, exploitation sequence, flag extraction commands, common bypasses for WAFs/filters.
-
-**Location:** New file `packages/core/src/agent/playbooks.ts`, integration in `native-loop.ts`. **Difficulty:** Low-Medium. Mostly prompt engineering + pattern matching.
-
----
-
-### 7. EGATS Attack Tree Search
-
-**What:** Maintain an external JSON attack tree where each node represents an attack path (e.g., "SQLi on /search?q=", "SSTI on /render") with a promise score. Use UCB (Upper Confidence Bound) selection to balance exploration of untried paths vs. exploitation of promising ones. Prune nodes when estimated difficulty > 0.8 after 3 failed attempts.
-
-**Source:** EGATS paper; meta-analysis showing +9pp on XBOW with tree-based search.
-
-**Impact:** Expected +5-9pp. Most impactful on targets with large attack surfaces where the agent currently picks paths randomly.
-
-**Implementation sketch:**
-```typescript
-interface AttackNode {
-  id: string;
-  path: string;           // e.g., "SQLi > /search > UNION"
-  parentId: string | null;
-  attempts: number;
-  successes: number;
-  difficulty: number;      // 0-1, updated after each attempt
-  pruned: boolean;
-  children: string[];
-}
-
-interface AttackTree {
-  nodes: Record<string, AttackNode>;
-  rootIds: string[];
-}
-
-function selectNext(tree: AttackTree): AttackNode {
-  // UCB1: score = successes/attempts + C * sqrt(ln(totalAttempts) / attempts)
-  // C = 1.4 (standard exploration constant)
-  // Return unpruned node with highest UCB score
-}
-```
-
-- Store tree in `/tmp/attack-tree.json` (readable by bash tool for debugging).
-- After each tool call batch, update the current node's attempt count and difficulty estimate.
-- Prune rule: `difficulty > 0.8 && attempts >= 3`.
-- Inject the selected node's path into the next turn's user message as the recommended focus.
-
-**Location:** New file `packages/core/src/agent/attack-tree.ts`, integration in `native-loop.ts` main loop. **Difficulty:** High. Requires mapping tool call results back to tree nodes.
-
----
-
-### 8. Evidence-Gated Branching
+### Evidence-Gated Branching
 
 **What:** Before committing turns to exploitation, verify preconditions: does the endpoint exist? Is auth required? Is the parameter actually injectable? Structure the agent's approach as: recon (2-3 turns) -> precondition checks (1-2 turns) -> exploitation (remaining turns). Don't waste turns on UNION SELECT if the parameter is not even reflected in the response.
 
@@ -195,7 +182,7 @@ function selectNext(tree: AttackTree): AttackNode {
 
 ---
 
-### 9. Self-Rewriting Prompts
+### Self-Rewriting Prompts
 
 **What:** Every 20 turns, the agent pauses to analyze what has worked and what has failed in the current session, then rewrites its own system prompt guidance. Protected critical sections (authorization scope, tool definitions, output format) cannot be modified. Only the strategy/approach sections are rewritable.
 
@@ -213,72 +200,7 @@ function selectNext(tree: AttackTree): AttackNode {
 
 ---
 
-### 10. Best-of-N Racing
-
-**What:** Launch 2-3 agent instances in parallel with different strategy prompts (aggressive/broad spray, methodical/sequential, creative/unusual vectors). Take the first flag found. Cancel remaining agents.
-
-**Source:** Pass@8 vs Pass@1 gap analysis across multiple benchmarks. The gap is consistently 15-25pp, meaning many challenges are solvable but not reliably -- parallelism converts probabilistic success into reliable success.
-
-**Impact:** Expected +5-8 flags at 3x cost. Most cost-effective technique per additional flag if budget allows.
-
-**Implementation sketch:**
-```typescript
-async function raceAgents(
-  configs: NativeAgentConfig[],  // 2-3 configs with different systemPrompts
-  runtime: NativeRuntime,
-  db: pwnkitDB,
-): Promise<NativeAgentState> {
-  const controller = new AbortController();
-  const promises = configs.map(cfg =>
-    runNativeAgentLoop({ config: cfg, runtime, db, signal: controller.signal })
-  );
-  // Return first that finds a flag
-  const winner = await Promise.race(
-    promises.map(p => p.then(s => {
-      if (s.findings.length > 0) { controller.abort(); return s; }
-      throw new Error("no findings");
-    }))
-  ).catch(() => Promise.all(promises).then(states =>
-    states.reduce((best, s) => s.findings.length > best.findings.length ? s : best)
-  ));
-  return winner;
-}
-```
-
-- Requires adding `AbortSignal` support to `runNativeAgentLoop`.
-- Strategy prompts: (1) "Start with the most common vulnerability class for this tech stack", (2) "Systematically test every input field in order", (3) "Focus on unusual vectors: race conditions, parameter pollution, encoding bypasses".
-
-**Location:** New file `packages/core/src/agent/race.ts`, called from `agentic-scanner.ts`. **Difficulty:** Medium. Main complexity is abort signal propagation and result merging.
-
----
-
-### 11. Progress Handoff Between Attempts
-
-**What:** When retrying (after early-stop or failure), inject the prior attempt's structured findings into the new session: discovered credentials, confirmed endpoints, response patterns, and explicitly failed approaches. This is BoxPwnr's `{{ progress_content }}` template variable.
-
-**Source:** BoxPwnr. Their retry mechanism injects prior progress, which they credit for converting ~20% of retries into successes.
-
-**Impact:** Expected +3-5pp improvement on retry success rate. Currently our retry includes only `attemptSummary` (a one-line description). Structured progress would be significantly richer.
-
-**Implementation sketch:**
-- Extend `NativeAgentState.attemptSummary` from a string to a structured object:
-  ```typescript
-  interface AttemptProgress {
-    discoveredEndpoints: string[];
-    credentials: Array<{ username: string; password: string; endpoint: string }>;
-    confirmedVulns: string[];        // e.g., "SQLi on /search?q="
-    failedApproaches: string[];      // e.g., "UNION SELECT on /login -- WAF blocked"
-    techStack: string[];             // e.g., ["Flask", "SQLite", "Jinja2"]
-  }
-  ```
-- Populate this by parsing tool call history (regex extraction from bash outputs and http responses).
-- In the retry system prompt, render this as a structured "Prior Attempt Results" section.
-
-**Location:** `packages/core/src/agent/native-loop.ts` (extraction logic), `packages/core/src/agentic-scanner.ts` (injection into retry prompt). **Difficulty:** Low-Medium. Mostly regex extraction from existing conversation data.
-
----
-
-### 12. External Working Memory
+### External Working Memory
 
 **What:** The agent writes its plan, discovered credentials, and current state to `/tmp/plan.json` via bash commands. At reflection checkpoints (every 5-10 turns), the file is read back and injected into the conversation. This prevents the "credential forgetting" problem where the agent discovers a password early, then fails to use it 15 turns later because it has scrolled out of the effective context window.
 
@@ -296,7 +218,7 @@ async function raceAgents(
 
 ---
 
-### 13. RAG from Prior Solves
+### RAG from Prior Solves
 
 **What:** Build a patterns database from successful exploit runs. When starting a new challenge, match the target's characteristics (tech stack, response patterns, endpoint structure) against prior solutions using keyword overlap. Inject the top 3 matching prior solutions as hints in the system prompt.
 
@@ -327,20 +249,20 @@ async function raceAgents(
 
 ## Summary Table
 
-| # | Technique | Status | Expected Impact | Difficulty | Primary File |
-|---|-----------|--------|----------------|------------|--------------|
-| 1 | Early-Stop + Retry | Shipped | +15-20% recovery | -- | `native-loop.ts`, `agentic-scanner.ts` |
-| 2 | Exploit Script Templates | Shipped | Blind SQLi: 0% to solvable | -- | `prompts.ts` |
-| 3 | Loop/Oscillation Detection | Shipped | +5% (saves 3-8 turns) | -- | `native-loop.ts` |
-| 4 | Context Compaction | Shipped | Prevents 20+ turn degradation | -- | `native-loop.ts` |
-| 5 | Context Relay | Not impl | +5-10% on long scans | Medium | `native-loop.ts` |
-| 6 | Dynamic Playbooks | Not impl | +10-15pp | Low-Medium | New: `playbooks.ts` |
-| 7 | EGATS Attack Tree | Not impl | +5-9pp | High | New: `attack-tree.ts` |
-| 8 | Evidence-Gated Branching | Not impl | +5-8pp | Low | `prompts.ts` |
-| 9 | Self-Rewriting Prompts | Not impl | +10-15pp (long sessions) | Medium | `native-loop.ts` |
-| 10 | Best-of-N Racing | Not impl | +5-8 flags (3x cost) | Medium | New: `race.ts` |
-| 11 | Progress Handoff | Not impl | +3-5pp on retries | Low-Medium | `native-loop.ts`, `agentic-scanner.ts` |
-| 12 | External Working Memory | Not impl | +10-15pp | Low | `prompts.ts`, `native-loop.ts` |
-| 13 | RAG from Prior Solves | Not impl | +5-10pp | Medium | New: `patterns-db.ts` |
+| Technique | Status | Expected Impact | Primary File |
+|-----------|--------|----------------|--------------|
+| Early-Stop + Retry | Shipped | +15-20% recovery | `native-loop.ts`, `agentic-scanner.ts` |
+| Exploit Script Templates | Shipped | Blind SQLi: 0% to solvable | `prompts.ts` |
+| Loop/Oscillation Detection | Shipped | +5% (saves 3-8 turns) | `native-loop.ts` |
+| Context Compaction (LLM-based, multi-recompaction) | Shipped | Prevents 20+ turn degradation | `native-loop.ts` |
+| Dynamic Playbooks (13 playbooks) | Shipped | Cracks XSS/SSTI/IDOR classes | `agent/playbooks.ts` |
+| EGATS Attack Tree Search | Shipped | +5-9pp | `agent/egats.ts` |
+| Best-of-N Strategy Racing | Shipped | +5-8 flags (3x cost) | `racing.ts` |
+| Progress Handoff | Shipped | ~20% retry conversion | `native-loop.ts`, `agentic-scanner.ts` |
+| Context Relay | Not impl | +5-10% on long scans | `native-loop.ts` |
+| Evidence-Gated Branching (prompt-level) | Not impl | +5-8pp | `prompts.ts` |
+| Self-Rewriting Prompts | Not impl | +10-15pp (long sessions) | `native-loop.ts` |
+| External Working Memory | Not impl | +10-15pp | `prompts.ts`, `native-loop.ts` |
+| RAG from Prior Solves | Not impl | +5-10pp | New: `patterns-db.ts` |
 
-**Recommended implementation order** (highest impact per effort): 12 (Working Memory) > 8 (Evidence-Gated) > 6 (Playbooks) > 11 (Progress Handoff) > 5 (Context Relay) > 9 (Self-Rewriting) > 10 (Racing) > 13 (RAG) > 7 (Attack Tree).
+**Recommended next steps** (highest impact per effort): External Working Memory > Evidence-Gated Branching > Context Relay > Self-Rewriting > RAG.

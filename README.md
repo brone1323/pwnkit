@@ -60,6 +60,69 @@ npx pwnkit-cli https://example.com
 
 See the [documentation](https://docs.pwnkit.com) for configuration, runtime modes, and CI/CD setup.
 
+## New in this release
+
+| Flag | What it does |
+|------|--------------|
+| `--auth <json\|file>` | Authenticated scanning. JSON string or file path; supports `bearer`, `cookie`, `basic`, `header`. |
+| `--api-spec <path>` | Pre-load endpoint knowledge from an OpenAPI 3.x / Swagger 2.0 spec (JSON or YAML). |
+| `--export <target>` | Export findings to an issue tracker, e.g. `github:owner/repo`. |
+| `--race` | Best-of-N strategy racing: run multiple attack strategies in parallel and keep whichever lands first. |
+| `--egats` | Enable EGATS (Evidence-Gated Attack Tree Search) — beam-search over a hypothesis tree. |
+| `--only <ids>` | (XBOW runner) Run only the listed challenge IDs, e.g. `--only XBEN-010,XBEN-051`. |
+| `--save-findings` | (XBOW runner) Persist discovered findings as triage-training artifacts. |
+
+New output: PDF pentest reports (`--format pdf`-equivalent via the report writer), GitHub Issues export, and triage-training JSON dumps.
+
+New runtimes and tools:
+
+- **OpenRouter runtime** — first-class multi-model ensemble backend.
+- **Kali Docker executor** — run the agent's bash commands inside a Kali container with the full pentesting toolset (`PWNKIT_FEATURE_DOCKER_EXECUTOR=1`).
+- **PTY sessions** — long-lived interactive sessions for reverse shells, DB clients, SSH (`PWNKIT_FEATURE_PTY_SESSION=1`).
+- **Playwright browser verification** — real-browser XSS oracle that cracked XBEN-011 and XBEN-018.
+- **Web search tool** — the agent can look up CVE details and technique references (`PWNKIT_FEATURE_WEB_SEARCH=1`).
+
+## False-Positive Reduction Moat
+
+pwnkit now ships a full triage pipeline between the research and verify agents. Every finding the research agent produces walks through a stack of independent filters, each of which can kill or downgrade it. The overall effect is the same neural-plus-symbolic agreement Endor Labs uses to reach ~95% FP elimination — except it's open source and runs on your laptop.
+
+| Stage | Module | What it does |
+|-------|--------|--------------|
+| 1. Holding-it-wrong filter | `triage/holding-it-wrong.ts` | Kills findings whose "vulnerability" is literally the documented behavior of the sink (e.g. `fs.writeFile`, `vm.compileFunction`). |
+| 2. 45-feature extractor | `triage/feature-extractor.ts` | Extracts a 45-element numeric vector per finding (response shape, payload signals, category priors) for downstream ML models. |
+| 3. Per-class oracles | `triage/oracles.ts` | Category-specific deterministic checks: SQLi (error + timing), reflected XSS (unique token), SSRF, RCE, path traversal (`/etc/passwd` signature), IDOR. No exploit → no report. |
+| 4. Reachability gate | `triage/reachability.ts` | When a source tree is available, walks imports/references to confirm the sink is reachable from an HTTP handler or CLI entry point. Suppresses dead-code and test-only findings. |
+| 5. Multi-modal agreement | `triage/multi-modal.ts` | Runs [foxguard](https://github.com/peaktwilight/foxguard) against the same source tree and requires agreement with pwnkit before auto-accepting. |
+| 6. PoV generation gate | `triage/pov-gate.ts` | Spins up a narrowly-scoped mini agent whose only job is to produce a working PoC. No PoC in N turns → downgrade to info (`arXiv:2509.07225`). |
+| 7. Structured 4-step verify | `triage/verify-pipeline.ts` | Decomposes blind verify into Reachability → Payload → Impact → Exploit, each with category-specific prompts (GitHub Security Lab taskflow style). |
+| 8. Self-consistency voting | `PWNKIT_FEATURE_CONSENSUS_VERIFY=1` | Runs the structured pipeline N times and takes a majority vote. |
+| 9. Assistant memories | `triage/memories.ts` + `pwnkit triage` CLI | Semgrep-style per-target FP memories. Human triage decisions are stored and injected as few-shot examples into future verify prompts; strong matches auto-reject without spending a verify call. |
+| 10. EGATS tree search | `--egats` | Evidence-Gated Attack Tree Search — beam-search over a hypothesis tree, expanding only branches backed by observed evidence. |
+
+### Feature flags
+
+Every experimental stage can be toggled via an environment variable. All take `0`/`false` to disable, anything else to enable.
+
+| Env var | Default | Enables |
+|---------|---------|---------|
+| `PWNKIT_FEATURE_EARLY_STOP` | on | Early-stop at 50% budget with no findings, then retry with a different strategy |
+| `PWNKIT_FEATURE_LOOP_DETECTION` | on | Detects A-A-A and A-B-A-B loop patterns and injects a warning |
+| `PWNKIT_FEATURE_CONTEXT_COMPACTION` | on | LLM-based compression of middle messages when context exceeds 30k tokens |
+| `PWNKIT_FEATURE_SCRIPT_TEMPLATES` | on | Ships exploit script templates (blind SQLi, SSTI, auth chain) in the shell prompt |
+| `PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS` | off | Injects vulnerability-class playbooks after the recon phase |
+| `PWNKIT_FEATURE_EXTERNAL_MEMORY` | off | Agent writes plan/creds to disk; re-injected at reflection checkpoints |
+| `PWNKIT_FEATURE_PROGRESS_HANDOFF` | off | Injects prior attempt findings when retrying |
+| `PWNKIT_FEATURE_WEB_SEARCH` | off | Lets the agent search the web for CVE details and technique references |
+| `PWNKIT_FEATURE_DOCKER_EXECUTOR` | off | Runs bash commands inside a Kali Docker container |
+| `PWNKIT_FEATURE_PTY_SESSION` | off | Enables interactive PTY sessions for reverse shells, DB clients, SSH |
+| `PWNKIT_FEATURE_EGATS` | off | EGATS beam-search over a hypothesis tree |
+| `PWNKIT_FEATURE_CONSENSUS_VERIFY` | off | Self-consistency: run verify N times and take the majority vote |
+| `PWNKIT_FEATURE_DEBATE` | off | Adversarial prosecutor/defender debate with a skeptical judge |
+| `PWNKIT_FEATURE_MULTIMODAL` | off | foxguard × pwnkit cross-validation |
+| `PWNKIT_FEATURE_REACHABILITY_GATE` | off | Suppresses findings whose sink is not reachable from an entry point |
+| `PWNKIT_FEATURE_POV_GATE` | off | Requires a working executable PoC per finding or downgrades to info |
+| `PWNKIT_FEATURE_TRIAGE_MEMORIES` | off | Semgrep-style per-target persistent FP memories |
+
 ## How It Works
 
 ```mermaid

@@ -40,8 +40,20 @@ export default defineConfig({
           slug: "commands",
         },
         {
+          label: "Features",
+          slug: "features",
+        },
+        {
           label: "Configuration",
           slug: "configuration",
+        },
+        {
+          label: "Recipes",
+          slug: "recipes",
+        },
+        {
+          label: "Finding Triage",
+          slug: "triage",
         },
         {
           label: "Architecture",

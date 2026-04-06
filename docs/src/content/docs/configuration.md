@@ -123,3 +123,50 @@ Use `--verbose` to see the animated attack replay and detailed agent reasoning:
 ```bash
 npx pwnkit-cli scan --target https://api.example.com/chat --verbose
 ```
+
+## Feature flags
+
+pwnkit ships a set of agent-improvement features behind environment-variable flags so you can A/B test them and opt in/out per run. Every flag is read at process start; set `<FLAG>=0` or `<FLAG>=false` to disable, anything else to enable.
+
+| Flag | Default | What it enables |
+|------|---------|-----------------|
+| `PWNKIT_FEATURE_EARLY_STOP` | **on** | Early-stop at 50% budget if no findings, then retry with a different strategy. |
+| `PWNKIT_FEATURE_LOOP_DETECTION` | **on** | Detects A-A-A and A-B-A-B action loops, injects a warning to break the cycle. |
+| `PWNKIT_FEATURE_CONTEXT_COMPACTION` | **on** | Compresses middle-of-conversation messages when the context exceeds 30k tokens. |
+| `PWNKIT_FEATURE_SCRIPT_TEMPLATES` | **on** | Adds exploit-script templates (blind SQLi, SSTI, auth chain) to the shell prompt. |
+| `PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS` | off | Injects technology-specific vulnerability playbooks after the recon phase. |
+| `PWNKIT_FEATURE_EXTERNAL_MEMORY` | off | Agent writes plan/creds to disk, re-injected at reflection checkpoints. |
+| `PWNKIT_FEATURE_PROGRESS_HANDOFF` | off | Injects prior-attempt findings when retrying, so retries don't restart from zero. |
+| `PWNKIT_FEATURE_WEB_SEARCH` | off | Lets the agent search the web for CVE details, vendor docs, and technique references. |
+| `PWNKIT_FEATURE_DOCKER_EXECUTOR` | off | Runs every bash command inside a Kali Linux container with the full pentesting toolchain. |
+| `PWNKIT_FEATURE_PTY_SESSION` | off | Interactive PTY sessions for exploits requiring interactivity (reverse shells, DB clients, SSH). |
+| `PWNKIT_FEATURE_EGATS` | off | Evidence-Gated Attack Tree Search — beam search over a hypothesis tree. Also toggled by `--egats`. |
+| `PWNKIT_FEATURE_CONSENSUS_VERIFY` | off | Self-consistency voting: runs the verify pipeline N times and takes the majority vote. |
+| `PWNKIT_FEATURE_DEBATE` | off | Adversarial debate: prosecutor vs. defender agents argue each finding, a skeptical judge decides. |
+| `PWNKIT_FEATURE_MULTIMODAL` | off | Cross-validates findings against foxguard (Rust pattern scanner). |
+| `PWNKIT_FEATURE_REACHABILITY_GATE` | off | Suppresses findings whose sink is not reachable from an application entry point. |
+| `PWNKIT_FEATURE_POV_GATE` | off | Requires a working executable PoC per finding, otherwise downgrades to `info`. |
+| `PWNKIT_FEATURE_TRIAGE_MEMORIES` | off | Injects Semgrep-style per-target persistent FP memories into the verify pipeline. Pairs with `pwnkit-cli triage`. |
+
+### Example: maximum-accuracy pentest
+
+Turn on every false-positive reduction feature for a client-ready scan:
+
+```bash
+export PWNKIT_FEATURE_CONSENSUS_VERIFY=1
+export PWNKIT_FEATURE_REACHABILITY_GATE=1
+export PWNKIT_FEATURE_POV_GATE=1
+export PWNKIT_FEATURE_TRIAGE_MEMORIES=1
+export PWNKIT_FEATURE_MULTIMODAL=1
+
+npx pwnkit-cli scan --target https://example.com --mode web --depth deep
+```
+
+### Example: Kali toolchain + web search
+
+```bash
+export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
+export PWNKIT_FEATURE_WEB_SEARCH=1
+
+npx pwnkit-cli scan --target https://example.com --mode web
+```
