@@ -3,9 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 const SECTIONS = [
   { id: "hero", label: "Home" },
-  { id: "commands", label: "Features" },
-  { id: "comparison", label: "Compare" },
-  { id: "ci", label: "CI" },
+  { id: "benchmark", label: "Benchmark" },
   { id: "about", label: "About" },
 ];
 
