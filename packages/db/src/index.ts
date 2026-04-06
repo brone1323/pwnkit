@@ -11,6 +11,7 @@ export {
   workItems,
   artifacts,
   workers,
+  triageMemories,
   findingStatuses,
   findingTriageStatuses,
   caseStatuses,

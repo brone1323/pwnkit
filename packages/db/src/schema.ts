@@ -258,6 +258,24 @@ export const artifacts = sqliteTable(
   ]
 );
 
+export const triageMemories = sqliteTable(
+  "triage_memories",
+  {
+    id: text("id").primaryKey(),
+    scope: text("scope").notNull(), // global | target | package
+    scopeValue: text("scope_value"),
+    category: text("category").notNull(),
+    pattern: text("pattern").notNull(),
+    reasoning: text("reasoning").notNull(),
+    createdAt: integer("created_at").notNull(),
+    appliedCount: integer("applied_count").notNull().default(0),
+  },
+  (table) => [
+    index("idx_memories_category").on(table.category, table.scope),
+    index("idx_memories_scope").on(table.scope, table.scopeValue),
+  ]
+);
+
 export const workers = sqliteTable(
   "workers",
   {

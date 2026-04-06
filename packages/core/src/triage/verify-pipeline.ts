@@ -19,6 +19,24 @@ import type {
   NativeMessage,
   NativeContentBlock,
 } from "../runtime/types.js";
+import type { MemoryStore, TriageMemory } from "./memories.js";
+
+// ── Memory Integration ──
+
+/**
+ * Optional hook passed through the structured verify pipeline. When present,
+ * the pipeline will query the memory store for relevant FP patterns before
+ * running the 4-step verification and, if a strong match is found, short-
+ * circuit the finding as a rejection.
+ */
+export interface VerifyMemoryOptions {
+  memoryStore?: MemoryStore;
+  /**
+   * When true, a strong-match memory (score >= store threshold) auto-rejects
+   * the finding without making any LLM calls. Defaults to true.
+   */
+  autoRejectOnStrongMatch?: boolean;
+}
 
 // ── Public Types ──
 
@@ -689,14 +707,18 @@ async function executeStep(
   finding: Finding,
   target: string,
   runtime: NativeRuntime,
+  memoryBlock: string = "",
 ): Promise<StepResult> {
   const start = Date.now();
 
   // Resolve category addendum
   const category = mapCategory(finding);
-  const addendum = category
+  const addendumBody = category
     ? `## Category-Specific Guidance\n\n${CATEGORY_ADDENDUMS[category][step.addendumKey]}`
     : "";
+  const addendum = memoryBlock
+    ? `${addendumBody}\n\n${memoryBlock}`.trim()
+    : addendumBody;
 
   const systemPrompt = step.buildPrompt(finding, target, addendum);
 
@@ -758,11 +780,45 @@ export async function runStructuredVerify(
   finding: Finding,
   target: string,
   runtime: NativeRuntime,
+  memoryOptions?: VerifyMemoryOptions,
 ): Promise<VerifyResult> {
   const steps: StepResult[] = [];
 
+  // Query memory store for learned FP patterns before calling the LLM. A
+  // strong match short-circuits the pipeline; weaker matches are injected as
+  // few-shot context into each step.
+  let memoryBlock = "";
+  if (memoryOptions?.memoryStore) {
+    const store = memoryOptions.memoryStore;
+    try {
+      const autoReject = memoryOptions.autoRejectOnStrongMatch ?? true;
+      if (autoReject) {
+        const strong = await store.findStrongMatch(finding, target);
+        if (strong) {
+          await store.recordApplied(strong.memory.id).catch(() => {});
+          return {
+            verdict: "rejected",
+            confidence: strong.score,
+            steps: [],
+            reasoning: `Auto-rejected by learned memory (score=${strong.score.toFixed(2)}): ${strong.memory.pattern} — ${strong.memory.reasoning}`,
+          };
+        }
+      }
+      const relevant = await store.getRelevantMemories(finding, target);
+      if (relevant.length > 0) {
+        memoryBlock = await store.formatForPrompt(relevant);
+        for (const m of relevant) {
+          await store.recordApplied(m.id).catch(() => {});
+        }
+      }
+    } catch {
+      // Memory integration must never hard-fail the pipeline.
+      memoryBlock = "";
+    }
+  }
+
   for (const step of STEPS) {
-    const result = await executeStep(step, finding, target, runtime);
+    const result = await executeStep(step, finding, target, runtime, memoryBlock);
     steps.push(result);
 
     // Gate: short-circuit on failure
@@ -825,6 +881,7 @@ export type VerifyFn = (
   finding: Finding,
   target: string,
   runtime: NativeRuntime,
+  memoryOptions?: VerifyMemoryOptions,
 ) => Promise<VerifyResult>;
 
 export interface SelfConsistencyOptions {
@@ -848,6 +905,8 @@ export interface SelfConsistencyOptions {
    * Primarily used by tests to avoid real LLM calls.
    */
   verifyFn?: VerifyFn;
+  /** Memory store options forwarded to each verify run. */
+  memoryOptions?: VerifyMemoryOptions;
 }
 
 /**
@@ -905,7 +964,7 @@ export async function runSelfConsistencyVerify(
   const earlyStopCount = Math.ceil(numRuns * earlyStopThreshold);
 
   if (numRuns === 1) {
-    const only = await verifyFn(finding, target, runtime);
+    const only = await verifyFn(finding, target, runtime, options?.memoryOptions);
     return tallyConsensus([only]);
   }
 
@@ -923,7 +982,7 @@ export async function runSelfConsistencyVerify(
     };
 
     for (let i = 0; i < numRuns; i += 1) {
-      verifyFn(finding, target, runtime).then(
+      verifyFn(finding, target, runtime, options?.memoryOptions).then(
         (result) => {
           if (done) return;
           completed.push(result);

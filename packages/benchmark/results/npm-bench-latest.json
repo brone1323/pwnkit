@@ -1,12 +1,12 @@
 {
-  "timestamp": "2026-04-04T20:25:17.946Z",
+  "timestamp": "2026-04-05T21:47:21.396Z",
   "depth": "quick",
   "totalCases": 30,
   "accuracy": 0.3333333333333333,
   "detectionRate": 0,
   "falsePositiveRate": 0,
   "f1": 0,
-  "totalDurationMs": 51,
+  "totalDurationMs": 7884336,
   "results": [
     {
       "pkg": "event-stream",
@@ -15,8 +15,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 7,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 276902
     },
     {
       "pkg": "ua-parser-js",
@@ -25,8 +24,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 214559
     },
     {
       "pkg": "colors",
@@ -35,8 +33,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 202290
     },
     {
       "pkg": "faker",
@@ -45,8 +42,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 132504
     },
     {
       "pkg": "node-ipc",
@@ -55,8 +51,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 223969
     },
     {
       "pkg": "coa",
@@ -65,8 +60,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 479841
     },
     {
       "pkg": "rc",
@@ -75,8 +69,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 380546
     },
     {
       "pkg": "eslint-scope",
@@ -85,8 +78,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 208210
     },
     {
       "pkg": "crossenv",
@@ -95,8 +87,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 32299
     },
     {
       "pkg": "loadsh",
@@ -105,8 +96,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 338425
     },
     {
       "pkg": "lodash@4.17.20",
@@ -115,8 +105,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 302209
     },
     {
       "pkg": "minimist@1.2.5",
@@ -125,8 +114,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 3,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 180765
     },
     {
       "pkg": "node-forge@0.9.0",
@@ -135,8 +123,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 3,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 285346
     },
     {
       "pkg": "express@4.17.1",
@@ -145,8 +132,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 427723
     },
     {
       "pkg": "axios@0.21.0",
@@ -155,8 +141,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 248997
     },
     {
       "pkg": "tar@4.4.12",
@@ -165,8 +150,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 289987
     },
     {
       "pkg": "glob-parent@5.1.0",
@@ -175,8 +159,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 150344
     },
     {
       "pkg": "json5@2.2.1",
@@ -185,8 +168,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 225755
     },
     {
       "pkg": "qs@6.5.2",
@@ -195,8 +177,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 223555
     },
     {
       "pkg": "semver@7.3.7",
@@ -205,8 +186,7 @@
       "findingsCount": 0,
       "hasFindings": false,
       "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "durationMs": 129517
     },
     {
       "pkg": "express@latest",
@@ -214,9 +194,8 @@
       "reason": "widely-used, patched",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 312830
     },
     {
       "pkg": "react@latest",
@@ -224,9 +203,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 204740
     },
     {
       "pkg": "typescript@latest",
@@ -234,9 +212,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 197243
     },
     {
       "pkg": "zod@latest",
@@ -244,9 +221,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 225602
     },
     {
       "pkg": "drizzle-orm@latest",
@@ -254,9 +230,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 270072
     },
     {
       "pkg": "vitest@latest",
@@ -264,9 +239,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 191394
     },
     {
       "pkg": "esbuild@latest",
@@ -274,9 +248,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 2,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 580017
     },
     {
       "pkg": "chalk@latest",
@@ -284,9 +257,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 368133
     },
     {
       "pkg": "commander@latest",
@@ -294,9 +266,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 247398
     },
     {
       "pkg": "dotenv@latest",
@@ -304,9 +275,8 @@
       "reason": "well-maintained, no known issues",
       "findingsCount": 0,
       "hasFindings": false,
-      "correct": false,
-      "durationMs": 1,
-      "error": "spawn pwnkit ENOENT"
+      "correct": true,
+      "durationMs": 333161
     }
   ],
   "verdictBreakdown": {
@@ -322,8 +292,8 @@
     },
     "safe": {
       "total": 10,
-      "correct": 0,
-      "rate": 0
+      "correct": 10,
+      "rate": 1
     }
   }
 }

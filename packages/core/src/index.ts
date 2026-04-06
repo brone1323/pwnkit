@@ -77,7 +77,21 @@ export type {
   VerifyStepName,
   ConsensusResult,
   SelfConsistencyOptions,
+  VerifyMemoryOptions,
 } from "./triage/verify-pipeline.js";
+
+// Triage memories (Semgrep-style persistent FP learning)
+export { MemoryStore, scoreMemory, inferPackage } from "./triage/memories.js";
+export type {
+  TriageMemory,
+  MemoryScope,
+  MemoryStoreOptions,
+  MemoryDbHandle,
+} from "./triage/memories.js";
+
+// PoV (Proof-of-Vulnerability) gate
+export { generatePov, judgePovEvidence } from "./triage/pov-gate.js";
+export type { PovResult, PovArtifactType, GeneratePovOptions } from "./triage/pov-gate.js";
 
 // Remediation guidance
 export { generateRemediation, generateRemediationWithLLM } from "./remediation.js";

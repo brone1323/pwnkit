@@ -32,8 +32,12 @@ import {
   extractFeatures,
   FEATURE_NAMES,
   verifyOracleByCategory,
+  checkMultiModalAgreement,
+  fuseTriageSignals,
+  checkReachability,
 } from "./triage/index.js";
 import { runSelfConsistencyVerify } from "./triage/verify-pipeline.js";
+import { generatePov } from "./triage/pov-gate.js";
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -597,6 +601,124 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
         continue;
       }
 
+      // ── Reachability gate ("Endor Labs moat") ──
+      // Opt-in via PWNKIT_FEATURE_REACHABILITY_GATE. Only runs in white-box
+      // mode when we have source code. For each finding, check whether the
+      // vulnerable sink is actually reachable from an application entry
+      // point (HTTP handler, CLI main, route file). Dead code and test-only
+      // paths are suppressed before we spend any LLM tokens on verify.
+      if (features.reachabilityGate && config.repoPath) {
+        try {
+          const reach = await checkReachability(finding, config.repoPath);
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "reachability_check",
+            agentRole: "triage",
+            payload: {
+              findingId: finding.id,
+              reachable: reach.reachable,
+              confidence: reach.confidence,
+              entryPoints: reach.entryPoints,
+              callPath: reach.callPath,
+              reason: reach.reason,
+            },
+            timestamp: Date.now(),
+          });
+          if (!reach.reachable && reach.confidence >= 0.7) {
+            finding.triageStatus = "suppressed";
+            finding.triageNote = `unreachable: ${reach.reason}`;
+            db.updateFindingStatus?.(finding.id, "false-positive");
+            finding.status = "false-positive";
+            emit({
+              type: "stage:end",
+              stage: "attack",
+              message: `Reachability gate rejected ${finding.id}: ${reach.reason}`,
+            });
+            continue;
+          }
+        } catch (err) {
+          // Reachability check errors must not drop findings silently —
+          // let the rest of the pipeline continue.
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "reachability_check_error",
+            agentRole: "triage",
+            payload: {
+              findingId: finding.id,
+              error: (err as Error).message,
+            },
+            timestamp: Date.now(),
+          });
+        }
+      }
+
+      // ── Multi-modal agreement (foxguard cross-validation) ──
+      // Opt-in via PWNKIT_FEATURE_MULTIMODAL. Only runs when we have source
+      // code (white-box mode). Cross-checks every finding against the
+      // foxguard Rust pattern scanner — if both agents agree, the finding is
+      // almost certainly real; if foxguard disagrees and the evidence is
+      // thin, we auto-reject. This is the "opensoar-hq trinity" validation.
+      if (features.multiModalAgreement && config.repoPath) {
+        try {
+          const mm = await checkMultiModalAgreement(finding, config.repoPath);
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "multi_modal_agreement",
+            agentRole: "triage",
+            payload: {
+              findingId: finding.id,
+              agreement: mm.agreement,
+              confidence: mm.confidence,
+              foxguardMatches: mm.foxguardFindings.length,
+              reasoning: mm.reasoning,
+            },
+            timestamp: Date.now(),
+          });
+
+          const fused = fuseTriageSignals({
+            multiModal: mm,
+            holdingItWrong: false,
+            evidenceCompleteness,
+          });
+
+          if (fused.decision === "auto_accept") {
+            finding.confidence = Math.max(finding.confidence ?? 0, fused.confidence);
+            finding.triageStatus = "accepted";
+            finding.triageNote = `multi_modal_accept: ${fused.reasoning}`;
+          } else if (fused.decision === "auto_reject") {
+            finding.severity = "info";
+            finding.triageStatus = "suppressed";
+            finding.triageNote = `multi_modal_reject: ${fused.reasoning}`;
+            db.updateFindingStatus?.(finding.id, "false-positive");
+            finding.status = "false-positive";
+            emit({
+              type: "stage:end",
+              stage: "attack",
+              message: `Multi-modal rejected ${finding.id}: ${fused.reasoning}`,
+            });
+            continue;
+          } else if (fused.decision === "verify_priority") {
+            finding.confidence = Math.max(finding.confidence ?? 0, mm.confidence);
+            finding.triageNote = `multi_modal_agree: ${mm.reasoning}`;
+          }
+        } catch (err) {
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "multi_modal_error",
+            agentRole: "triage",
+            payload: {
+              findingId: finding.id,
+              error: (err as Error).message,
+            },
+            timestamp: Date.now(),
+          });
+        }
+      }
+
       // ── Per-class verification oracle ──
       // "No exploit, no report" — attempt a deterministic exploit check for
       // each category we have an oracle for. If the oracle verifies, boost
@@ -648,6 +770,73 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
           },
           timestamp: Date.now(),
         });
+      }
+
+      // ── PoV generation gate ──
+      // Empirical ground truth from arXiv:2509.07225: if the agent cannot
+      // build a working PoC in N turns, the finding is likely a false
+      // positive. Run AFTER the oracle (so we skip oracle-verified findings)
+      // and BEFORE the blind verify agent. Only runs when the feature flag
+      // is enabled and we have a native runtime.
+      if (
+        features.povGate
+        && nativeApiRuntime
+        && finding.triageStatus !== "accepted"
+      ) {
+        try {
+          const povStart = Date.now();
+          const pov = await generatePov(finding, config.target, nativeApiRuntime, 5);
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "pov_gate_result",
+            agentRole: "triage",
+            payload: {
+              findingId: finding.id,
+              category: finding.category,
+              hasPov: pov.hasPov,
+              artifactType: pov.artifactType,
+              confidence: pov.confidence,
+              turnsUsed: pov.turnsUsed,
+              reason: pov.reason,
+              durationMs: Date.now() - povStart,
+            },
+            timestamp: Date.now(),
+          });
+          if (pov.hasPov) {
+            // Boost confidence and attach the working PoC as evidence.
+            finding.confidence = Math.max(finding.confidence ?? 0, pov.confidence);
+            finding.triageStatus = "accepted";
+            finding.triageNote =
+              (finding.triageNote ? `${finding.triageNote}; ` : "") +
+              `pov_verified(${pov.artifactType}): ${pov.reason}`;
+            const existing = finding.evidence.analysis ?? "";
+            finding.evidence.analysis =
+              `${existing}${existing ? "\n\n" : ""}` +
+              `## PoV Artifact (${pov.artifactType})\n${pov.povArtifact ?? ""}\n\n` +
+              `## Execution Evidence\n${pov.executionEvidence}`;
+          } else if (pov.turnsUsed >= 5 || pov.reason.startsWith("max turns")) {
+            // Hard gate: no working PoC in budget → downgrade to info.
+            finding.severity = "info";
+            finding.triageNote =
+              (finding.triageNote ? `${finding.triageNote}; ` : "") + "no_pov";
+          } else {
+            // Agent gave up / runtime error / judge failed — annotate but don't
+            // downgrade (the verify agent gets a second shot).
+            finding.triageNote =
+              (finding.triageNote ? `${finding.triageNote}; ` : "") +
+              `pov_failed: ${pov.reason}`;
+          }
+        } catch (err) {
+          db.logEvent?.({
+            scanId,
+            stage: "verify",
+            eventType: "pov_gate_error",
+            agentRole: "triage",
+            payload: { findingId: finding.id, error: (err as Error).message },
+            timestamp: Date.now(),
+          });
+        }
       }
 
       verifyCandidates.push(finding);

@@ -28,6 +28,16 @@ export const features = {
   egatsTreeSearch: env("PWNKIT_FEATURE_EGATS", false),
   /** Self-consistency voting: run the structured verify pipeline N times and take the majority vote */
   selfConsistencyVerify: env("PWNKIT_FEATURE_CONSENSUS_VERIFY", false),
+  /** Adversarial debate: prosecutor vs defender agents debate each finding, skeptical judge decides */
+  adversarialDebate: env("PWNKIT_FEATURE_DEBATE", false),
+  /** Multi-modal agreement: cross-validate findings against foxguard (Rust pattern scanner) */
+  multiModalAgreement: env("PWNKIT_FEATURE_MULTIMODAL", false),
+  /** Reachability gate: suppress findings whose sink is not reachable from an application entry point */
+  reachabilityGate: env("PWNKIT_FEATURE_REACHABILITY_GATE", false),
+  /** PoV gate: require a working, executable PoC per finding or downgrade to info */
+  povGate: env("PWNKIT_FEATURE_POV_GATE", false),
+  /** Semgrep-style per-target persistent FP memories injected into the verify pipeline */
+  triageMemories: env("PWNKIT_FEATURE_TRIAGE_MEMORIES", false),
 };
 
 function env(key: string, defaultValue: boolean): boolean {

@@ -202,6 +202,29 @@ pwnkit is one piece of a three-part open-source security stack:
 - **[foxguard](https://github.com/peaktwilight/foxguard)** — Rust security scanner (prevent)
 - **[opensoar](https://github.com/opensoar-hq/opensoar-core)** — Python-native SOAR platform (respond)
 
+### foxguard × pwnkit cross-validation (multi-modal agreement)
+
+When both a source tree and `foxguard` are available, pwnkit will run foxguard
+against the same code and cross-check every AI-agent finding against the Rust
+pattern scanner's output. Findings where both scanners fire on the same file
+(and ideally the same vulnerability category) are auto-accepted with very high
+confidence; findings that only pwnkit sees, on a file foxguard scanned cleanly,
+are down-weighted and may be auto-rejected.
+
+This is the same approach Endor Labs uses to get ~95% false-positive
+elimination — running a neural classifier AND a pattern-based rule set and
+requiring agreement before auto-triage — except open-source and powered by two
+tools anyone can install. Enable with:
+
+```bash
+export PWNKIT_FEATURE_MULTIMODAL=1
+npx pwnkit-cli scan --target https://example.com --repo ./source
+```
+
+This is the **opensoar-hq trinity** validation: pwnkit detects, foxguard
+cross-checks, opensoar responds. No other open-source project ships this
+neural-plus-symbolic agreement pattern today.
+
 ## License
 
 [Apache 2.0](LICENSE)
