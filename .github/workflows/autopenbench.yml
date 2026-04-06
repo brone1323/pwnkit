@@ -60,16 +60,23 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose version
 
-      - name: Build AutoPenBench Docker images
+      - name: Build AutoPenBench Docker images (tolerant)
         run: |
           cd "$AUTOPENBENCH_PATH"
-          # AutoPenBench's Makefile builds all in-vitro + real-world targets.
-          # Fall back to docker compose build if `make build` is not present.
+          # AutoPenBench's Makefile builds 33 images. Some upstream base
+          # images (e.g. openjdk:8-jre) are deprecated and no longer on
+          # Docker Hub. We tolerate per-image build failures so the rest
+          # still get built — the runner will mark unbuildable tasks as
+          # errors at run time.
           if [ -f Makefile ] && grep -q '^build:' Makefile; then
-            make build
+            make build || echo "Some images failed to build (likely deprecated upstream); continuing"
           else
             docker compose -f benchmark/machines/docker-compose.yml build --parallel || true
           fi
+
+          # List which images actually built
+          echo "=== Built AutoPenBench images ==="
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -i 'penbench\|pen-bench\|inv\|real-world' | head -40 || echo "(no autopenbench images detected)"
         timeout-minutes: 60
 
       - run: pnpm install --frozen-lockfile
