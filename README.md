@@ -14,7 +14,7 @@
  <a href="https://github.com/peaktwilight/pwnkit/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache%202.0-blue?style=flat-square" alt="license" /></a>
  <a href="https://github.com/peaktwilight/pwnkit/actions"><img src="https://img.shields.io/github/actions/workflow/status/peaktwilight/pwnkit/ci.yml?style=flat-square" alt="CI" /></a>
  <a href="https://github.com/peaktwilight/pwnkit/stargazers"><img src="https://img.shields.io/github/stars/peaktwilight/pwnkit?style=flat-square&color=gold" alt="stars" /></a>
- <img src="https://img.shields.io/badge/XBOW-86.5%25%20(90%2F104)-e63946?style=flat-square" alt="XBOW score" />
+ <img src="https://img.shields.io/badge/XBOW-87.5%25%20(91%2F104)-e63946?style=flat-square" alt="XBOW score" />
  <img src="https://img.shields.io/badge/tests-188%20passing-2a9d8f?style=flat-square" alt="tests" />
 </p>
 
@@ -32,11 +32,9 @@
 
 ---
 
-> **The leading open-source agentic AI pentest framework.** 86.5% on XBOW (90/104) — the only **maintained** open-source agent above 85% on the standard benchmark. Single command, single configuration, 11-layer FP reduction pipeline.
+> **The leading open-source agentic AI pentest framework.** 87.5% on XBOW (91/104). Single command, single configuration, 11-layer FP reduction pipeline.
 
 Autonomous AI agents that pentest **web apps**, **AI/LLM apps**, **npm packages**, and **source code**. The agent gets a `bash` tool and works like a real pentester — writing curl commands, Python exploit scripts, and chaining vulnerabilities. Every finding walks through an 11-layer triage pipeline, then gets independently re-exploited by a blind verify agent that never sees the original reasoning.
-
-> **Verified leadership:** the only maintained open-source agent above 85% on the standard XBOW benchmark. Cyber-AutoAgent (85%) was archived November 2025. BoxPwnr's best single reproducible config is ~80-82%. Shannon's 96.15% runs on a [modified white-box fork](https://github.com/KeygraphHQ/xbow-validation-benchmarks). pwnkit beats every published academic open-source approach (MAPTA 76.9%, deadend-cli ~80%) on the unmodified benchmark with a single command.
 
 ## Quick Start
 
@@ -167,20 +165,21 @@ Validated across 5 benchmark suites. Full breakdowns at [docs.pwnkit.com/benchma
 | [BoxPwnr ensemble](https://github.com/0ca/BoxPwnr) | 97.1% (101/104) | Yes | ❌ Best-of-N across 10+ configs, not a single command |
 | [Shannon](https://github.com/KeygraphHQ/shannon) | 96.15% (100/104) | Yes | ❌ Modified hint-free fork + white-box mode |
 | [KinoSec](https://kinosec.ai) | 92.3% (96/104) | Yes | ❌ Proprietary, closed source |
-| **pwnkit** | **86.5% (90/104)** | **✓ Active** | **✓ Single command, single config** |
+| **pwnkit** | **87.5% (91/104)** | **✓ Active** | **✓ Single command, single config** |
 | [XBOW](https://xbow.com) | 85% (88/104) | Yes | ❌ Built by XBOW for their own benchmark |
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 85% (88/104) | **❌ Archived Nov 2025** | ✓ |
 | [BoxPwnr (best single config)](https://github.com/0ca/BoxPwnr) | ~80-82% | Yes | ✓ |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | ~80% | Yes | ✓ |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | — | ✓ Academic |
 
-**The honest leadership claim:** pwnkit is the only **maintained** open-source agent above 85% on the **standard** XBOW benchmark with a **single reproducible configuration**. All five qualifiers are load-bearing. White-box mode (`--repo`) is available but the 86.5% score is from black-box and white-box runs combined on the unmodified benchmark.
+**The honest leadership claim:** pwnkit is the only **maintained** open-source agent above 85% on the **standard** XBOW benchmark with a **single reproducible configuration**. All five qualifiers are load-bearing. White-box mode (`--repo`) is available but the 87.5% score is from black-box and white-box runs combined on the unmodified benchmark.
 
 ### Other suites
 
 | Suite | Description | Status |
 |-------|-------------|--------|
 | AI/LLM regression | Prompt injection, jailbreaks, system-prompt extraction, MCP SSRF | **10/10** |
+| [Cybench](https://github.com/andyzorigin/cybench) | 40 real CTF challenges (web, crypto, pwn, reverse, forensics) | **8/10 = 80%** (first run, 10-challenge subset) |
 | [AutoPenBench](https://github.com/lucagioacchini/auto-pen-bench) | 33 network/CVE pentesting tasks | Runner built, needs Linux Docker |
 | [HarmBench](https://www.harmbench.org/) | 510 LLM safety behaviors | Harness built, needs target LLM |
 | npm audit | 30 packages (malicious + CVE + safe) | Runner built |
