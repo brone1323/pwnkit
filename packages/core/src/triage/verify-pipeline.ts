@@ -791,3 +791,175 @@ export async function runStructuredVerify(
     reasoning: `Finding confirmed through all 4 verification steps with ${Math.round(aggregateConfidence * 100)}% aggregate confidence. Reachability: ${steps[0]!.reasoning.slice(0, 100)}... Payload: ${steps[1]!.reasoning.slice(0, 100)}...`,
   };
 }
+
+// ── Self-Consistency Voting ──
+
+/**
+ * The consensus verdict produced by `runSelfConsistencyVerify`.
+ *
+ * Self-consistency voting runs the structured verify pipeline N times and
+ * takes the majority verdict. Because LLM sampling is non-deterministic, any
+ * single run may produce a false positive or false negative; aggregating
+ * across runs reduces variance and improves precision.
+ */
+export interface ConsensusResult {
+  /** Majority-vote verdict across all completed runs. */
+  verdict: VerifyVerdict;
+  /** Fraction of completed runs whose verdict matched the majority (0-1). */
+  confidence: number;
+  /** All completed VerifyResult objects, in the order they finished. */
+  runs: VerifyResult[];
+  /**
+   * Unanimity of the vote: 1.0 when every run agreed, 0.5 on a dead split.
+   * Equivalent to `confidence` for two-class voting but exposed separately
+   * for callers that want to reason about it independently.
+   */
+  agreement: number;
+}
+
+/**
+ * A function matching the shape of `runStructuredVerify`. Exposed as a type
+ * so tests can inject a mock verifier without touching the NativeRuntime.
+ */
+export type VerifyFn = (
+  finding: Finding,
+  target: string,
+  runtime: NativeRuntime,
+) => Promise<VerifyResult>;
+
+export interface SelfConsistencyOptions {
+  /** Number of parallel runs to launch. Default: 5. */
+  numRuns?: number;
+  /**
+   * Sampling temperature hint. The current NativeRuntime does not expose a
+   * per-call temperature knob, so this is accepted for forward compatibility
+   * and logged; FP reduction still arises from inherent sampling variance.
+   * Default: 0.7.
+   */
+  temperature?: number;
+  /**
+   * Early-termination threshold. Once a single verdict has accumulated
+   * `>= ceil(numRuns * earlyStopThreshold)` votes, the remaining pending runs
+   * are abandoned and the majority verdict is returned. Default: 0.8.
+   */
+  earlyStopThreshold?: number;
+  /**
+   * Dependency-injectable verify function. Defaults to `runStructuredVerify`.
+   * Primarily used by tests to avoid real LLM calls.
+   */
+  verifyFn?: VerifyFn;
+}
+
+/**
+ * Aggregate a set of completed `VerifyResult`s into a `ConsensusResult`.
+ * Kept as a pure helper so the voting logic is trivially unit-testable.
+ */
+export function tallyConsensus(runs: VerifyResult[]): ConsensusResult {
+  if (runs.length === 0) {
+    throw new Error("tallyConsensus requires at least one completed run");
+  }
+
+  let confirmed = 0;
+  let rejected = 0;
+  for (const r of runs) {
+    if (r.verdict === "confirmed") confirmed += 1;
+    else rejected += 1;
+  }
+
+  // Ties default to "rejected" — when the pipeline can't reach a clear
+  // majority, the safer posture is to treat the finding as unverified.
+  const verdict: VerifyVerdict = confirmed > rejected ? "confirmed" : "rejected";
+  const majorityCount = Math.max(confirmed, rejected);
+  const confidence = majorityCount / runs.length;
+
+  return {
+    verdict,
+    confidence: Math.round(confidence * 100) / 100,
+    runs,
+    agreement: Math.round(confidence * 100) / 100,
+  };
+}
+
+/**
+ * Run the structured verify pipeline N times and return the majority-vote
+ * verdict ("self-consistency" decoding applied to the verify step).
+ *
+ * The runs execute in parallel. Early termination kicks in as soon as any
+ * single verdict has locked up a majority that the remaining in-flight runs
+ * cannot overturn — at that point we return immediately and let the pending
+ * promises settle in the background. This keeps latency close to the single
+ * fastest "decisive" run in the clear-cut case.
+ */
+export async function runSelfConsistencyVerify(
+  finding: Finding,
+  target: string,
+  runtime: NativeRuntime,
+  options?: SelfConsistencyOptions,
+): Promise<ConsensusResult> {
+  const numRuns = Math.max(1, options?.numRuns ?? 5);
+  const earlyStopThreshold = options?.earlyStopThreshold ?? 0.8;
+  const verifyFn: VerifyFn = options?.verifyFn ?? runStructuredVerify;
+  // A threshold > 1 disables all early termination — useful for tests and
+  // for callers that always want the full N-way vote.
+  const earlyStopEnabled = earlyStopThreshold <= 1;
+  const earlyStopCount = Math.ceil(numRuns * earlyStopThreshold);
+
+  if (numRuns === 1) {
+    const only = await verifyFn(finding, target, runtime);
+    return tallyConsensus([only]);
+  }
+
+  const completed: VerifyResult[] = [];
+  let confirmed = 0;
+  let rejected = 0;
+  let settled = 0;
+
+  return new Promise<ConsensusResult>((resolve, reject) => {
+    let done = false;
+    const finish = (result: ConsensusResult) => {
+      if (done) return;
+      done = true;
+      resolve(result);
+    };
+
+    for (let i = 0; i < numRuns; i += 1) {
+      verifyFn(finding, target, runtime).then(
+        (result) => {
+          if (done) return;
+          completed.push(result);
+          settled += 1;
+          if (result.verdict === "confirmed") confirmed += 1;
+          else rejected += 1;
+
+          // Early termination: either a verdict has crossed the early-stop
+          // threshold, or no verdict can mathematically change the majority.
+          if (earlyStopEnabled) {
+            const leader = Math.max(confirmed, rejected);
+            const remaining = numRuns - settled;
+            const trailer = Math.min(confirmed, rejected);
+            if (leader >= earlyStopCount || leader > trailer + remaining) {
+              finish(tallyConsensus(completed.slice()));
+              return;
+            }
+          }
+
+          if (settled === numRuns) {
+            finish(tallyConsensus(completed.slice()));
+          }
+        },
+        (err) => {
+          if (done) return;
+          settled += 1;
+          // A single failed run should not abort the ensemble — but if every
+          // run fails, surface the last error so callers can react.
+          if (settled === numRuns && completed.length === 0) {
+            done = true;
+            reject(err instanceof Error ? err : new Error(String(err)));
+          } else if (settled === numRuns) {
+            finish(tallyConsensus(completed.slice()));
+          }
+        },
+      );
+    }
+  });
+}

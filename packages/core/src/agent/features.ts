@@ -26,6 +26,8 @@ export const features = {
   ptySession: env("PWNKIT_FEATURE_PTY_SESSION", false),
   /** EGATS (Evidence-Gated Attack Tree Search) — beam-search exploration of attack hypotheses */
   egatsTreeSearch: env("PWNKIT_FEATURE_EGATS", false),
+  /** Self-consistency voting: run the structured verify pipeline N times and take the majority vote */
+  selfConsistencyVerify: env("PWNKIT_FEATURE_CONSENSUS_VERIFY", false),
 };
 
 function env(key: string, defaultValue: boolean): boolean {

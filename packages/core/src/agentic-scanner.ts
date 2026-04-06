@@ -27,7 +27,13 @@ import { parseApiSpec } from "./api-spec.js";
 import { raceWithDefaults } from "./racing.js";
 import type { RaceResult } from "./racing.js";
 import { runEGATSWithDefaults } from "./agent/egats.js";
-import { isHoldingItWrong, extractFeatures, FEATURE_NAMES } from "./triage/index.js";
+import {
+  isHoldingItWrong,
+  extractFeatures,
+  FEATURE_NAMES,
+  verifyOracleByCategory,
+} from "./triage/index.js";
+import { runSelfConsistencyVerify } from "./triage/verify-pipeline.js";
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -591,6 +597,59 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
         continue;
       }
 
+      // ── Per-class verification oracle ──
+      // "No exploit, no report" — attempt a deterministic exploit check for
+      // each category we have an oracle for. If the oracle verifies, boost
+      // confidence and mark the finding accepted. If it fails and we have an
+      // oracle for the category, downgrade severity to low and annotate.
+      // Categories without oracles fall through to the LLM-verify stage.
+      try {
+        const oracle = await verifyOracleByCategory(finding, config.target);
+        db.logEvent?.({
+          scanId,
+          stage: "verify",
+          eventType: "oracle_result",
+          agentRole: "triage",
+          payload: {
+            findingId: finding.id,
+            category: finding.category,
+            verified: oracle.verified,
+            confidence: oracle.confidence,
+            evidence: oracle.evidence,
+            reason: oracle.reason,
+          },
+          timestamp: Date.now(),
+        });
+
+        if (oracle.verified) {
+          finding.confidence = 1.0;
+          finding.triageStatus = "accepted";
+          finding.triageNote = `oracle_verified: ${oracle.evidence}`;
+        } else if (
+          oracle.reason &&
+          !oracle.reason.startsWith("no oracle for category")
+        ) {
+          // An oracle exists for this category but the exploit didn't
+          // reproduce. Downgrade severity and annotate so downstream agents
+          // don't over-promote the finding.
+          finding.severity = "low";
+          finding.triageNote = `oracle_failed: ${oracle.reason}`;
+        }
+      } catch (err) {
+        // Never let oracle errors kill the scan — log and move on.
+        db.logEvent?.({
+          scanId,
+          stage: "verify",
+          eventType: "oracle_error",
+          agentRole: "triage",
+          payload: {
+            findingId: finding.id,
+            error: (err as Error).message,
+          },
+          timestamp: Date.now(),
+        });
+      }
+
       verifyCandidates.push(finding);
     }
 
@@ -617,10 +676,81 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
         timestamp: Date.now(),
       });
 
-      if (useNative) {
-        await runNativeVerify(nativeApiRuntime, db, config, scanId, verifyCandidates, emit);
+      // ── Self-consistency voting (feature-gated) ──
+      // Before the agentic verify agent touches anything, optionally run the
+      // structured verify pipeline N=3 times per candidate and take a
+      // majority vote. Findings rejected by consensus are dropped from the
+      // verify queue and marked as false positives — this is the cheapest
+      // remaining FP-reduction knob in the pipeline (~15% in research).
+      let consensusFiltered = verifyCandidates;
+      if (features.selfConsistencyVerify && nativeApiRuntime) {
+        const survivors: Finding[] = [];
+        for (const finding of verifyCandidates) {
+          try {
+            const consensus = await runSelfConsistencyVerify(
+              finding,
+              config.target,
+              nativeApiRuntime,
+              { numRuns: 3, temperature: 0.7, earlyStopThreshold: 0.8 },
+            );
+            db.logEvent?.({
+              scanId,
+              stage: "verify",
+              eventType: "consensus_verify",
+              agentRole: "verify",
+              payload: {
+                findingId: finding.id,
+                verdict: consensus.verdict,
+                confidence: consensus.confidence,
+                agreement: consensus.agreement,
+                runCount: consensus.runs.length,
+                runVerdicts: consensus.runs.map((r) => r.verdict),
+              },
+              timestamp: Date.now(),
+            });
+            emit({
+              type: "stage:end",
+              stage: "verify",
+              message: `Consensus ${consensus.verdict} for ${finding.id} (${Math.round(consensus.confidence * 100)}% agreement across ${consensus.runs.length} runs)`,
+            });
+            if (consensus.verdict === "rejected") {
+              finding.triageStatus = "suppressed";
+              finding.triageNote = `rejected by self-consistency vote (${Math.round(consensus.confidence * 100)}% agreement, ${consensus.runs.length} runs)`;
+              db.updateFindingStatus?.(finding.id, "false-positive");
+              finding.status = "false-positive";
+              continue;
+            }
+            survivors.push(finding);
+          } catch (err) {
+            // If consensus verification itself errors, fall through to the
+            // agentic verify agent rather than silently dropping the finding.
+            db.logEvent?.({
+              scanId,
+              stage: "verify",
+              eventType: "consensus_verify_error",
+              agentRole: "verify",
+              payload: {
+                findingId: finding.id,
+                error: err instanceof Error ? err.message : String(err),
+              },
+              timestamp: Date.now(),
+            });
+            survivors.push(finding);
+          }
+        }
+        consensusFiltered = survivors;
+      }
+
+      if (consensusFiltered.length === 0) {
+        emit({
+          type: "stage:end",
+          stage: "verify",
+          message: "All candidates rejected by consensus — skipping agentic verify.",
+        });
+      } else if (useNative) {
+        await runNativeVerify(nativeApiRuntime, db, config, scanId, consensusFiltered, emit);
       } else {
-        await runLegacyVerify(legacyRuntime, db, config, scanId, verifyCandidates, emit, dbPath);
+        await runLegacyVerify(legacyRuntime, db, config, scanId, consensusFiltered, emit, dbPath);
       }
 
       // Merge verification results — DB is source of truth

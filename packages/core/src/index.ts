@@ -65,8 +65,19 @@ export { parseApiSpec } from "./api-spec.js";
 export type { ApiSpecSummary, ApiSpecEndpoint, ApiSpecParameter, ApiSpecAuthScheme } from "./api-spec.js";
 
 // Structured verification pipeline
-export { runStructuredVerify } from "./triage/verify-pipeline.js";
-export type { VerifyResult, StepResult, VerifyVerdict, VerifyStepName } from "./triage/verify-pipeline.js";
+export {
+  runStructuredVerify,
+  runSelfConsistencyVerify,
+  tallyConsensus,
+} from "./triage/verify-pipeline.js";
+export type {
+  VerifyResult,
+  StepResult,
+  VerifyVerdict,
+  VerifyStepName,
+  ConsensusResult,
+  SelfConsistencyOptions,
+} from "./triage/verify-pipeline.js";
 
 // Remediation guidance
 export { generateRemediation, generateRemediationWithLLM } from "./remediation.js";
