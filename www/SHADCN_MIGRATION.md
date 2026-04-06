@@ -174,7 +174,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
 
 <TooltipProvider>
   <Table>
-    <TableCaption>XBOW benchmark — 86.5% pwnkit vs competitors</TableCaption>
+    <TableCaption>XBOW benchmark — 87.5% pwnkit vs competitors</TableCaption>
     <TableHeader>
       <TableRow>
         <TableHead>Agent</TableHead>
@@ -186,7 +186,7 @@ import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from "@/comp
     <TableBody>
       <TableRow>
         <TableCell className="font-medium">pwnkit</TableCell>
-        <TableCell className="text-right">86.5%</TableCell>
+        <TableCell className="text-right">87.5%</TableCell>
         <TableCell className="text-right">$0.42</TableCell>
         <TableCell>
           <Tooltip>
@@ -210,7 +210,7 @@ Before:
 
 ```astro
 <span class="inline-flex items-center rounded-full border border-crimson/40 bg-crimson/10 px-2 py-0.5 text-xs text-crimson">
-  86.5%
+  87.5%
 </span>
 ```
 
@@ -219,7 +219,7 @@ After:
 ```tsx
 import { Badge } from "@/components/ui/badge"
 
-<Badge variant="default">86.5%</Badge>          {/* solid crimson */}
+<Badge variant="default">87.5%</Badge>          {/* solid crimson */}
 <Badge variant="outline">XBOW verified</Badge>  {/* hairline outline */}
 <Badge variant="secondary">v0.5</Badge>         {/* night-lighter chip */}
 ```

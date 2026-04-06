@@ -5,7 +5,7 @@ description: Competitor analysis, evidence-based improvement techniques, and res
 
 Synthesis of competitive intelligence and published research on autonomous pentesting agents, benchmarked against the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Data current as of April 2026.
 
-> **pwnkit status (April 2026):** 86.5% on XBOW (90/104). Beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), XBOW's own agent (85%), and **BoxPwnr's best single-model score of 81.7%** (GLM-5). Still behind BoxPwnr's 97.1% best-of-N aggregate and Shannon's 96.15% white-box score.
+> **pwnkit status (April 2026):** 87.5% on XBOW (91/104). Beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), XBOW's own agent (85%), and **BoxPwnr's best single-model score of 81.7%** (GLM-5). Still behind BoxPwnr's 97.1% best-of-N aggregate and Shannon's 96.15% white-box score.
 
 For pwnkit's own benchmark scores, see the [Benchmark](/benchmark/) page. For the Shannon-specific gap analysis, see [XBOW Analysis](/research/xbow-analysis/).
 
@@ -60,9 +60,9 @@ Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit h
 
 Implementation: `packages/core/src/triage/multi-modal.ts`.
 
-### 86.5% XBOW — beats BoxPwnr's best single-model
+### 87.5% XBOW — beats BoxPwnr's best single-model
 
-BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's 86.5% with a single model beats that single-model number by ~5pp, while trailing the best-of-N aggregate.
+BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's 87.5% with a single model beats that single-model number by ~5pp, while trailing the best-of-N aggregate.
 
 ## The meta-finding
 
