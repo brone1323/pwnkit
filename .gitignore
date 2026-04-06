@@ -11,3 +11,4 @@ ROADMAP.md
 demo/out/
 pnpm-publish-summary.json
 *.sync-conflict-*
+.claude/SESSION_STATUS.md
