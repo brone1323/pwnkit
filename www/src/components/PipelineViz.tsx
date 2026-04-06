@@ -1,10 +1,10 @@
 import { motion } from "framer-motion";
 
 const stages = [
-  { name: "Discover", desc: "Map attack surface", color: "#3b82f6" },
-  { name: "Attack", desc: "Execute 47+ probes", color: "#dc2626" },
-  { name: "Verify", desc: "Kill false positives", color: "#f59e0b" },
-  { name: "Report", desc: "SARIF + markdown", color: "#22c55e" },
+  { name: "Discover", desc: "Map attack surface", color: "#DC2626" },
+  { name: "Attack", desc: "Execute 47+ probes", color: "#DC2626" },
+  { name: "Verify", desc: "Kill false positives", color: "#DC2626" },
+  { name: "Report", desc: "SARIF + markdown", color: "#DC2626" },
 ];
 
 export default function PipelineViz() {
