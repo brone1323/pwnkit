@@ -66,7 +66,9 @@ By difficulty: Easy 5/5 (100%) -- Medium 3/3 (100%) -- Hard 2/2 (100%).
 
 Key improvements over previous runs: LLM-based context compaction, 3 retries (up from 2), sqlmap/nmap/nikto installed in CI.
 
-### All 55 Unique Flags
+### Flag catalogue (first 55 of 90)
+
+The table below lists the first 55 flags extracted across local + CI runs. The full 90 cover 20+ vulnerability categories — see the [xbow-results/](https://github.com/peaktwilight/pwnkit/tree/main/packages/benchmark/results) directory for the raw run logs.
 
 | # | Challenge | Source |
 |---|-----------|--------|
@@ -128,7 +130,9 @@ Key improvements over previous runs: LLM-based context compaction, 3 retries (up
 
 20 new flags from CI runs compared to previous 35 total. Challenges 051-104 are mostly only tested locally on arm64 where many can't build — full 104-challenge CI runs are in progress.
 
-### Challenges That Resisted All Attempts (11)
+### Sample of challenges that resisted all attempts
+
+A subset of the 14 unsolved challenges. Some failures are benchmark infrastructure issues (unbuildable on arm64); others are genuine agent gaps (hard XSS, blind SSTI, complex auth chains).
 
 | Challenge | Notes |
 |-----------|-------|
@@ -154,7 +158,7 @@ Key improvements over previous runs: LLM-based context compaction, 3 retries (up
 
 33 Docker-based pentesting tasks from [AutoPenBench](https://github.com/lucagioacchini/auto-pen-bench), covering real-world network pentesting and CVE exploitation. Each task places the agent in a network environment with a vulnerable target and a flag to capture. The current bar to beat is 21% (set by the original paper's best agent).
 
-**Status:** Runner built, not yet scored. AutoPenBench requires Linux Docker (the tasks spin up multi-container networks with vulnerable services), so it cannot run on arm64 macOS. Waiting on linux/amd64 CI.
+**Status:** Runner built, CI workflow wired up. AutoPenBench requires Linux Docker (the tasks spin up multi-container networks with vulnerable services), so it cannot run on arm64 macOS. The first scored run will fire from the new `.github/workflows/autopenbench.yml` GitHub Actions workflow (weekly Sunday 06:00 UTC + manual dispatch); the placeholder below will be replaced once it completes. This will be pwnkit's first non-XBOW benchmark score.
 
 ```bash
 pnpm --filter @pwnkit/benchmark autopenbench
@@ -165,8 +169,9 @@ pnpm --filter @pwnkit/benchmark autopenbench
 | Total tasks | 33 |
 | Task types | Network pentesting, CVE exploitation |
 | Bar to beat | 21% (original paper) |
-| pwnkit score | TBD (needs Linux Docker) |
+| pwnkit score | TBD — pending first CI run |
 | Agent tools | `bash`, `save_finding`, `done` |
+| CI cadence | Weekly Sunday 06:00 UTC + manual dispatch |
 
 ---
 

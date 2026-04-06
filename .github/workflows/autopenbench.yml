@@ -2,14 +2,35 @@ name: AutoPenBench Benchmark
 
 on:
   workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Number of tasks to run (max 33)'
+        required: false
+        default: '33'
+      only:
+        description: 'Comma-separated target IDs (e.g. "in-vitro_access_control_vm0,real-world_cve_vm6")'
+        required: false
+        default: ''
+      features:
+        description: 'Feature flags: "all" (default), "none" (baseline), or "experimental"'
+        required: false
+        default: 'all'
+  schedule:
+    # Weekly on Sunday at 06:00 UTC
+    - cron: "0 6 * * 0"
 
 jobs:
   autopenbench:
     runs-on: ubuntu-latest
-    timeout-minutes: 240
+    timeout-minutes: 360
 
     env:
-      AUTOPENBENCH_PATH: /tmp/autopenbench
+      # The runner defaults to /tmp/auto-pen-bench — keep these in sync.
+      AUTOPENBENCH_PATH: /tmp/auto-pen-bench
+      # Azure OpenAI is the primary runtime for pwnkit benchmarks.
+      # Do NOT set OPENROUTER_API_KEY here — pwnkit prioritizes OpenRouter
+      # over Azure when both are present, which would route benchmark
+      # traffic to OpenRouter instead of our Azure deployment.
       AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
       AZURE_OPENAI_BASE_URL: ${{ secrets.AZURE_OPENAI_BASE_URL }}
       AZURE_OPENAI_MODEL: ${{ secrets.AZURE_OPENAI_MODEL }}
@@ -30,20 +51,120 @@ jobs:
       - name: Build AutoPenBench Docker images
         run: |
           cd "$AUTOPENBENCH_PATH"
-          docker compose -f benchmark/machines/docker-compose.yml build --parallel
-        timeout-minutes: 30
+          # AutoPenBench's Makefile builds all in-vitro + real-world targets.
+          # Fall back to docker compose build if `make build` is not present.
+          if [ -f Makefile ] && grep -q '^build:' Makefile; then
+            make build
+          else
+            docker compose -f benchmark/machines/docker-compose.yml build --parallel || true
+          fi
+        timeout-minutes: 60
 
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
 
+      - name: Install pentest tools
+        run: |
+          # Full pentest toolset — give the agent every weapon BoxPwnr has.
+          # Installed directly on the Ubuntu runner. AutoPenBench tasks SSH
+          # into a Kali container which already ships with Kali tools, but
+          # we still install host-side tools so the agent's bash calls
+          # outside SSH have a usable environment.
+          sudo apt-get update -qq
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+            sqlmap nmap nikto \
+            gobuster dirb wfuzz ffuf \
+            hydra john hashcat \
+            whatweb wafw00f \
+            nbtscan smbclient \
+            netcat-openbsd dnsutils \
+            sshpass openssh-client \
+            python3-pip python3-requests \
+            jq xmlstarlet \
+            seclists 2>/dev/null || echo "Some packages failed (check apt log)"
+
+          pip3 install --quiet --break-system-packages \
+            requests beautifulsoup4 lxml \
+            paramiko impacket 2>/dev/null || echo "Some Python packages failed"
+
+          echo "=== Installed pentest tools ==="
+          for tool in sqlmap nmap nikto gobuster dirb wfuzz ffuf hydra john hashcat whatweb wafw00f curl wget python3 jq sshpass; do
+            if command -v $tool >/dev/null 2>&1; then
+              echo "  ✓ $tool"
+            else
+              echo "  ✗ $tool (missing)"
+            fi
+          done
+
+      - name: Configure feature flags
+        run: |
+          FEATURES="${{ inputs.features || 'all' }}"
+          if [ "$FEATURES" = "none" ]; then
+            echo "PWNKIT_FEATURE_EARLY_STOP=0" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_LOOP_DETECTION=0" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_CONTEXT_COMPACTION=0" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_SCRIPT_TEMPLATES=0" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS=0" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_EXTERNAL_MEMORY=0" >> "$GITHUB_ENV"
+            echo "Running with ALL features DISABLED (baseline)"
+          elif [ "$FEATURES" = "experimental" ]; then
+            echo "PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS=1" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_EXTERNAL_MEMORY=1" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_PROGRESS_HANDOFF=1" >> "$GITHUB_ENV"
+            echo "PWNKIT_FEATURE_WEB_SEARCH=1" >> "$GITHUB_ENV"
+            echo "Running with ALL features including experimental"
+          else
+            echo "Running with default features (stable improvements ON, experimental OFF)"
+          fi
+
       - name: Run AutoPenBench benchmark
-        run: pnpm --filter @pwnkit/benchmark autopenbench
-        timeout-minutes: 180
+        run: |
+          LIMIT="${{ inputs.limit || '33' }}"
+          ONLY="${{ inputs.only || '' }}"
+          ONLY_FLAG=""
+          if [ -n "$ONLY" ]; then
+            ONLY_FLAG="--only $ONLY"
+          fi
+          echo "Running AutoPenBench... (limit=$LIMIT, only=$ONLY)"
+          # The runner persists results to packages/benchmark/results/autopenbench-latest.json
+          # on its own — no stdout capture needed.
+          pnpm --filter @pwnkit/benchmark autopenbench --limit "$LIMIT" --retries 3 --save-findings $ONLY_FLAG
+        timeout-minutes: 330
 
       - name: Upload results artifact
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: autopenbench-results
+          name: autopenbench-results-${{ inputs.features || 'all' }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: packages/benchmark/results/autopenbench-latest.json
+
+      - name: Post summary
+        if: always()
+        run: |
+          RESULTS="packages/benchmark/results/autopenbench-latest.json"
+          if [ ! -f "$RESULTS" ]; then
+            echo "### AutoPenBench Benchmark" >> "$GITHUB_STEP_SUMMARY"
+            echo "No results file produced." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          TOTAL=$(jq '.tasks // (.results | length)' "$RESULTS")
+          FLAGS=$(jq '.flags // ([.results[] | select(.flagFound == true)] | length)' "$RESULTS")
+          ERRORS=$(jq '[.results[] | select(.error != null and .error != "")] | length' "$RESULTS")
+          PCT=$(awk "BEGIN { if ($TOTAL > 0) printf \"%.1f\", ($FLAGS / $TOTAL) * 100; else print \"0.0\" }")
+          echo "### AutoPenBench Benchmark Results" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Metric | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|--------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Total tasks | $TOTAL |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Flags captured | $FLAGS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Task errors | $ERRORS |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| **Score** | **$FLAGS / $TOTAL = $PCT%** |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Bar to beat:** 21% (original AutoPenBench paper)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "#### By category" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Category | Flags / Total |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|----------|---------------|" >> "$GITHUB_STEP_SUMMARY"
+          jq -r '.results | group_by(.level + "/" + .category) | .[] | "| \(.[0].level)/\(.[0].category) | \([.[] | select(.flagFound)] | length) / \(length) |"' "$RESULTS" >> "$GITHUB_STEP_SUMMARY"

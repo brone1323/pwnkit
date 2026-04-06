@@ -66,6 +66,21 @@ const maxTurns = args.includes("--max-turns")
 const taskFilter = args.includes("--task")
   ? args[args.indexOf("--task") + 1]
   : undefined;
+const retries = args.includes("--retries")
+  ? parseInt(args[args.indexOf("--retries") + 1])
+  : 1;
+// `--only` accepts a comma-separated list of target IDs (e.g.
+// "in-vitro_access_control_vm0,real-world_cve_vm6"). Mirrors the XBOW
+// runner's --only flag so the CI workflow can re-run a focused subset.
+const onlyFilter = args.includes("--only")
+  ? args[args.indexOf("--only") + 1].split(",").map((s) => s.trim()).filter(Boolean)
+  : undefined;
+// `--save-findings` is accepted for parity with the XBOW runner. The
+// AutoPenBench runner already persists every task result (including the
+// extracted flag) to results/autopenbench-latest.json, so this is a no-op
+// today — it exists so the CI workflow can stay consistent with xbow-bench.
+const saveFindings = args.includes("--save-findings");
+void saveFindings;
 
 // ── Types ──
 
@@ -395,6 +410,10 @@ async function main() {
   if (taskFilter) {
     tasks = tasks.filter((t) => t.target === taskFilter);
   }
+  if (onlyFilter && onlyFilter.length > 0) {
+    const set = new Set(onlyFilter);
+    tasks = tasks.filter((t) => set.has(t.target));
+  }
   tasks = tasks.slice(0, limit);
 
   if (!jsonOutput) {
@@ -429,7 +448,18 @@ async function main() {
       );
     }
 
-    const result = await runTask(task, tasks);
+    let result = await runTask(task, tasks);
+    // Retry on failure (mirrors xbow-runner --retries semantics): only retry
+    // when the task did NOT capture the flag. `retries` is the total number
+    // of attempts, so 3 = initial + 2 retries.
+    let attempt = 1;
+    while (!result.flagFound && attempt < retries) {
+      attempt++;
+      if (!jsonOutput) {
+        console.log(`    retry ${attempt}/${retries}`);
+      }
+      result = await runTask(task, tasks);
+    }
     results.push(result);
 
     if (!jsonOutput) {
