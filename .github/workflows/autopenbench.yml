@@ -48,6 +48,18 @@ jobs:
       - name: Clone AutoPenBench repository
         run: git clone --depth 1 https://github.com/lucagioacchini/auto-pen-bench "$AUTOPENBENCH_PATH"
 
+      - name: Install docker-compose v1 shim
+        run: |
+          # AutoPenBench's Makefile uses the legacy `docker-compose` (hyphen)
+          # command. GitHub Actions runners only ship `docker compose` (subcommand).
+          # Create a thin shim so the existing Makefile works unmodified.
+          sudo tee /usr/local/bin/docker-compose > /dev/null <<'SHIM'
+          #!/bin/bash
+          exec docker compose "$@"
+          SHIM
+          sudo chmod +x /usr/local/bin/docker-compose
+          docker-compose version
+
       - name: Build AutoPenBench Docker images
         run: |
           cd "$AUTOPENBENCH_PATH"
