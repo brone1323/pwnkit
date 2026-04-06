@@ -72,6 +72,13 @@ jobs:
           # eclipse-temurin is the official Adoptium replacement for the
           # openjdk Docker library images. We sed-substitute in place
           # rather than fork the repo so the patch is visible in CI logs.
+          #
+          # Issue #60: kali/Dockerfile pins kali-archive-keyring_2025.1
+          # which has been removed from http.kali.org (wget exits 8).
+          # Replace the manual .deb download with `apt-get install` so
+          # apt always pulls whatever the current package version is.
+          # If kali_master fails to build, every target is unreachable
+          # because the agent SSHes into it as its attacker workstation.
           set -e
           PATCHED=()
           patch_file() {
@@ -85,6 +92,7 @@ jobs:
               -e 's|^FROM openjdk:17.0.2-slim$|FROM eclipse-temurin:17-jre|' \
               -e 's|^FROM openjdk:17.0.2-slim |FROM eclipse-temurin:17-jre |' \
               -e 's|^FROM openjdk:8|FROM eclipse-temurin:8|' \
+              -e 's|kali-archive-keyring_2025\.1_all\.deb|kali-archive-keyring_2025.2_all.deb|g' \
               "$f"
             after=$(sha1sum "$f" | cut -d' ' -f1)
             if [ "$before" != "$after" ]; then
@@ -160,6 +168,56 @@ jobs:
           docker images --format '{{.Repository}}:{{.Tag}}' | grep -iE 'penbench|pen-bench|in-vitro|real-world' | head -40 || echo "(no images)"
         timeout-minutes: 90
 
+      - name: Compute working AutoPenBench targets (issue #61)
+        run: |
+          # Issue #61 (Option C): rather than running all 33 tasks and
+          # taking 0/33 because some images failed to build, enumerate
+          # which images actually exist and pass that as --only to the
+          # runner. AutoPenBench's docker-compose service name, image
+          # name, and games.json `target` field are all identical
+          # (e.g. "in-vitro_access_control_vm0"), so the mapping is
+          # the identity function.
+          set -e
+          GAMES="$AUTOPENBENCH_PATH/data/games.json"
+          if [ ! -f "$GAMES" ]; then
+            echo "::warning::games.json missing — skipping target filter"
+            echo "AUTOPENBENCH_WORKING_TARGETS=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          ALL_TARGETS=$(jq -r '
+            [.. | objects | select(.target?) | .target] | .[]
+          ' "$GAMES" | sort -u)
+
+          BUILT_IMAGES=$(docker images --format '{{.Repository}}' | sort -u)
+
+          WORKING=()
+          MISSING=()
+          for t in $ALL_TARGETS; do
+            if echo "$BUILT_IMAGES" | grep -Fxq "$t"; then
+              WORKING+=("$t")
+            else
+              MISSING+=("$t")
+            fi
+          done
+
+          echo "=== AutoPenBench target build status ==="
+          echo "Built (${#WORKING[@]}):"
+          for t in "${WORKING[@]}"; do echo "  + $t"; done
+          echo "Missing (${#MISSING[@]}):"
+          for t in "${MISSING[@]}"; do echo "  - $t"; done
+
+          # Comma-join into env var consumed by the runner step.
+          IFS=','; WORKING_CSV="${WORKING[*]}"; unset IFS
+          echo "AUTOPENBENCH_WORKING_TARGETS=$WORKING_CSV" >> "$GITHUB_ENV"
+
+          {
+            echo "### AutoPenBench target build filter"
+            echo ""
+            echo "- Built: **${#WORKING[@]}** / $(echo "$ALL_TARGETS" | wc -l | tr -d ' ')"
+            echo "- Skipped (build failed): **${#MISSING[@]}**"
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - run: pnpm install --frozen-lockfile
 
       - run: pnpm build
@@ -230,6 +288,12 @@ jobs:
         run: |
           LIMIT="${{ inputs.limit || '33' }}"
           ONLY="${{ inputs.only || '' }}"
+          # Manual `only` input wins; otherwise fall back to the auto-computed
+          # working-targets list from the build filter step (issue #61).
+          if [ -z "$ONLY" ] && [ -n "${AUTOPENBENCH_WORKING_TARGETS:-}" ]; then
+            ONLY="$AUTOPENBENCH_WORKING_TARGETS"
+            echo "Auto-filtering to ${AUTOPENBENCH_WORKING_TARGETS} (working targets only)"
+          fi
           ONLY_FLAG=""
           if [ -n "$ONLY" ]; then
             ONLY_FLAG="--only $ONLY"
