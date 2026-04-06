@@ -36,6 +36,8 @@ export type { PipelineOptions, PipelineReport } from "./unified-pipeline.js";
 
 // Agent system
 export { runAgentLoop, runNativeAgentLoop, ToolExecutor, getToolsForRole, TOOL_DEFINITIONS, features, estimateCost } from "./agent/index.js";
+export { runEGATS, runEGATSWithDefaults, scoreEvidence, summariseTree } from "./agent/egats.js";
+export type { AttackNode, AttackTreeResult, EGATSConfig, Evidence as EGATSEvidence, NodeStatus as EGATSNodeStatus } from "./agent/egats.js";
 export { discoveryPrompt, attackPrompt, verifyPrompt, reportPrompt, sourceVerifyPrompt, researchPrompt, blindVerifyPrompt } from "./agent/prompts.js";
 export type {
   AgentRole,

@@ -26,6 +26,7 @@ import { generateRemediation } from "./remediation.js";
 import { parseApiSpec } from "./api-spec.js";
 import { raceWithDefaults } from "./racing.js";
 import type { RaceResult } from "./racing.js";
+import { runEGATSWithDefaults } from "./agent/egats.js";
 import { isHoldingItWrong, extractFeatures, FEATURE_NAMES } from "./triage/index.js";
 
 export interface AgenticScanOptions {
@@ -416,7 +417,40 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     // When enabled, run multiple attack strategies in parallel and take the first success.
     let attackState: AgentOutput;
 
-    if (config.race && useNative) {
+    if (config.egats && useNative) {
+      emit({
+        type: "stage:start",
+        stage: "attack",
+        message: "Running EGATS (Evidence-Gated Attack Tree Search)...",
+      });
+
+      const egatsResult = await runEGATSWithDefaults(
+        config.target,
+        scanId,
+        nativeApiRuntime,
+        db,
+        {
+          repoPath: config.repoPath,
+          challengeHint: opts.challengeHint,
+          onEvent: (eventType, payload) => {
+            emit({
+              type: "stage:start",
+              stage: "attack",
+              message: `[egats] ${eventType}`,
+              data: payload,
+            });
+          },
+        },
+      );
+
+      attackState = {
+        findings: egatsResult.findings,
+        targetInfo: discoveryState.targetInfo,
+        summary: `[egats:${egatsResult.terminationReason}] explored ${egatsResult.allNodes.length} nodes, ${egatsResult.findings.length} findings`,
+        turnCount: egatsResult.totalTurns,
+        estimatedCostUsd: egatsResult.totalCostUsd,
+      };
+    } else if (config.race && useNative) {
       emit({
         type: "stage:start",
         stage: "attack",

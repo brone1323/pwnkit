@@ -24,6 +24,8 @@ export const features = {
   dockerExecutor: env("PWNKIT_FEATURE_DOCKER_EXECUTOR", false),
   /** Interactive PTY sessions for exploits requiring interactivity (reverse shells, DB clients, SSH) */
   ptySession: env("PWNKIT_FEATURE_PTY_SESSION", false),
+  /** EGATS (Evidence-Gated Attack Tree Search) — beam-search exploration of attack hypotheses */
+  egatsTreeSearch: env("PWNKIT_FEATURE_EGATS", false),
 };
 
 function env(key: string, defaultValue: boolean): boolean {

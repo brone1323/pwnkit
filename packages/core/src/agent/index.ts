@@ -9,6 +9,8 @@ export { PtySessionManager } from "./pty-session.js";
 export type { PtySession } from "./pty-session.js";
 export { estimateCost } from "./cost.js";
 export { PLAYBOOKS, detectPlaybooks, buildPlaybookInjection } from "./playbooks.js";
+export { runEGATS, runEGATSWithDefaults, scoreEvidence, summariseTree } from "./egats.js";
+export type { AttackNode, AttackTreeResult, EGATSConfig, Evidence, NodeStatus } from "./egats.js";
 export type {
   AgentRole,
   AgentConfig,

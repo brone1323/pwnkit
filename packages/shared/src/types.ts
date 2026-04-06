@@ -51,6 +51,8 @@ export interface ScanConfig {
   apiSpecPath?: string;
   /** Enable best-of-N strategy racing: run multiple attack strategies in parallel, take the first that succeeds */
   race?: boolean;
+  /** Enable EGATS (Evidence-Gated Attack Tree Search): beam-search over hypothesis tree */
+  egats?: boolean;
 }
 
 // ── Attack Templates ──

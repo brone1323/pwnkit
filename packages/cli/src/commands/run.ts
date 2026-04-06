@@ -31,6 +31,7 @@ export interface RunOptions {
   apiSpecPath?: string;
   exportTarget?: string;
   race?: boolean;
+  egats?: boolean;
 }
 
 export async function runUnified(opts: RunOptions): Promise<void> {
@@ -84,6 +85,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
             auth: opts.auth,
             apiSpecPath: opts.apiSpecPath,
             race: opts.race,
+            egats: opts.egats,
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,
