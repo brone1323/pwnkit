@@ -193,7 +193,7 @@ Created by a security researcher with [7 published CVEs](https://doruk.ch/blog).
 
 ---
 
-*Built by [Peak Twilight](https://doruk.ch) -- also building [FoxGuard](https://foxguard.dev), [vibecheck](https://vibechecked.doruk.ch), [unfuck](https://unfcked.doruk.ch), [whatdiditdo](https://whatdiditdo.doruk.ch)*
+*Built by [Peak Twilight](https://doruk.ch) — also building [foxguard](https://foxguard.dev) (Rust security scanner) and [opensoar](https://github.com/opensoar-hq/opensoar-core) (Python-native SOAR platform).*
 
 ## License
 
