@@ -1,10 +1,18 @@
 import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
+import rehypeMermaid from "rehype-mermaid";
 
 export default defineConfig({
   output: "static",
   outDir: "./dist",
   site: "https://docs.pwnkit.com",
+  markdown: {
+    // Render ```mermaid code blocks as SVG at build time
+    syntaxHighlight: { type: "shiki", excludeLangs: ["mermaid"] },
+    rehypePlugins: [
+      [rehypeMermaid, { strategy: "img-svg", dark: true }],
+    ],
+  },
   integrations: [
     starlight({
       title: "pwnkit",
