@@ -20,10 +20,22 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
         </div>
 
         <div class="animate-fade-up">
-          <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-8" style="font-family: 'Outfit', sans-serif">
+          <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6" style="font-family: 'Outfit', sans-serif">
             Let autonomous AI agents hack you<br/><span class="text-crimson">so the real ones can't.</span>
           </h1>
-          <p class="text-smoke text-lg mb-2 max-w-2xl mx-auto">Fully autonomous agentic pentesting framework. Attacks AI/LLM apps, web apps, npm packages, and source code. Blind PoC verification to minimize false positives.</p>
+          <p class="text-smoke text-lg mb-4 max-w-2xl mx-auto">Fully autonomous agentic pentesting framework. Attacks AI/LLM apps, web apps, npm packages, and source code. Blind PoC verification to minimize false positives.</p>
+          <div class="flex flex-wrap items-center justify-center gap-2 mb-4">
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-crimson/40 bg-crimson/10 text-xs font-mono text-white">
+              <span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>
+              86.5% on XBOW (90/104)
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-xs font-mono text-smoke">
+              188 tests passing
+            </span>
+            <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-white/10 bg-white/5 text-xs font-mono text-smoke">
+              11-layer FP filter
+            </span>
+          </div>
         </div>
 
         <!-- CTA -->
@@ -170,54 +182,246 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
     </section>
 
     <!-- Benchmark -->
-    <section class="py-16 sm:py-24 border-t border-white/5">
+    <section id="benchmark" data-section="benchmark" class="py-16 sm:py-24 border-t border-white/5">
       <div class="max-w-4xl mx-auto px-6">
         <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">
-          <span class="text-crimson">35+ flags</span> across 5 benchmarks.
+          <span class="text-crimson">86.5%</span> on XBOW. Single model. Open source.
         </h2>
-        <p class="text-center text-ash text-sm mb-10 max-w-xl mx-auto">
-          35+ flags on XBOW (104 Docker CTF challenges). 10/10 on AI/LLM security. Validated across 5 benchmark suites.
-          Playwright for XSS. White-box mode for source-aware scanning. Every finding independently re-exploited to kill false positives.
+        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
+          90 unique flags / 104 challenges on XBOW — full coverage. Beats every open-source single-model competitor.
+          One model (Azure gpt-5.4), 3 tools, plain Ubuntu CI. No best-of-N orchestration, no Kali container.
         </p>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          {[
-            { name: "XBOW Web Pentesting", score: "35+ flags", detail: "SQLi, IDOR, SSTI, XSS, auth bypass, RCE" },
-            { name: "AI/LLM Security", score: "10/10", detail: "Prompt injection, jailbreaks, PII leakage" },
-            { name: "AutoPenBench", score: "built", detail: "33 network/CVE tasks (Log4Shell, Heartbleed)" },
-            { name: "HarmBench", score: "built", detail: "510 LLM safety behaviors" },
-            { name: "npm Audit", score: "built", detail: "30 packages — first npm security benchmark" },
-            { name: "White-box Mode", score: "3/5", detail: "Cracked impossible challenges with source access" },
-          ].map((b) => (
-            <div class="flex items-center gap-3 bg-night-lighter border border-white/5 rounded-lg px-4 py-2.5 hover:border-crimson/20 transition-colors">
-              <span class="font-mono text-sm text-crimson min-w-[60px]">{b.score}</span>
-              <div class="flex-1">
-                <span class="text-sm text-white">{b.name}</span>
-                <p class="text-xs text-ash mt-0.5">{b.detail}</p>
-              </div>
-            </div>
-          ))}
+        <!-- Comparison table -->
+        <div class="bg-night-lighter border border-white/5 rounded-xl p-4 sm:p-6 overflow-x-auto mb-6">
+          <p class="text-[10px] text-ash mb-2 sm:hidden">Scroll to compare &rarr;</p>
+          <table class="w-full text-sm min-w-[560px]">
+            <thead>
+              <tr class="border-b border-white/10 text-ash">
+                <th class="text-left py-3 pr-4 font-medium">System</th>
+                <th class="text-right py-3 px-3 font-medium">XBOW score</th>
+                <th class="text-left py-3 pl-3 font-medium">Notes</th>
+              </tr>
+            </thead>
+            <tbody class="text-smoke">
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">BoxPwnr (best-of-N)</td>
+                <td class="py-2.5 px-3 text-right font-mono">97.1%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">6 solver strategies, ~10 model configs, Kali Docker</td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">Shannon (white-box fork)</td>
+                <td class="py-2.5 px-3 text-right font-mono">96.15%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Source-access fork, not directly comparable</td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">KinoSec</td>
+                <td class="py-2.5 px-3 text-right font-mono">92.3%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Closed-source commercial agent</td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">XBOW (own agent)</td>
+                <td class="py-2.5 px-3 text-right font-mono">85%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Author-reported, the benchmark creators</td>
+              </tr>
+              <tr class="border-b border-crimson/40 bg-crimson/5">
+                <td class="py-3 pr-4 text-white font-semibold">pwnkit</td>
+                <td class="py-3 px-3 text-right font-mono text-crimson font-bold">86.5%</td>
+                <td class="py-3 pl-3 text-xs text-white/80">Single model, 3 tools, Ubuntu CI &middot; <span class="text-emerald-400">open source</span></td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">Cyber-AutoAgent</td>
+                <td class="py-2.5 px-3 text-right font-mono">84.6%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Open source, multi-tool agent</td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">BoxPwnr (best single model)</td>
+                <td class="py-2.5 px-3 text-right font-mono">81.7%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">GLM-5 + single_loop — apples-to-apples baseline</td>
+              </tr>
+              <tr class="border-b border-white/5">
+                <td class="py-2.5 pr-4">deadend-cli</td>
+                <td class="py-2.5 px-3 text-right font-mono">77.6%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Open source agent</td>
+              </tr>
+              <tr>
+                <td class="py-2.5 pr-4">MAPTA</td>
+                <td class="py-2.5 px-3 text-right font-mono">76.9%</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Academic agent (arXiv:2508.20816)</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div class="mt-6 flex flex-wrap items-center justify-center gap-6 text-sm">
-          <div class="text-center">
-            <div class="text-2xl font-bold text-white">10/10</div>
-            <div class="text-xs text-ash">Detection</div>
+        <p class="text-center text-xs text-ash">
+          Run it yourself: <code class="text-smoke">pnpm bench --agentic</code> &middot;
+          <a href="https://docs.pwnkit.com/benchmark/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Full benchmark writeup</a>
+          &middot;
+          <a href="https://github.com/peaktwilight/pwnkit/tree/main/packages/benchmark" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Source</a>
+        </p>
+      </div>
+    </section>
+
+    <!-- Pipeline diagram -->
+    <section class="py-16 sm:py-24 border-t border-white/5">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">Target &rarr; Scan &rarr; Triage &rarr; Verify &rarr; Outputs</h2>
+        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
+          The same plan-discover-attack-verify-report loop a real pentester runs &mdash; with an 11-layer FP filter between raw findings and the report.
+        </p>
+
+        <div class="bg-night-lighter border border-white/5 rounded-xl p-6 sm:p-8 overflow-x-auto">
+          <div class="flex flex-col sm:flex-row items-stretch gap-3 min-w-[640px]">
+            <div class="flex-1 bg-night border border-crimson/30 rounded-lg p-4 text-center">
+              <div class="text-[10px] uppercase tracking-wider text-crimson mb-1">Target</div>
+              <div class="text-xs text-white font-mono">web / LLM<br/>npm / code</div>
+            </div>
+            <div class="self-center text-ash hidden sm:block">&rarr;</div>
+            <div class="flex-1 bg-night border border-blue-400/30 rounded-lg p-4 text-center">
+              <div class="text-[10px] uppercase tracking-wider text-blue-400 mb-1">Scan</div>
+              <div class="text-xs text-white">shell-first<br/>agent loop</div>
+            </div>
+            <div class="self-center text-ash hidden sm:block">&rarr;</div>
+            <div class="flex-1 bg-night border border-purple-400/30 rounded-lg p-4 text-center">
+              <div class="text-[10px] uppercase tracking-wider text-purple-400 mb-1">Triage</div>
+              <div class="text-xs text-white">11-layer<br/>FP filter</div>
+            </div>
+            <div class="self-center text-ash hidden sm:block">&rarr;</div>
+            <div class="flex-1 bg-night border border-purple-400/30 rounded-lg p-4 text-center">
+              <div class="text-[10px] uppercase tracking-wider text-purple-400 mb-1">Verify</div>
+              <div class="text-xs text-white">blind<br/>re-exploit</div>
+            </div>
+            <div class="self-center text-ash hidden sm:block">&rarr;</div>
+            <div class="flex-1 bg-night border border-emerald-400/30 rounded-lg p-4 text-center">
+              <div class="text-[10px] uppercase tracking-wider text-emerald-400 mb-1">Outputs</div>
+              <div class="text-xs text-white">SARIF/MD/PDF<br/>JSON/Issues</div>
+            </div>
           </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-white">10/10</div>
-            <div class="text-xs text-ash">Flag Extraction</div>
-          </div>
-          <div class="text-center">
-            <div class="text-2xl font-bold text-white">0</div>
-            <div class="text-xs text-ash">False Positives</div>
+
+          <div class="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+            <div class="text-center text-ash"><span class="text-white">~50%</span> raw FP baseline</div>
+            <div class="text-center text-ash"><span class="text-white">11 layers</span> reject &amp; downgrade</div>
+            <div class="text-center text-ash"><span class="text-white">&lt;5%</span> end-to-end FP target</div>
+            <div class="text-center text-ash"><span class="text-white">&gt;=95%</span> recall maintained</div>
           </div>
         </div>
 
         <p class="text-center text-xs text-ash mt-4">
-          Run it yourself: <code class="text-smoke">pnpm bench --agentic</code> &middot;
-          <a href="https://github.com/peaktwilight/pwnkit/tree/main/packages/benchmark" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">View benchmark source</a>
+          <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Triage docs</a>
+          &middot;
+          <a href="https://docs.pwnkit.com/research/fp-reduction-moat/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">FP reduction moat</a>
+          &middot;
+          <a href="https://docs.pwnkit.com/architecture/" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Architecture</a>
         </p>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section id="features" data-section="features" class="py-16 sm:py-24 border-t border-white/5">
+      <div class="max-w-5xl mx-auto px-6">
+        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">Everything in the box</h2>
+        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
+          Detection, triage, verification, output and integrations &mdash; all open source, all in one binary.
+        </p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-crimson font-semibold mb-2">Detection</div>
+            <h3 class="font-semibold text-sm text-white mb-2">Shell-first agent loop</h3>
+            <ul class="text-xs text-ash space-y-1 leading-relaxed">
+              <li>&middot; Bash + Read + Edit &mdash; minimal tools</li>
+              <li>&middot; White-box mode reads source before attacking</li>
+              <li>&middot; MCP server for IDE integrations</li>
+              <li>&middot; npm package audit pipeline</li>
+            </ul>
+          </div>
+
+          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-purple-400 font-semibold mb-2">Triage moat</div>
+            <h3 class="font-semibold text-sm text-white mb-2">11-layer FP filter</h3>
+            <ul class="text-xs text-ash space-y-1 leading-relaxed">
+              <li>&middot; Holding-it-wrong blocklist</li>
+              <li>&middot; 45-feature extractor (VulnBERT-style)</li>
+              <li>&middot; Reachability gate &middot; per-class oracles</li>
+              <li>&middot; Triage memories &middot; consensus voting</li>
+            </ul>
+            <a href="https://docs.pwnkit.com/triage/" target="_blank" rel="noopener" class="inline-block mt-3 text-[11px] text-purple-300 hover:text-white">Read the moat doc &rarr;</a>
+          </div>
+
+          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-blue-400 font-semibold mb-2">Verification</div>
+            <h3 class="font-semibold text-sm text-white mb-2">Blind re-exploit</h3>
+            <ul class="text-xs text-ash space-y-1 leading-relaxed">
+              <li>&middot; Structured 4-step verify pipeline</li>
+              <li>&middot; Per-class deterministic oracles</li>
+              <li>&middot; PoV gate &mdash; no PoC = no finding</li>
+              <li>&middot; Adversarial debate tie-breaker</li>
+            </ul>
+          </div>
+
+          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-emerald-400 font-semibold mb-2">Output</div>
+            <h3 class="font-semibold text-sm text-white mb-2">Reports your team will actually read</h3>
+            <ul class="text-xs text-ash space-y-1 leading-relaxed">
+              <li>&middot; Terminal &middot; JSON &middot; HTML</li>
+              <li>&middot; SARIF for GitHub Security tab</li>
+              <li>&middot; PDF pentest reports</li>
+              <li>&middot; Triage workbench dashboard</li>
+            </ul>
+          </div>
+
+          <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-amber-400 font-semibold mb-2">Integrations</div>
+            <h3 class="font-semibold text-sm text-white mb-2">Plug into your workflow</h3>
+            <ul class="text-xs text-ash space-y-1 leading-relaxed">
+              <li>&middot; GitHub Issues export &middot; SARIF upload</li>
+              <li>&middot; OpenAPI 3.x / Swagger 2.0 import</li>
+              <li>&middot; Authenticated scanning (cookies, headers)</li>
+              <li>&middot; foxguard cross-validation</li>
+            </ul>
+          </div>
+
+          <div class="bg-night-lighter border border-crimson/30 rounded-xl p-5 hover:border-crimson/60 transition-colors">
+            <div class="text-[10px] uppercase tracking-wider text-crimson font-semibold mb-2">Trinity exclusive</div>
+            <h3 class="font-semibold text-sm text-white mb-2">foxguard &times; pwnkit cross-validation</h3>
+            <p class="text-xs text-ash leading-relaxed">
+              No other open-source pentest agent runs a second, fully independent scanner for cross-validation.
+              The open-source analogue of Endor Labs' rules + neural agreement architecture.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- What's new -->
+    <section id="whats-new" class="py-16 sm:py-24 border-t border-white/5">
+      <div class="max-w-4xl mx-auto px-6">
+        <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">What's new</h2>
+        <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
+          Recent ships &mdash; the techniques behind the 86.5% jump.
+        </p>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {[
+            { tag: "agent", title: "LLM context compaction", body: "LLM-based compression of middle messages at 30k tokens. Lets the agent run twice as long without losing the early plan." },
+            { tag: "triage", title: "11-layer FP reduction moat", body: "Drives raw ~50% FP rate toward <5% &mdash; matching Endor Labs' 95% and Semgrep Assistant's 96%, fully open source." },
+            { tag: "agent", title: "EGATS attack tree search", body: "Evidence-Gated Attack Tree Search &mdash; beam-search over a hypothesis tree, expanding only branches backed by observed evidence." },
+            { tag: "agent", title: "Best-of-N strategy racing", body: "Run multiple attack strategies in parallel and keep whichever lands first. The free-tier version of BoxPwnr's racing." },
+            { tag: "output", title: "PDF pentest reports", body: "Print-ready reports for client deliverables &mdash; severity-ranked, with PoCs and remediation." },
+            { tag: "scan", title: "Authenticated scanning", body: "Cookies, headers, and bearer tokens passed to every request. Scan the post-login surface area." },
+            { tag: "scan", title: "OpenAPI / Swagger import", body: "Pre-load endpoint knowledge from OpenAPI 3.x or Swagger 2.0 specs. Skips discovery on documented APIs." },
+            { tag: "output", title: "GitHub Issues export", body: "One verified finding becomes one triaged GitHub issue, with PoC, severity, and remediation." },
+          ].map((item) => (
+            <div class="bg-night-lighter border border-white/5 rounded-xl p-5 hover:border-crimson/20 transition-colors">
+              <div class="flex items-center gap-2 mb-2">
+                <span class="text-[10px] uppercase tracking-wider text-crimson font-mono">{item.tag}</span>
+                <span class="text-ash">&middot;</span>
+                <h3 class="font-semibold text-sm text-white">{item.title}</h3>
+              </div>
+              <p class="text-xs text-ash leading-relaxed">{item.body}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </section>
 
