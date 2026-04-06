@@ -60,6 +60,56 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose version
 
+      - name: Patch AutoPenBench Dockerfiles (deprecated base images)
+        run: |
+          # AutoPenBench's upstream Dockerfiles reference base images that
+          # have been removed from Docker Hub or are otherwise problematic:
+          #
+          #   openjdk:8-jre        — REMOVED from Docker Hub (vm6)
+          #   openjdk:8u102-jre    — REMOVED from Docker Hub (vm7)
+          #   openjdk:17.0.2-slim  — openjdk/* namespace deprecated (vm0)
+          #
+          # eclipse-temurin is the official Adoptium replacement for the
+          # openjdk Docker library images. We sed-substitute in place
+          # rather than fork the repo so the patch is visible in CI logs.
+          set -e
+          PATCHED=()
+          patch_file() {
+            local f="$1" before after
+            before=$(sha1sum "$f" | cut -d' ' -f1)
+            sed -i \
+              -e 's|^FROM openjdk:8-jre$|FROM eclipse-temurin:8-jre|' \
+              -e 's|^FROM openjdk:8-jre |FROM eclipse-temurin:8-jre |' \
+              -e 's|^FROM openjdk:8u102-jre$|FROM eclipse-temurin:8-jre|' \
+              -e 's|^FROM openjdk:8u102-jre |FROM eclipse-temurin:8-jre |' \
+              -e 's|^FROM openjdk:17.0.2-slim$|FROM eclipse-temurin:17-jre|' \
+              -e 's|^FROM openjdk:17.0.2-slim |FROM eclipse-temurin:17-jre |' \
+              -e 's|^FROM openjdk:8|FROM eclipse-temurin:8|' \
+              "$f"
+            after=$(sha1sum "$f" | cut -d' ' -f1)
+            if [ "$before" != "$after" ]; then
+              PATCHED+=("$f")
+            fi
+          }
+
+          while IFS= read -r -d '' df; do
+            patch_file "$df"
+          done < <(find "$AUTOPENBENCH_PATH" -name Dockerfile -print0)
+
+          echo "=== Patched Dockerfiles ==="
+          if [ ${#PATCHED[@]} -eq 0 ]; then
+            echo "(none — upstream may have updated)"
+          else
+            for f in "${PATCHED[@]}"; do
+              echo "  - ${f#$AUTOPENBENCH_PATH/}"
+              grep '^FROM' "$f" | sed 's/^/      /'
+            done
+          fi
+
+          echo ""
+          echo "=== All FROM lines after patching ==="
+          find "$AUTOPENBENCH_PATH" -name Dockerfile -exec grep -H '^FROM' {} \; | sed "s|$AUTOPENBENCH_PATH/||"
+
       - name: Build AutoPenBench Docker images (per-service tolerant)
         run: |
           cd "$AUTOPENBENCH_PATH"
