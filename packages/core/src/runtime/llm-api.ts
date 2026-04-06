@@ -60,7 +60,7 @@ function parseCodexAzureConfig(): {
 
 /**
  * Detect which API provider to use based on available keys.
- * Priority: OPENROUTER_API_KEY -> ANTHROPIC_API_KEY -> OPENAI_API_KEY
+ * Priority: OPENROUTER_API_KEY -> ANTHROPIC_API_KEY -> AZURE_OPENAI_API_KEY -> OPENAI_API_KEY
  */
 function detectProvider(configApiKey?: string): {
   provider: ApiProvider;

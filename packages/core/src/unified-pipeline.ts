@@ -660,7 +660,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
 
     // ── PHASE 3: RESEARCH (single agent: discover + attack + PoC) ──
     // Check if AI analysis is available
-    const hasApiKey = !!(opts.apiKey || process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY);
+    const hasApiKey = !!(opts.apiKey || process.env.OPENROUTER_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.AZURE_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
     const availableRuntimes = await detectAvailableRuntimes();
     const hasCliRuntime = availableRuntimes.size > 0;
     const verificationRuntime = selectVerificationRuntime(opts.runtime, hasApiKey, availableRuntimes);
@@ -671,7 +671,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     }
 
     if (!hasApiKey && !hasCliRuntime) {
-      warnings.push({ stage: "research", message: "No API key or CLI runtime available. AI analysis skipped. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY." });
+      warnings.push({ stage: "research", message: "No API key or CLI runtime available. AI analysis skipped. Set OPENROUTER_API_KEY, ANTHROPIC_API_KEY, AZURE_OPENAI_API_KEY, or OPENAI_API_KEY." });
       emit({ type: "stage:end", stage: "research", message: "Skipped — no API key or CLI runtime" });
       emit({ type: "stage:end", stage: "verify", message: "Skipped" });
       logPipelineEvent("research", "stage_skipped", { reason: "no_runtime" });
