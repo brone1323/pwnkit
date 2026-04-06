@@ -90,6 +90,7 @@ export default defineConfig({
             { label: "Competitive Landscape", slug: "research/competitive-landscape" },
             { label: "Agent Techniques", slug: "research/agent-techniques" },
             { label: "Finding Triage ML", slug: "research/finding-triage-ml" },
+            { label: "FP Reduction Moat", slug: "research/fp-reduction-moat" },
           ],
         },
         {
