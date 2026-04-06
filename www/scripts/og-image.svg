@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0a0a"/>
+      <stop offset="100%" stop-color="#141414"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="78%" cy="48%" r="42%">
+      <stop offset="0%" stop-color="#DC2626" stop-opacity="0.28"/>
+      <stop offset="60%" stop-color="#DC2626" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#DC2626" stop-opacity="0"/>
+    </radialGradient>
+    <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40 0 L0 0 0 40" fill="none" stroke="#ffffff" stroke-width="0.5" stroke-opacity="0.04"/>
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <rect width="1200" height="630" fill="url(#grid)"/>
+  <rect width="1200" height="630" fill="url(#glow)"/>
+
+  <!-- Top accent bar -->
+  <rect x="0" y="0" width="1200" height="3" fill="#DC2626"/>
+
+  <!-- Logo mark (top-left) -->
+  <g transform="translate(60, 60)">
+    <rect width="56" height="56" rx="10" fill="#0a0a0a" stroke="#DC2626" stroke-width="1.5"/>
+    <g transform="translate(12, 12) scale(1)">
+      <path d="M4 10 L16 2 L28 10 L28 24 L22 30 L16 24 L10 30 L4 24Z" fill="none" stroke="#DC2626" stroke-width="2.2" stroke-linejoin="round"/>
+      <circle cx="12" cy="14" r="1.8" fill="#DC2626"/>
+      <circle cx="20" cy="14" r="1.8" fill="#DC2626"/>
+    </g>
+    <text x="76" y="26" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="30" font-weight="700" fill="#ffffff" letter-spacing="-0.5">pwnkit</text>
+    <text x="76" y="48" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="14" font-weight="500" fill="#9ca3af" letter-spacing="2">OPEN SOURCE / APACHE 2.0</text>
+  </g>
+
+  <!-- Top right tag -->
+  <g transform="translate(1140, 88)" text-anchor="end">
+    <rect x="-220" y="-26" width="220" height="38" rx="19" fill="#DC2626" fill-opacity="0.12" stroke="#DC2626" stroke-opacity="0.5" stroke-width="1"/>
+    <text x="-110" y="0" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="15" font-weight="600" fill="#fca5a5" text-anchor="middle">XBOW BENCHMARK LEADER</text>
+  </g>
+
+  <!-- Big number 86.5% -->
+  <g transform="translate(60, 360)">
+    <text x="0" y="0" font-family="Space Mono, Menlo, Monaco, monospace" font-size="220" font-weight="700" fill="#ffffff" letter-spacing="-6">86.5<tspan fill="#DC2626">%</tspan></text>
+  </g>
+
+  <!-- Tagline -->
+  <text x="60" y="430" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="38" font-weight="600" fill="#ffffff" letter-spacing="-0.5">The leading open-source AI pentest agent</text>
+
+  <!-- Subtitle row with separators -->
+  <g transform="translate(60, 488)" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="22" font-weight="500" fill="#9ca3af">
+    <text x="0" y="0">90 of 104 XBOW challenges</text>
+    <text x="320" y="0" fill="#4b5563">·</text>
+    <text x="340" y="0">single command</text>
+    <text x="540" y="0" fill="#4b5563">·</text>
+    <text x="560" y="0">reproducible</text>
+  </g>
+
+  <!-- Bottom command pill -->
+  <g transform="translate(60, 540)">
+    <rect x="0" y="0" width="520" height="50" rx="10" fill="#000000" fill-opacity="0.6" stroke="#262626" stroke-width="1"/>
+    <text x="20" y="32" font-family="Space Mono, Menlo, Monaco, monospace" font-size="20" font-weight="400" fill="#9ca3af">$</text>
+    <text x="44" y="32" font-family="Space Mono, Menlo, Monaco, monospace" font-size="20" font-weight="700" fill="#ffffff">npx pwnkit-cli scan</text>
+  </g>
+
+  <!-- pwnkit.com URL bottom right -->
+  <text x="1140" y="572" font-family="Outfit, Helvetica, Arial, sans-serif" font-size="22" font-weight="600" fill="#ffffff" text-anchor="end">pwnkit.com</text>
+
+  <!-- Bottom accent bar -->
+  <rect x="0" y="627" width="1200" height="3" fill="#DC2626"/>
+</svg>
