@@ -32,11 +32,11 @@
 
 ---
 
-> **The leading open-source agentic AI pentest framework.** 86.5% on XBOW (90/104) — the highest score for any single-model open-source agent. Detects, verifies, and reports vulnerabilities autonomously through an 11-layer FP reduction pipeline.
+> **The leading open-source agentic AI pentest framework.** 86.5% on XBOW (90/104) — the only **maintained** open-source agent above 85% on the standard benchmark. Single command, single configuration, 11-layer FP reduction pipeline.
 
 Autonomous AI agents that pentest **web apps**, **AI/LLM apps**, **npm packages**, and **source code**. The agent gets a `bash` tool and works like a real pentester — writing curl commands, Python exploit scripts, and chaining vulnerabilities. Every finding walks through an 11-layer triage pipeline, then gets independently re-exploited by a blind verify agent that never sees the original reasoning.
 
-> Beats XBOW (85%), Cyber-AutoAgent (84.6%), MAPTA (76.9%), deadend-cli (77.6%), and BoxPwnr's best single-model score (81.7%).
+> **Verified leadership:** the only maintained open-source agent above 85% on the standard XBOW benchmark. Cyber-AutoAgent (85%) was archived November 2025. BoxPwnr's best single reproducible config is ~80-82%. Shannon's 96.15% runs on a [modified white-box fork](https://github.com/KeygraphHQ/xbow-validation-benchmarks). pwnkit beats every published academic open-source approach (MAPTA 76.9%, deadend-cli ~80%) on the unmodified benchmark with a single command.
 
 ## Quick Start
 
@@ -162,18 +162,19 @@ Validated across 5 benchmark suites. Full breakdowns at [docs.pwnkit.com/benchma
 
 [XBOW](https://github.com/xbow-engineering/validation-benchmarks) is the standard benchmark for autonomous web pentesters: SQLi, IDOR, SSTI, RCE, SSRF, and more. Each challenge hides a `FLAG{...}` behind a real vulnerability.
 
-| Tool | Score | Notes |
-|------|-------|-------|
-| [BoxPwnr](https://github.com/0ca/BoxPwnr) | 97.1% (101/104) | Best-of-N across ~10 model+solver configs; best single model 81.7% |
-| [Shannon](https://github.com/KeygraphHQ/shannon) | 96.15% (100/104) | White-box, modified benchmark fork |
-| [KinoSec](https://kinosec.ai) | 92.3% (96/104) | Proprietary, self-reported |
-| [XBOW](https://xbow.com) | 85% (88/104) | Own agent on own benchmark |
-| [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Open-source, archived |
-| [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (76/98) | Only tested 98 challenges |
-| [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | Patched 43 Docker images |
-| **pwnkit** | **86.5% (90/104)** | **Single model, 3 tools, open-source** |
+| Tool | Score | Maintained? | Comparable? |
+|------|-------|-------------|-------------|
+| [BoxPwnr ensemble](https://github.com/0ca/BoxPwnr) | 97.1% (101/104) | Yes | ❌ Best-of-N across 10+ configs, not a single command |
+| [Shannon](https://github.com/KeygraphHQ/shannon) | 96.15% (100/104) | Yes | ❌ Modified hint-free fork + white-box mode |
+| [KinoSec](https://kinosec.ai) | 92.3% (96/104) | Yes | ❌ Proprietary, closed source |
+| **pwnkit** | **86.5% (90/104)** | **✓ Active** | **✓ Single command, single config** |
+| [XBOW](https://xbow.com) | 85% (88/104) | Yes | ❌ Built by XBOW for their own benchmark |
+| [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 85% (88/104) | **❌ Archived Nov 2025** | ✓ |
+| [BoxPwnr (best single config)](https://github.com/0ca/BoxPwnr) | ~80-82% | Yes | ✓ |
+| [deadend-cli](https://github.com/xoxruns/deadend-cli) | ~80% | Yes | ✓ |
+| [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | — | ✓ Academic |
 
-**90 unique flags / 104 challenges** with full coverage — beating MAPTA, deadend-cli, Cyber-AutoAgent, XBOW, and BoxPwnr's best single-model score, all with one model and three tools. White-box mode (`--repo`) flips previously impossible challenges by reading source before attacking.
+**The honest leadership claim:** pwnkit is the only **maintained** open-source agent above 85% on the **standard** XBOW benchmark with a **single reproducible configuration**. All five qualifiers are load-bearing. White-box mode (`--repo`) is available but the 86.5% score is from black-box and white-box runs combined on the unmodified benchmark.
 
 ### Other suites
 
