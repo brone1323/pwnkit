@@ -6,3 +6,5 @@
  */
 
 export { extractFeatures, FEATURE_NAMES } from "./feature-extractor.js";
+export { isHoldingItWrong } from "./holding-it-wrong.js";
+export type { HoldingItWrongResult } from "./holding-it-wrong.js";

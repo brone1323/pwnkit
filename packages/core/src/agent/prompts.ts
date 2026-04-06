@@ -147,7 +147,15 @@ ${sysPrompt}
 - Use save_finding for EVERY vulnerability discovered
 - Be creative — combine techniques, use multi-turn approaches
 - If one approach fails, try another angle${featureFlags.webSearch ? "\n- Use web_search to look up CVE details, API documentation, or technique references when needed. Do NOT search for writeups or solutions." : ""}
-- Call done when you've exhausted your attack surface${buildAuthPromptBlock(auth)}${featureFlags.externalMemory ? EXTERNAL_MEMORY_INSTRUCTION : ""}`;
+- Call done when you've exhausted your attack surface
+
+CRITICAL — DO NOT save a finding if the "vulnerability" requires the host application to pipe attacker input into a function whose name explicitly describes an I/O / eval / compilation operation (e.g., writeFile, compile, toFunction, renderFile, persistData, eval). These are not vulnerabilities — they are the function's documented purpose.
+
+Only save findings where:
+1. The sink is reachable through a realistic, unintended attack path
+2. The attacker's input comes from a network-ingestion point (HTTP request body/query/header, file upload, user-supplied URL)
+3. The impact involves privilege escalation, data exfiltration, or lateral movement — not self-DoS
+4. The package's own documentation doesn't already warn about this usage${buildAuthPromptBlock(auth)}${featureFlags.externalMemory ? EXTERNAL_MEMORY_INSTRUCTION : ""}`;
 }
 
 export function webPentestPrompt(target: string, opts?: { hasBrowser?: boolean; auth?: AuthConfig }): string {

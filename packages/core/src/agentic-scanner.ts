@@ -26,6 +26,7 @@ import { generateRemediation } from "./remediation.js";
 import { parseApiSpec } from "./api-spec.js";
 import { raceWithDefaults } from "./racing.js";
 import type { RaceResult } from "./racing.js";
+import { isHoldingItWrong, extractFeatures, FEATURE_NAMES } from "./triage/index.js";
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -495,30 +496,97 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       message: `Attack complete: ${attackState.findings.length} findings, ${attackState.summary}`,
     });
 
+    // ── Stage 2.5: Triage (holding-it-wrong + feature extraction) ──
+    // For every finding saved by the attack agent:
+    //   1. Run `isHoldingItWrong` — if true, downgrade severity to `info`,
+    //      mark triage_status=rejected, and skip further verification.
+    //   2. Extract the 45-element feature vector and log it (the trained
+    //      triage model is not yet wired in; we log for future training).
+    //   3. Only findings that pass holding-it-wrong AND have
+    //      evidence_completeness > 0.5 get sent to the blind verify agent.
+    const verifyCandidates: Finding[] = [];
+    const evidenceCompletenessIdx = FEATURE_NAMES.indexOf("cross_evidence_completeness");
+    for (const finding of allFindings) {
+      const hiw = isHoldingItWrong(finding);
+      const featureVector = extractFeatures(finding);
+      const evidenceCompleteness =
+        evidenceCompletenessIdx >= 0 ? featureVector[evidenceCompletenessIdx] ?? 0 : 0;
+
+      // Log the feature vector for future training
+      db.logEvent?.({
+        scanId,
+        stage: "verify",
+        eventType: "triage_features",
+        agentRole: "triage",
+        payload: {
+          findingId: finding.id,
+          featureVector,
+          featureNames: FEATURE_NAMES,
+          evidenceCompleteness,
+          holdingItWrong: hiw.isHoldingItWrong,
+          holdingItWrongReason: hiw.reason,
+        },
+        timestamp: Date.now(),
+      });
+
+      if (hiw.isHoldingItWrong) {
+        // Downgrade severity to info and mark rejected. Skip further verify.
+        finding.severity = "info";
+        finding.triageStatus = "suppressed";
+        finding.triageNote = `rejected: holding-it-wrong — ${hiw.reason}`;
+        db.updateFindingStatus?.(finding.id, "false-positive");
+        finding.status = "false-positive";
+        emit({
+          type: "stage:end",
+          stage: "attack",
+          message: `Triage rejected ${finding.id}: ${hiw.reason}`,
+        });
+        continue;
+      }
+
+      if (evidenceCompleteness <= 0.5) {
+        finding.triageStatus = "suppressed";
+        finding.triageNote = `rejected: evidence_completeness=${evidenceCompleteness.toFixed(2)} <= 0.5`;
+        db.updateFindingStatus?.(finding.id, "false-positive");
+        finding.status = "false-positive";
+        emit({
+          type: "stage:end",
+          stage: "attack",
+          message: `Triage rejected ${finding.id}: insufficient evidence (completeness=${evidenceCompleteness.toFixed(2)})`,
+        });
+        continue;
+      }
+
+      verifyCandidates.push(finding);
+    }
+
     // ── Stage 3: Verification Agent ──
-    if (allFindings.length > 0) {
+    if (verifyCandidates.length > 0) {
       emit({
         type: "stage:start",
         stage: "verify",
-        message: `Verifying ${allFindings.length} findings...`,
+        message: `Verifying ${verifyCandidates.length} findings (${allFindings.length - verifyCandidates.length} rejected by triage)...`,
       });
       db.transitionCaseWorkItem?.(scanId, "blind_verify", "in_progress", {
         owner: "verify-agent",
-        summary: `Verification agent is reproducing ${allFindings.length} finding${allFindings.length > 1 ? "s" : ""}.`,
+        summary: `Verification agent is reproducing ${verifyCandidates.length} finding${verifyCandidates.length > 1 ? "s" : ""}.`,
       });
       db.logEvent({
         scanId,
         stage: "verify",
         eventType: "stage_start",
         agentRole: "verify",
-        payload: { findingCount: allFindings.length },
+        payload: {
+          findingCount: verifyCandidates.length,
+          triageRejected: allFindings.length - verifyCandidates.length,
+        },
         timestamp: Date.now(),
       });
 
       if (useNative) {
-        await runNativeVerify(nativeApiRuntime, db, config, scanId, allFindings, emit);
+        await runNativeVerify(nativeApiRuntime, db, config, scanId, verifyCandidates, emit);
       } else {
-        await runLegacyVerify(legacyRuntime, db, config, scanId, allFindings, emit, dbPath);
+        await runLegacyVerify(legacyRuntime, db, config, scanId, verifyCandidates, emit, dbPath);
       }
 
       // Merge verification results — DB is source of truth
