@@ -86,11 +86,11 @@ RUN npm install -g playwright@1.48.0 \
 RUN ln -s /app/dist/pwnkit.js /usr/local/bin/pwnkit-cli \
     && chmod +x /app/dist/pwnkit.js
 
-# Drop a non-root user for safer default runs
-RUN useradd -m -u 1001 pwnkit \
-    && mkdir -p /work \
-    && chown -R pwnkit:pwnkit /work /app/dist
-USER pwnkit
+# Drop privileges by reusing the default ubuntu user (uid 1000) shipped with
+# ubuntu:24.04. Avoids pulling the passwd package just for useradd.
+RUN mkdir -p /work \
+    && chown -R ubuntu:ubuntu /work /app/dist /ms-playwright
+USER ubuntu
 WORKDIR /work
 
 ENTRYPOINT ["node", "/app/dist/pwnkit.js"]
