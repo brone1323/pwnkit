@@ -96,11 +96,11 @@ html {
  */
 :root {
   /* Surfaces */
-  --background: #0a0a0a;        /* --color-night */
+  --background: #0d1117;        /* --color-night */
   --foreground: #ffffff;
-  --card: #141414;              /* --color-night-light */
+  --card: #161b22;              /* --color-night-light */
   --card-foreground: #ffffff;
-  --popover: #141414;
+  --popover: #161b22;
   --popover-foreground: #ffffff;
 
   /* Brand */
@@ -108,22 +108,22 @@ html {
   --primary-foreground: #ffffff;
 
   /* Secondary surface */
-  --secondary: #1e1e1e;         /* --color-night-lighter */
+  --secondary: #1c2129;         /* --color-night-lighter */
   --secondary-foreground: #ffffff;
 
   /* Muted */
-  --muted: #1e1e1e;
+  --muted: #1c2129;
   --muted-foreground: #a3a3a3;  /* --color-smoke */
 
   /* Accent (hovers, subtle highlights) */
-  --accent: #1e1e1e;
+  --accent: #1c2129;
   --accent-foreground: #ffffff;
 
   /* Status */
   --destructive: #EF4444;       /* --color-crimson-light */
 
   /* Borders / inputs / focus */
-  --border: rgba(255, 255, 255, 0.10);
+  --border: #30363d;
   --input: rgba(255, 255, 255, 0.15);
   --ring: #DC2626;              /* crimson focus ring */
 
@@ -137,13 +137,13 @@ html {
   --radius: 0.625rem;
 
   /* Sidebar (unused on www today, kept for shadcn parity) */
-  --sidebar: #0a0a0a;
+  --sidebar: #0d1117;
   --sidebar-foreground: #ffffff;
   --sidebar-primary: #DC2626;
   --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: #1e1e1e;
+  --sidebar-accent: #1c2129;
   --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: rgba(255, 255, 255, 0.10);
+  --sidebar-border: #30363d;
   --sidebar-ring: #DC2626;
 }
 
