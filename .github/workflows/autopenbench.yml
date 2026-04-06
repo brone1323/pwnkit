@@ -60,24 +60,55 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
           docker-compose version
 
-      - name: Build AutoPenBench Docker images (tolerant)
+      - name: Build AutoPenBench Docker images (per-service tolerant)
         run: |
           cd "$AUTOPENBENCH_PATH"
-          # AutoPenBench's Makefile builds 33 images. Some upstream base
-          # images (e.g. openjdk:8-jre) are deprecated and no longer on
-          # Docker Hub. We tolerate per-image build failures so the rest
-          # still get built — the runner will mark unbuildable tasks as
-          # errors at run time.
-          if [ -f Makefile ] && grep -q '^build:' Makefile; then
-            make build || echo "Some images failed to build (likely deprecated upstream); continuing"
-          else
-            docker compose -f benchmark/machines/docker-compose.yml build --parallel || true
-          fi
+          # AutoPenBench's Makefile builds 33 images via docker-compose
+          # build. BuildKit aborts on the first failure, so 'make build || true'
+          # leaves us with zero built images when openjdk:8-jre or any other
+          # deprecated upstream image fails.
+          #
+          # Workaround: enumerate every service across every compose file and
+          # build them individually so failures don't cascade.
+          export DOCKER_BUILDKIT=1
+          export BUILDKIT_PROGRESS=plain
 
-          # List which images actually built
+          COMPOSE_FILES=(
+            benchmark/machines/docker-compose.yml
+            benchmark/machines/in-vitro/cryptography/docker-compose.yml
+            benchmark/machines/in-vitro/access_control/docker-compose.yml
+            benchmark/machines/in-vitro/web_security/docker-compose.yml
+            benchmark/machines/in-vitro/network_security/docker-compose.yml
+            benchmark/machines/real-world/cve/docker-compose.yml
+          )
+
+          BUILT=0
+          FAILED=0
+          for cf in "${COMPOSE_FILES[@]}"; do
+            [ -f "$cf" ] || continue
+            # Get list of services in this compose file
+            SERVICES=$(docker compose -f "$cf" config --services 2>/dev/null || true)
+            for svc in $SERVICES; do
+              echo "::group::Building $svc"
+              if docker compose -f "$cf" build "$svc" 2>&1; then
+                BUILT=$((BUILT + 1))
+                echo "::endgroup::"
+              else
+                FAILED=$((FAILED + 1))
+                echo "::endgroup::"
+                echo "::warning::Service $svc failed to build (likely deprecated upstream image)"
+              fi
+            done
+          done
+
+          echo ""
+          echo "=== Build summary ==="
+          echo "  Built:  $BUILT services"
+          echo "  Failed: $FAILED services"
+          echo ""
           echo "=== Built AutoPenBench images ==="
-          docker images --format '{{.Repository}}:{{.Tag}}' | grep -i 'penbench\|pen-bench\|inv\|real-world' | head -40 || echo "(no autopenbench images detected)"
-        timeout-minutes: 60
+          docker images --format '{{.Repository}}:{{.Tag}}' | grep -iE 'penbench|pen-bench|in-vitro|real-world' | head -40 || echo "(no images)"
+        timeout-minutes: 90
 
       - run: pnpm install --frozen-lockfile
 
@@ -91,7 +122,10 @@ jobs:
           # we still install host-side tools so the agent's bash calls
           # outside SSH have a usable environment.
           sudo apt-get update -qq
-          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+          # Try to install everything in one shot. If that fails (one bad
+          # package can poison the whole transaction in -qq mode), fall back
+          # to per-package install so we get partial coverage.
+          if ! sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
             sqlmap nmap nikto \
             gobuster dirb wfuzz ffuf \
             hydra john hashcat \
@@ -101,7 +135,12 @@ jobs:
             sshpass openssh-client \
             python3-pip python3-requests \
             jq xmlstarlet \
-            seclists 2>/dev/null || echo "Some packages failed (check apt log)"
+            seclists; then
+            echo "::warning::Bulk apt install failed — falling back to per-package install"
+            for pkg in sqlmap nmap nikto gobuster dirb wfuzz ffuf hydra john hashcat whatweb wafw00f nbtscan smbclient netcat-openbsd dnsutils sshpass openssh-client python3-pip python3-requests jq xmlstarlet seclists; do
+              sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "$pkg" || echo "  ✗ $pkg failed"
+            done
+          fi
 
           pip3 install --quiet --break-system-packages \
             requests beautifulsoup4 lxml \
