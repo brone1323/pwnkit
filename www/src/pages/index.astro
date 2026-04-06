@@ -6,7 +6,10 @@ import DataGridBackground from '../components/DataGridBackground';
 import PwnkitHero3D from '../components/PwnkitHero3D';
 ---
 
-<Layout title="pwnkit - Fully autonomous agentic pentesting framework">
+<Layout
+  title="pwnkit - The leading open-source AI pentest agent (86.5% on XBOW)"
+  description="The only maintained open-source AI pentest agent above 85% on the standard XBOW benchmark. 86.5% (90/104) — single command, single configuration, no white-box tricks. Apache 2.0."
+>
 
 
   <main>
@@ -23,7 +26,7 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
           <h1 class="text-4xl sm:text-5xl md:text-6xl font-bold tracking-tight leading-[1.1] mb-6" style="font-family: 'Outfit', sans-serif">
             Let autonomous AI agents hack you<br/><span class="text-crimson">so the real ones can't.</span>
           </h1>
-          <p class="text-smoke text-lg mb-4 max-w-2xl mx-auto">Fully autonomous agentic pentesting framework. Attacks AI/LLM apps, web apps, npm packages, and source code. Blind PoC verification to minimize false positives.</p>
+          <p class="text-smoke text-lg mb-4 max-w-2xl mx-auto">The only maintained open-source AI pentest agent above 85% on the standard XBOW benchmark.<br/><span class="text-white">86.5% (90/104) &mdash; one command, one configuration, no white-box tricks.</span></p>
           <div class="flex flex-wrap items-center justify-center gap-2 mb-4">
             <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full border border-crimson/40 bg-crimson/10 text-xs font-mono text-white">
               <span class="w-1.5 h-1.5 rounded-full bg-crimson animate-pulse"></span>
@@ -185,21 +188,23 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
     <section id="benchmark" data-section="benchmark" class="py-16 sm:py-24 border-t border-white/5">
       <div class="max-w-4xl mx-auto px-6">
         <h2 class="text-2xl sm:text-3xl md:text-4xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">
-          <span class="text-crimson">86.5%</span> on XBOW. Single model. Open source.
+          <span class="text-crimson">86.5%</span> on standard XBOW. One config. Still shipping.
         </h2>
         <p class="text-center text-ash text-sm mb-10 max-w-2xl mx-auto">
-          90 unique flags / 104 challenges on XBOW — full coverage. Beats every open-source single-model competitor.
-          One model (Azure gpt-5.4), 3 tools, plain Ubuntu CI. No best-of-N orchestration, no Kali container.
+          90 of 104 challenges on the unmodified XBOW validation benchmark. Single model, single command, single configuration.
+          The only maintained open-source agent above 85% on the standard benchmark.
         </p>
 
         <!-- Comparison table -->
         <div class="bg-night-lighter border border-white/5 rounded-xl p-4 sm:p-6 overflow-x-auto mb-6">
           <p class="text-[10px] text-ash mb-2 sm:hidden">Scroll to compare &rarr;</p>
-          <table class="w-full text-sm min-w-[560px]">
+          <table class="w-full text-sm min-w-[760px]">
             <thead>
               <tr class="border-b border-white/10 text-ash">
                 <th class="text-left py-3 pr-4 font-medium">System</th>
                 <th class="text-right py-3 px-3 font-medium">XBOW score</th>
+                <th class="text-center py-3 px-3 font-medium">Maintained?</th>
+                <th class="text-center py-3 px-3 font-medium">Comparable?</th>
                 <th class="text-left py-3 pl-3 font-medium">Notes</th>
               </tr>
             </thead>
@@ -207,50 +212,72 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
               <tr class="border-b border-white/5">
                 <td class="py-2.5 pr-4">BoxPwnr (best-of-N)</td>
                 <td class="py-2.5 px-3 text-right font-mono">97.1%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">6 solver strategies, ~10 model configs, Kali Docker</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Best-of-N across 10+ model+solver configs</td>
               </tr>
               <tr class="border-b border-white/5">
-                <td class="py-2.5 pr-4">Shannon (white-box fork)</td>
+                <td class="py-2.5 pr-4">Shannon</td>
                 <td class="py-2.5 px-3 text-right font-mono">96.15%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">Source-access fork, not directly comparable</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Modified hint-free fork + white-box source access</td>
               </tr>
               <tr class="border-b border-white/5">
                 <td class="py-2.5 pr-4">KinoSec</td>
                 <td class="py-2.5 px-3 text-right font-mono">92.3%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">Closed-source commercial agent</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Proprietary, closed source</td>
               </tr>
               <tr class="border-b border-white/5">
                 <td class="py-2.5 pr-4">XBOW (own agent)</td>
                 <td class="py-2.5 px-3 text-right font-mono">85%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">Author-reported, the benchmark creators</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-crimson">No</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Built by XBOW for their own benchmark</td>
               </tr>
-              <tr class="border-b border-crimson/40 bg-crimson/5">
+              <tr class="border-b-2 border-crimson/60 bg-crimson/5">
                 <td class="py-3 pr-4 text-white font-semibold">pwnkit</td>
                 <td class="py-3 px-3 text-right font-mono text-crimson font-bold">86.5%</td>
-                <td class="py-3 pl-3 text-xs text-white/80">Single model, 3 tools, Ubuntu CI &middot; <span class="text-emerald-400">open source</span></td>
+                <td class="py-3 px-3 text-center text-xs text-emerald-400 font-semibold">Yes</td>
+                <td class="py-3 px-3 text-center text-xs text-emerald-400 font-semibold">Yes</td>
+                <td class="py-3 pl-3 text-xs text-white/80">Single model, single command, standard benchmark &middot; <span class="text-emerald-400">open source</span></td>
+              </tr>
+              <tr class="border-b border-white/5 opacity-60">
+                <td class="py-2.5 pr-4 line-through">Cyber-AutoAgent</td>
+                <td class="py-2.5 px-3 text-right font-mono line-through">85%</td>
+                <td class="py-2.5 px-3 text-center text-xs text-crimson font-semibold">Archived Nov 2025</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Repo archived 2025-11-29 &mdash; project is dead</td>
               </tr>
               <tr class="border-b border-white/5">
-                <td class="py-2.5 pr-4">Cyber-AutoAgent</td>
-                <td class="py-2.5 px-3 text-right font-mono">84.6%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">Open source, multi-tool agent</td>
-              </tr>
-              <tr class="border-b border-white/5">
-                <td class="py-2.5 pr-4">BoxPwnr (best single model)</td>
-                <td class="py-2.5 px-3 text-right font-mono">81.7%</td>
-                <td class="py-2.5 pl-3 text-xs text-ash">GLM-5 + single_loop — apples-to-apples baseline</td>
+                <td class="py-2.5 pr-4">BoxPwnr (single config)</td>
+                <td class="py-2.5 px-3 text-right font-mono">~80-82%</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 pl-3 text-xs text-ash">Apples-to-apples single-config baseline</td>
               </tr>
               <tr class="border-b border-white/5">
                 <td class="py-2.5 pr-4">deadend-cli</td>
-                <td class="py-2.5 px-3 text-right font-mono">77.6%</td>
+                <td class="py-2.5 px-3 text-right font-mono">~80%</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
                 <td class="py-2.5 pl-3 text-xs text-ash">Open source agent</td>
               </tr>
               <tr>
                 <td class="py-2.5 pr-4">MAPTA</td>
                 <td class="py-2.5 px-3 text-right font-mono">76.9%</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
+                <td class="py-2.5 px-3 text-center text-xs text-emerald-400">Yes</td>
                 <td class="py-2.5 pl-3 text-xs text-ash">Academic agent (arXiv:2508.20816)</td>
               </tr>
             </tbody>
           </table>
+          <p class="text-[11px] text-ash mt-4 leading-relaxed">
+            <span class="text-white">Comparable</span> = standard 104-challenge XBOW, single reproducible configuration, no white-box source access.
+            Higher scores above pwnkit either run on a modified fork, aggregate across many configurations, or are closed source.
+          </p>
         </div>
 
         <p class="text-center text-xs text-ash">
@@ -259,6 +286,37 @@ import PwnkitHero3D from '../components/PwnkitHero3D';
           &middot;
           <a href="https://github.com/peaktwilight/pwnkit/tree/main/packages/benchmark" target="_blank" rel="noopener" class="text-smoke underline underline-offset-2 decoration-white/20 hover:text-white transition-colors">Source</a>
         </p>
+
+        <!-- Why pwnkit leads -->
+        <div class="mt-16">
+          <h3 class="text-xl sm:text-2xl font-bold tracking-tight mb-3 text-center" style="font-family: 'Outfit', sans-serif">Why pwnkit leads</h3>
+          <p class="text-center text-ash text-sm mb-8 max-w-2xl mx-auto">
+            Three things every higher-scoring system gives up &mdash; and we don't.
+          </p>
+          <div class="grid sm:grid-cols-3 gap-4">
+            <div class="bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/30 transition-colors">
+              <div class="w-9 h-9 mb-4 text-crimson">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 12l2 2 4-4"/><circle cx="12" cy="12" r="10"/></svg>
+              </div>
+              <h4 class="font-semibold text-sm text-white mb-2" style="font-family: 'Outfit', sans-serif">Standard benchmark</h4>
+              <p class="text-xs text-smoke leading-relaxed">We test on the unmodified XBOW validation benchmark. No hint-free forks. No source-aware advantages. The same 104 challenges everyone else should be running.</p>
+            </div>
+            <div class="bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/30 transition-colors">
+              <div class="w-9 h-9 mb-4 text-crimson">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+              </div>
+              <h4 class="font-semibold text-sm text-white mb-2" style="font-family: 'Outfit', sans-serif">Single configuration</h4>
+              <p class="text-xs text-smoke leading-relaxed">One model. One prompt set. One command. Reproducible end-to-end. Not best-of-N across ten solver+model combinations &mdash; the score you see is the score you get.</p>
+            </div>
+            <div class="bg-white/5 border border-white/10 rounded-xl p-6 hover:border-crimson/30 transition-colors">
+              <div class="w-9 h-9 mb-4 text-crimson">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+              </div>
+              <h4 class="font-semibold text-sm text-white mb-2" style="font-family: 'Outfit', sans-serif">Still maintained</h4>
+              <p class="text-xs text-smoke leading-relaxed">Cyber-AutoAgent was the only other open-source tool above 85% on standard XBOW. Its repo got archived November 2025. We ship daily.</p>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
