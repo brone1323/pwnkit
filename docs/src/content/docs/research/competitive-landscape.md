@@ -56,7 +56,7 @@ Endor Labs' disclosed ~95% false-positive elimination depends on a proprietary "
 
 ### foxguard × pwnkit cross-validation (unique)
 
-Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit has the open-source version: for every finding, run [foxguard](https://github.com/opensoar-hq/foxguard) (Rust pattern scanner) against the same source tree and require agreement. Both fire → strong signal. Foxguard silent → likely false positive. Nobody else in the open-source pentest-agent space runs a second, independent scanner for cross-validation — this is unique to the pwnkit / foxguard / opensoar trinity.
+Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit has the open-source version: for every finding, run [foxguard](https://github.com/peaktwilight/foxguard) (Rust pattern scanner) against the same source tree and require agreement. Both fire → strong signal. Foxguard silent → likely false positive. Nobody else in the open-source pentest-agent space runs a second, independent scanner for cross-validation — this is unique to the pwnkit / foxguard / opensoar trinity.
 
 Implementation: `packages/core/src/triage/multi-modal.ts`.
 
@@ -100,7 +100,7 @@ Ranked by expected impact and implementation complexity. Estimates based on chal
 | 14 | PoV gate | FP reduction | 1x | **Shipped** |
 | 15 | External working memory | +2-3 flags | 1x | Planned |
 | 16 | RAG from prior solves | +2-4 flags | 1x | Planned |
-| 17 | Adversarial debate verification | FP reduction | 2x verify cost | Planned |
+| 17 | Adversarial debate verification | FP reduction | 2x verify cost | **Shipped** |
 
 ### Shipped
 
@@ -132,13 +132,13 @@ Ranked by expected impact and implementation complexity. Estimates based on chal
 
 **PoV gate.** `packages/core/src/triage/pov-gate.ts` — a narrowly-scoped mini agent loop must produce a concrete executable exploit; no PoV → severity downgrade to `info`. Based on "All You Need Is A Fuzzing Brain" (arXiv:2509.07225).
 
+**Adversarial debate verification.** `packages/core/src/triage/adversarial.ts` — prosecutor vs. defender agents debate each finding with fresh contexts; a skeptical judge decides. Based on Anthropic's debate paper (arXiv:2402.06782). The point is uncorrelated error modes vs. single-pass verify.
+
 ### Planned
 
 **External working memory.** Persist structured notes (discovered endpoints, credentials, observed behaviors) in a memory store the agent can query. Prevents the agent from re-discovering information it already found. Inspired by Cyber-AutoAgent's mem0 integration.
 
 **RAG from prior solves.** Build a vector index of successful exploit chains from prior runs. When the agent encounters a similar challenge, retrieve relevant prior solves as context. Bootstraps experience without increasing the model's context window.
-
-**Adversarial debate verification.** Prosecutor vs. defender agents debate each finding; a skeptical judge decides. Based on Anthropic's debate paper (arXiv:2402.06782). Feature flag wired, runtime not yet implemented.
 
 ## Key research papers
 
@@ -187,11 +187,11 @@ See [FP Reduction Moat](/research/fp-reduction-moat/) for the full stack and pub
 | Consensus (self-consistency) verify | Self-consistency decoding | `triage/verify-pipeline.ts` |
 | PoV gate | Fuzzing Brain (arXiv:2509.07225) | `triage/pov-gate.ts` |
 | Triage memories | Semgrep Assistant | `triage/memories.ts` |
+| Adversarial debate | Anthropic Debate (arXiv:2402.06782) | `triage/adversarial.ts` |
 
 ## What's next
 
 **Near-term:**
-- Adversarial debate verification — Anthropic debate (arXiv:2402.06782), prosecutor vs. defender vs. judge
 - External working memory — agent writes plan/creds to disk, injected at reflection checkpoints
 - Layer 2 CodeBERT fine-tune on D2A labels
 

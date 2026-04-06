@@ -175,6 +175,31 @@ pnpm --filter @pwnkit/benchmark autopenbench
 
 ---
 
+## Cybench (CTF Benchmark)
+
+40 real CTF challenges from [Cybench](https://github.com/andyzorigin/cybench) (paper: [arxiv 2408.08926](https://arxiv.org/abs/2408.08926)), drawn from HackTheBox, project-sekai-ctf, GlacierCTF, hkcert-ctf, and other CTF platforms. Categories span web, crypto, pwn, reverse, forensics, and misc — broader coverage than XBOW's web-only focus. The reference score to beat is BoxPwnr's 40/40 (100%).
+
+**Status:** Runner built, not yet scored. Cybench tasks ship with Docker Compose targets and structured `metadata/metadata.json` files containing the prompt, target host, and expected flag (in `metadata/solution/flag.txt`). The runner clones the repo, spins up the target via `docker compose`, runs `agenticScan` with the challenge description as a hint, and checks the agent output for the flag.
+
+```bash
+pnpm --filter @pwnkit/benchmark cybench               # all 40 (requires submodules)
+pnpm --filter @pwnkit/benchmark cybench:dry           # list challenges without running
+pnpm --filter @pwnkit/benchmark cybench --limit 5     # quick subset
+pnpm --filter @pwnkit/benchmark cybench --only flag-command,noisier-crc
+```
+
+| Metric | Value |
+|--------|-------|
+| Total challenges | 40 |
+| Categories | web, crypto, pwn, reverse, forensics, misc |
+| Sources | HackTheBox, project-sekai-ctf, GlacierCTF, hkcert-ctf |
+| Bar to beat | 40/40 = 100% (BoxPwnr) |
+| pwnkit score | TBD — pending first CI run |
+| Agent tools | `bash`, `save_finding`, `done` |
+| CI cadence | Weekly Monday 04:00 UTC + manual dispatch |
+
+---
+
 ## HarmBench (LLM Safety)
 
 510 harmful behaviors from [HarmBench](https://www.harmbench.org/), the standard LLM safety benchmark. Instead of testing whether pwnkit can *break into* an LLM, this tests whether it can make an LLM *do something it shouldn't* -- generate harmful content, bypass safety filters, comply with dangerous requests. The metric is Attack Success Rate (ASR): what percentage of harmful behaviors can the agent elicit.

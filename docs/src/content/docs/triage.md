@@ -1,6 +1,6 @@
 ---
 title: Finding Triage
-description: The ten-stage false-positive reduction pipeline that sits between pwnkit's research and verify agents.
+description: The eleven-layer false-positive reduction pipeline that sits between pwnkit's research and verify agents.
 ---
 
 Autonomous pentesters are only as valuable as their false-positive rate.
@@ -36,8 +36,10 @@ flowchart TD
     S8 -->|minority| R4[Rejected]
     S8 -->|majority| S9{9. Memory match?}
     S9 -->|strong FP match| R5[Auto-rejected]
-    S9 -->|no match| S10[10. EGATS tree search]
-    S10 --> CF[Confirmed finding]
+    S9 -->|no match| S10{10. Adversarial debate?}
+    S10 -->|judge rejects| R6[Rejected as FP]
+    S10 -->|judge confirms| S11[11. EGATS tree search]
+    S11 --> CF[Confirmed finding]
     ACC --> CF
 
     style RA fill:#1a1a2e,stroke:#e94560,color:#fff
@@ -51,6 +53,7 @@ flowchart TD
     style R3 fill:#ef4444,stroke:#991b1b,color:#fff
     style R4 fill:#ef4444,stroke:#991b1b,color:#fff
     style R5 fill:#ef4444,stroke:#991b1b,color:#fff
+    style R6 fill:#ef4444,stroke:#991b1b,color:#fff
     style S1 fill:#533483,stroke:#e94560,color:#fff
     style S2 fill:#533483,stroke:#e94560,color:#fff
     style S3 fill:#533483,stroke:#e94560,color:#fff
@@ -61,6 +64,7 @@ flowchart TD
     style S8 fill:#533483,stroke:#e94560,color:#fff
     style S9 fill:#533483,stroke:#e94560,color:#fff
     style S10 fill:#533483,stroke:#e94560,color:#fff
+    style S11 fill:#533483,stroke:#e94560,color:#fff
 ```
 
 Each stage is independently configurable via environment variables and
@@ -228,7 +232,25 @@ pwnkit triage memory add --finding <id> --reason "sink is harmless helper" \
 pwnkit triage memory list --scope target
 ```
 
-## 10. EGATS — Evidence-Gated Attack Tree Search
+## 10. Adversarial debate
+
+**Module:** `triage/adversarial.ts`
+**Flag:** `PWNKIT_FEATURE_DEBATE=1`
+
+Two fresh-context agents argue opposing positions — a prosecutor makes the
+case that the finding is real, a defender makes the case that it is a
+false positive — and a third, deliberately skeptical judge picks the
+winner. Each agent sees only the other side's written arguments, never
+the original research agent's chain of thought.
+
+This is the open-source implementation of Anthropic's debate paper
+(arXiv:2402.06782). The point is error decorrelation: single-pass verify
+shares priors with the discovery agent (same model, same prompt family),
+so their mistakes line up. Adversarial agents with opposing instructions
+have uncorrelated error modes and catch cases that a single verifier
+misses.
+
+## 11. EGATS — Evidence-Gated Attack Tree Search
 
 **Flag:** `--egats` or `PWNKIT_FEATURE_EGATS=1`
 
@@ -250,8 +272,8 @@ a known lead.
 | `PWNKIT_FEATURE_POV_GATE` | off | 6 |
 | `PWNKIT_FEATURE_CONSENSUS_VERIFY` | off | 8 |
 | `PWNKIT_FEATURE_TRIAGE_MEMORIES` | off | 9 |
-| `PWNKIT_FEATURE_EGATS` | off | 10 |
-| `PWNKIT_FEATURE_DEBATE` | off | Adversarial prosecutor/defender debate |
+| `PWNKIT_FEATURE_DEBATE` | off | 10 |
+| `PWNKIT_FEATURE_EGATS` | off | 11 |
 
 See [Features](/features/) for the complete env-var inventory.
 

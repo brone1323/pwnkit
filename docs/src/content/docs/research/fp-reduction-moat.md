@@ -75,7 +75,7 @@ Each layer rejects or downgrades a fraction of the false positives that survived
 | 7 | Consensus (self-consistency) | `verify-pipeline.ts` `runSelfConsistencyVerify` | Self-consistency voting converts single-run variance into stable majority | Finding + target |
 | 8 | PoV gate | `triage/pov-gate.ts` | "Fuzzing Brain" empirical: no PoC = almost always FP | Live target |
 | 9 | Triage memories | `triage/memories.ts` | Semgrep Assistant ~96% auto-triage (with user feedback) | Historical triage |
-| 10 | Adversarial debate (planned) | — | Anthropic debate reference | Finding + target |
+| 10 | Adversarial debate | `triage/adversarial.ts` | Anthropic debate reference | Finding + target |
 
 **End-to-end target:** drive the ~50% raw FP rate toward **under 5%** — matching Endor Labs' 95% and Semgrep Assistant's 96% disclosed numbers — while retaining >=95% recall.
 
@@ -111,7 +111,7 @@ See `packages/core/src/agent/features.ts`. Flags:
 - `PWNKIT_FEATURE_POV_GATE`
 - `PWNKIT_FEATURE_CONSENSUS_VERIFY`
 - `PWNKIT_FEATURE_TRIAGE_MEMORIES`
-- `PWNKIT_FEATURE_DEBATE` (planned)
+- `PWNKIT_FEATURE_DEBATE`
 
 This lets us A/B test each layer independently in CI against the XBOW benchmark and measure its marginal FP reduction.
 

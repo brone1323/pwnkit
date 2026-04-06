@@ -36,9 +36,9 @@ npx pwnkit-cli scan --target https://example.com --mode web --egats
 npx pwnkit-cli scan --target https://example.com --mode web \
   --export github:myorg/myrepo
 
-# Generate a PDF report
+# Generate an HTML report (auto-opens in browser)
 npx pwnkit-cli scan --target https://example.com --mode web \
-  --format pdf --output report.pdf
+  --format html
 ```
 
 **Key flags:**
@@ -49,8 +49,7 @@ npx pwnkit-cli scan --target https://example.com --mode web \
 | `--mode <mode>` | Scan mode: `probe`, `deep`, `mcp`, `web` | auto |
 | `--depth <depth>` | Scan depth: `quick`, `default`, `deep` | `default` |
 | `--runtime <rt>` | Runtime: `auto`, `api`, `claude`, `codex`, `gemini` | `auto` |
-| `--format <fmt>` | Output format: `terminal`, `json`, `md`, `html`, `sarif`, `pdf` | `terminal` |
-| `--output <path>` | Write report to a file (required for `pdf`) | (stdout) |
+| `--format <fmt>` | Output format: `terminal`, `json`, `md`, `html`, `sarif` | `terminal` |
 | `--timeout <ms>` | Request timeout in milliseconds | `30000` |
 | `--api-key <key>` | API key for the LLM provider | (from env) |
 | `--model <model>` | Specific LLM model to use | provider default |
@@ -107,12 +106,12 @@ Pushes every confirmed finding to a GitHub repo as an issue, with severity label
 
 ## audit
 
-Install and security-audit any npm package with static analysis and AI review. Supports every scan flag (auth, api-spec, export, race, egats, pdf).
+Install and security-audit any npm package with static analysis and AI review.
 
 ```bash
-npx pwnkit-cli audit express@4.18.2
+npx pwnkit-cli audit express --version 4.18.2
 npx pwnkit-cli audit react --depth deep --runtime claude
-npx pwnkit-cli audit left-pad --format pdf --output left-pad-audit.pdf
+npx pwnkit-cli audit left-pad --format html
 ```
 
 The package is installed in a sandbox, scanned with semgrep, and then reviewed by an AI agent that traces data flow and looks for supply-chain vulnerabilities.
@@ -121,18 +120,15 @@ The package is installed in a sandbox, scanned with semgrep, and then reviewed b
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `<package>` | npm package name (with optional `@version`) | (required) |
+| `<package>` | npm package name | (required) |
 | `--version <v>` | Specific version to audit | `latest` |
 | `--depth <d>` | Audit depth: `quick`, `default`, `deep` | `default` |
 | `--runtime <rt>` | Runtime: `auto`, `api`, `claude`, `codex`, `gemini` | `auto` |
-| `--format <fmt>` | Output format: `terminal`, `json`, `md`, `html`, `sarif`, `pdf` | `terminal` |
-| `--output <path>` | Write report to a file | (stdout) |
+| `--format <fmt>` | Output format: `terminal`, `json`, `md`, `html`, `sarif` | `terminal` |
 | `--timeout <ms>` | AI agent timeout in milliseconds | `600000` |
-| `--auth <json>` | Auth credentials when the package talks to an authenticated API | (none) |
-| `--api-spec <path>` | OpenAPI spec for APIs the package integrates with | (none) |
-| `--export <target>` | Export findings to an issue tracker | (none) |
-| `--race` | Best-of-N strategy racing | `false` |
-| `--egats` | Evidence-Gated Attack Tree Search | `false` |
+| `--api-key <key>` | API key for the LLM provider | (from env) |
+| `--model <model>` | Specific LLM model to use | provider default |
+| `--db-path <path>` | Path to SQLite database | `~/.pwnkit/pwnkit.db` |
 | `--verbose` | Detailed agent output | `false` |
 
 ## review
@@ -154,11 +150,17 @@ npx pwnkit-cli review ./my-repo --diff-base origin/main --changed-only
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `<path-or-url>` | Local path or GitHub URL | (required) |
-| `--depth` | Scan depth | `default` |
-| `--runtime` | Runtime to use | `auto` |
-| `--diff-base <ref>` | Base branch for diff-aware review | (none) |
-| `--changed-only` | Only review changed files | `false` |
+| `<repo>` | Local path or git URL | (required) |
+| `--depth <d>` | Review depth: `quick`, `default`, `deep` | `default` |
+| `--format <fmt>` | Output format: `terminal`, `json`, `md`, `html`, `sarif` | `terminal` |
+| `--runtime <rt>` | Runtime: `auto`, `api`, `claude`, `codex`, `gemini` | `auto` |
+| `--diff-base <ref>` | Git base ref for diff-aware review | (none) |
+| `--changed-only` | Restrict semgrep + prioritization to changed files | `false` |
+| `--timeout <ms>` | AI agent timeout in milliseconds | `600000` |
+| `--api-key <key>` | API key for LLM provider | (from env) |
+| `--model <model>` | Specific LLM model to use | provider default |
+| `--db-path <path>` | Path to SQLite database | `~/.pwnkit/pwnkit.db` |
+| `--verbose` | Detailed agent output | `false` |
 
 ## triage
 
@@ -234,7 +236,10 @@ The dashboard provides a Kanban-style board for triaging findings, reviewing evi
 
 | Flag | Description | Default |
 |------|-------------|---------|
-| `--port <port>` | Port to serve the dashboard on | `48120` |
+| `--port <port>` | Port to bind | `48123` |
+| `--host <host>` | Host to bind | `127.0.0.1` |
+| `--no-open` | Do not auto-open a browser | (opens by default) |
+| `--db-path <path>` | Path to SQLite database | `~/.pwnkit/pwnkit.db` |
 
 ## history
 

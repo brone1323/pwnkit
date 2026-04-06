@@ -144,13 +144,13 @@ flowchart TD
 | Holding-it-wrong filter | `packages/core/src/triage/holding-it-wrong.ts` | Rejects findings where the "vulnerability" is the documented behaviour of the called function (e.g. `eval`, `writeFile`, `compile`). Downgrades to `info`. |
 | Feature extractor | `packages/core/src/triage/feature-extractor.ts` | 45 handcrafted features (response, request, metadata, text quality, cross-field) for fast first-pass signal. |
 | Reachability gate | `packages/core/src/triage/reachability.ts` | Suppresses findings whose sink is not reachable from an application entry point. Open-source mirror of Endor Labs' "Code API" moat. |
-| Multi-modal agreement | `packages/core/src/triage/multi-modal.ts` | Cross-validates against [foxguard](https://github.com/opensoar-hq/foxguard) (Rust pattern scanner). Both fire = strong signal; foxguard silent on scanned file = likely FP. |
+| Multi-modal agreement | `packages/core/src/triage/multi-modal.ts` | Cross-validates against [foxguard](https://github.com/peaktwilight/foxguard) (Rust pattern scanner). Both fire = strong signal; foxguard silent on scanned file = likely FP. |
 | Per-class oracles | `packages/core/src/triage/oracles.ts` | Deterministic exploit oracles per category (SQLi, XSS, SSRF, RCE, path traversal, IDOR). Verified = accept with no LLM call. |
 | PoV gate | `packages/core/src/triage/pov-gate.ts` | Narrowly-scoped mini agent loop must produce a working executable PoC. No PoV = downgrade to `info`. Based on "All You Need Is A Fuzzing Brain". |
 | Structured verify pipeline | `packages/core/src/triage/verify-pipeline.ts` | 4-step LLM verification: reachability -> payload validation -> impact assessment -> exploit confirmation. Category-specific addendums per vuln class. |
 | Consensus verify | `packages/core/src/triage/verify-pipeline.ts` (`runSelfConsistencyVerify`) | Runs the structured verify pipeline N times in parallel and takes the majority vote with early termination. |
 | Triage memories | `packages/core/src/triage/memories.ts` | Semgrep-style per-target FP memories. Injected as few-shot into the verify prompt; strong matches auto-reject without an LLM call. |
-| Adversarial debate | (planned) | Prosecutor vs. defender vs. judge, based on Anthropic's debate paper (arXiv:2402.06782). Feature flag wired, runtime pending. |
+| Adversarial debate | `packages/core/src/triage/adversarial.ts` | Prosecutor vs. defender vs. judge with fresh contexts, based on Anthropic's debate paper (arXiv:2402.06782). Uncorrelated error modes vs. single-pass verify. |
 
 Most layers are gated by feature flags (`PWNKIT_FEATURE_REACHABILITY_GATE`, `PWNKIT_FEATURE_MULTIMODAL`, `PWNKIT_FEATURE_CONSENSUS_VERIFY`, `PWNKIT_FEATURE_POV_GATE`, `PWNKIT_FEATURE_TRIAGE_MEMORIES`, `PWNKIT_FEATURE_DEBATE`) so they can be A/B tested independently. See `packages/core/src/agent/features.ts` for the full list.
 

@@ -138,7 +138,7 @@ Deterministic, category-specific exploit oracles: SQLi, reflected XSS, SSRF, RCE
 
 ### Layer 1.95: Multi-Modal Agreement (foxguard × pwnkit) — SHIPPED
 
-Cross-validate every pwnkit finding against [foxguard](https://github.com/opensoar-hq/foxguard), the Rust pattern scanner. If foxguard fires on the same file (and ideally the same category) → strong signal the finding is real. If foxguard scanned the file but was silent → likely false positive. This is the open-source mirror of Endor Labs' "neural + rules must agree" architecture.
+Cross-validate every pwnkit finding against [foxguard](https://github.com/peaktwilight/foxguard), the Rust pattern scanner. If foxguard fires on the same file (and ideally the same category) → strong signal the finding is real. If foxguard scanned the file but was silent → likely false positive. This is the open-source mirror of Endor Labs' "neural + rules must agree" architecture.
 
 **Implementation:** `packages/core/src/triage/multi-modal.ts` — `checkMultiModalAgreement`, `fuseTriageSignals`, `parseFoxguardSarif`, `detectFoxguard`. **Unique to pwnkit: no other open-source agent runs a second, independent scanner for cross-validation.**
 
@@ -186,9 +186,11 @@ Per-target persistent FP context that learns from human triage decisions. When a
 
 **Implementation:** `packages/core/src/triage/memories.ts` — `MemoryStore`, `scoreMemory`, `inferPackage`. Feature flag: `PWNKIT_FEATURE_TRIAGE_MEMORIES`.
 
-### Layer 6: Adversarial Debate (planned)
+### Layer 6: Adversarial Debate — SHIPPED
 
-Prosecutor vs. defender agents debate each finding, a skeptical judge decides. Based on Anthropic's debate paper (arXiv:2402.06782). Feature flag (`PWNKIT_FEATURE_DEBATE`) is wired but the debate runtime is not yet implemented.
+Prosecutor vs. defender agents debate each finding with fresh contexts, and a skeptical judge picks the winner. Based on Anthropic's debate paper (arXiv:2402.06782). The point is error decorrelation: single-pass verify shares priors with the discovery agent, whereas explicitly opposing debaters have uncorrelated error modes.
+
+**Implementation:** `packages/core/src/triage/adversarial.ts`. Feature flag: `PWNKIT_FEATURE_DEBATE`.
 
 ### Training Data Pipeline
 

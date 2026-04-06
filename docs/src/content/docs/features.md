@@ -116,11 +116,10 @@ order.
 | `md` / `markdown` | Human-readable Markdown |
 | `html` | HTML report |
 | `sarif` | SARIF 2.1 — drops into GitHub's Security tab |
-| PDF | Branded pentest-style PDF report |
 
 ## False-positive reduction moat
 
-pwnkit ships a full triage pipeline with ten+ independent techniques. See
+pwnkit ships a full triage pipeline with 11 independent layers. See
 [Finding Triage](/triage/) for the full reference.
 
 - Holding-it-wrong filter
@@ -132,6 +131,7 @@ pwnkit ships a full triage pipeline with ten+ independent techniques. See
 - Structured 4-step verify pipeline
 - Self-consistency voting
 - Assistant memories (Semgrep-style)
+- Adversarial debate (prosecutor vs defender vs judge)
 - EGATS (Evidence-Gated Attack Tree Search)
 
 ## Agent loop enhancements

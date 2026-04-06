@@ -38,16 +38,14 @@ npx pwnkit-cli scan \
 ## Audit an npm package for security issues
 
 ```bash
-# Default audit
-npx pwnkit-cli audit express@4.18.2
+# Default audit (latest version)
+npx pwnkit-cli audit express
+
+# Pin a specific version
+npx pwnkit-cli audit express --version 4.18.2
 
 # Deep audit with the Claude Code CLI runtime
 npx pwnkit-cli audit left-pad --depth deep --runtime claude
-
-# Audit a package that talks to an authenticated API
-npx pwnkit-cli audit my-sdk \
-  --auth '{"type":"bearer","token":"eyJhbGciOi..."}' \
-  --api-spec ./partner-api.yaml
 ```
 
 The package is installed in a sandbox, scanned with semgrep, then reviewed by an AI agent that traces data flow and hunts for supply-chain issues.
@@ -101,18 +99,25 @@ npx pwnkit-cli scan \
 
 Each finding becomes an issue labelled by severity (`sev:critical`, `sev:high`, …) and category (`cat:xss`, `cat:ssrf`, …) so you can triage from the GitHub UI.
 
-## Generate a client-ready PDF report
+## Generate an HTML or Markdown report
 
 ```bash
+# HTML (auto-opens in browser and saves to a temp file)
 npx pwnkit-cli scan \
   --target https://example.com \
   --mode web \
   --depth deep \
-  --format pdf \
-  --output example-pentest.pdf
+  --format html
+
+# Markdown (printed to stdout; redirect to a file)
+npx pwnkit-cli scan \
+  --target https://example.com \
+  --mode web \
+  --depth deep \
+  --format md > example-pentest.md
 ```
 
-The PDF includes an executive summary, a severity breakdown, per-finding evidence blocks with request/response pairs, and reproduction steps. Works for `audit` and `review` too.
+Both formats include an executive summary, a severity breakdown, per-finding evidence blocks with request/response pairs, and reproduction steps. Works for `audit` and `review` too.
 
 ## Scan authenticated APIs (bearer token)
 
