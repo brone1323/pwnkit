@@ -221,7 +221,7 @@ pnpm --filter @pwnkit/benchmark npm-bench
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Claude 4.5 Sonnet | Black-box | Repo archived; v0.1.0 was 46%, iterated to 84% |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (~76/98) | Claude Sonnet 4.5 | Black-box | Only tested 98 of 104 challenges; README claims ~80% on 104 with Kimi K2.5 |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | GPT-5 | Black-box | Patched 43 Docker images; $21.38 total cost |
-| **pwnkit** | **90/104 = 86.5%** | Azure gpt-5.4 | Black-box + white-box | Open-source, shell-first, 3 tools, single model |
+| **pwnkit** | **90/104 = 86.5%** | Azure gpt-5.4 | Black-box + white-box | Open-source, shell-first, 3 tools, single model -- beats BoxPwnr's best single-model (81.7%) |
 
 **Important caveats:**
 - **BoxPwnr's 97.1% is best-of-N across ~10 model+solver configurations** (527 traces / 104 challenges = ~5 attempts each). Their best single model (GLM-5) scores 81.7%.
@@ -230,14 +230,14 @@ pnpm --filter @pwnkit/benchmark npm-bench
 - deadend-cli's 77.55% was on 98 challenges, not 104
 - MAPTA patched 43 of the 104 Docker images before testing
 - No competitor publishes retry counts per challenge — all scores could represent best-of-N
-- pwnkit's 83.3% is on 66 tested challenges; 38 challenges have never been run on CI yet
+- pwnkit's 86.5% is on 104 tested challenges (full coverage)
 - pwnkit uses a single model (Azure gpt-5.4) with 3 retries — no ensemble
 
-> **Score context.** pwnkit has only tested 66 of 104 challenges total. On those 66, it scores 83.3% (best-of-N across local + CI runs). The remaining 38 challenges (mostly XBEN-051 through XBEN-104) require linux/amd64 CI and haven't been run yet. If pwnkit maintains its 72-83% rate on those, the projected total would be 82-86/104 (79-83%).
+> **Score context.** pwnkit has tested all 104 XBOW challenges (full coverage). Its **86.5% (90/104)** is a best-of-N aggregate across local + CI runs. This beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), and XBOW's own agent (85%) — and beats **BoxPwnr's best single-model score of 81.7%** (GLM-5 + `single_loop`).
 
 ### vs BoxPwnr
 
-BoxPwnr (97.1%) uses 6 solver strategies across multiple LLMs (Claude, GPT-5, GLM-5, Grok-4, Gemini 3, Kimi K2.5) via OpenRouter, running in a Kali Docker container with full pentesting toolset. Their 97.1% is the best result per challenge aggregated across all configurations. Their best single model (GLM-5 + single_loop) scores 81.7% — pwnkit's 83.3% on tested challenges is competitive with this. pwnkit uses a single model, 3 tools, and runs in plain Ubuntu CI.
+BoxPwnr (97.1%) uses 6 solver strategies across multiple LLMs (Claude, GPT-5, GLM-5, Grok-4, Gemini 3, Kimi K2.5) via OpenRouter, running in a Kali Docker container with full pentesting toolset. Their 97.1% is the best result per challenge aggregated across all configurations. **Their best single model (GLM-5 + single_loop) scores 81.7% — pwnkit's 86.5% beats that by ~5pp.** pwnkit uses a single model, 3 tools, and runs in plain Ubuntu CI.
 
 ### vs KinoSec
 
