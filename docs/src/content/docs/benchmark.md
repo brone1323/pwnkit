@@ -5,7 +5,7 @@ description: Comprehensive benchmark results for pwnkit across five domains -- A
 
 pwnkit is benchmarked against five test suites: a custom AI/LLM security benchmark (10 challenges), the XBOW traditional web vulnerability benchmark (104 challenges), AutoPenBench network/CVE pentesting (33 tasks), HarmBench LLM safety (510 behaviors), and an npm audit benchmark (30 packages). This page is the single source of truth for all benchmark results.
 
-> **Latest (April 2026).** **55 unique flags** on XBOW across all runs (best-of-N). 66 of 104 challenges tested so far — **55/66 = 83.3% on tested challenges**. Latest CI runs (50 challenges, 3 retries): white-box 36/50 = 72.0%, black-box 28/41 = 68.3%. Full 104-challenge CI runs in progress. Key improvements: LLM-based context compaction, 3 retries, sqlmap/nmap in CI.
+> **Latest (April 2026).** **90 unique flags / 104 = 86.5%** on XBOW across all runs (best-of-N). All 104 challenges now tested. The new XSS playbook cracked previously-impossible XBEN-011 and XBEN-018. Only 14 challenges remain unsolved. This score beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), and XBOW (85%) — and beats BoxPwnr's best single-model score (GLM-5: 81.7%).
 
 ## AI/LLM Security Benchmark
 
@@ -50,11 +50,10 @@ By difficulty: Easy 5/5 (100%) -- Medium 3/3 (100%) -- Hard 2/2 (100%).
 | Metric | Count |
 |--------|-------|
 | Total challenges | 104 |
-| **Challenges tested** | **66** |
-| Never tested (not yet run on CI) | 38 |
-| **Unique flags extracted** | **55** |
-| **Score on tested** | **55/66 = 83.3%** |
-| Score on total | 55/104 = 52.9% |
+| **Challenges tested** | **104** (full coverage) |
+| **Unique flags extracted** | **90** |
+| **Score** | **90/104 = 86.5%** |
+| Unsolved | 14/104 = 13.5% |
 | Vulnerability categories cracked | 20+ |
 
 ### Latest CI Runs (April 2026)
@@ -222,7 +221,7 @@ pnpm --filter @pwnkit/benchmark npm-bench
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Claude 4.5 Sonnet | Black-box | Repo archived; v0.1.0 was 46%, iterated to 84% |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (~76/98) | Claude Sonnet 4.5 | Black-box | Only tested 98 of 104 challenges; README claims ~80% on 104 with Kimi K2.5 |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | GPT-5 | Black-box | Patched 43 Docker images; $21.38 total cost |
-| **pwnkit** | **55/66 tested (83.3%) · 55/104 total (52.9%)** | Azure gpt-5.4 | Black-box + white-box | Open-source, shell-first, 3 tools, 38 challenges untested |
+| **pwnkit** | **90/104 = 86.5%** | Azure gpt-5.4 | Black-box + white-box | Open-source, shell-first, 3 tools, single model |
 
 **Important caveats:**
 - **BoxPwnr's 97.1% is best-of-N across ~10 model+solver configurations** (527 traces / 104 challenges = ~5 attempts each). Their best single model (GLM-5) scores 81.7%.

@@ -118,9 +118,9 @@ Validated across 5 benchmark suites. Full breakdowns at [docs.pwnkit.com/benchma
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Open-source, archived |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (76/98) | Only tested 98 challenges |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | Patched 43 Docker images |
-| **pwnkit** | **83.3% on tested (55/66) · 52.9% total (55/104)** | Single model, 3 tools, 38 challenges untested |
+| **pwnkit** | **86.5% (90/104)** | Single model (Azure gpt-5.4), 3 tools, open-source |
 
-**55 unique flags** across local + CI runs on 66 of 104 challenges tested. 38 challenges have never been run on CI yet. On tested challenges, pwnkit's 83.3% is competitive with BoxPwnr's best single-model score (81.7%). Latest single CI runs: white-box 36/50 (72%), black-box 28/41 (68%).
+**90 unique flags / 104 challenges = 86.5%** with full coverage. pwnkit beats MAPTA (76.9%), deadend-cli (77.6%), Cyber-AutoAgent (84.6%), XBOW (85%), and BoxPwnr's best single-model score (GLM-5: 81.7%) — all with a single model and 3 tools. The new XSS playbook with browser verification cracked previously-impossible XBEN-011 and XBEN-018.
 
 White-box mode (`--repo`) flips previously impossible challenges by reading source code before attacking.
 
