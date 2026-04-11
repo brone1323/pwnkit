@@ -127,6 +127,14 @@ jobs:
                 consensus) echo "PWNKIT_FEATURE_CONSENSUS_VERIFY=1" >> "$GITHUB_ENV" ;;
                 no-hiw) echo "PWNKIT_FEATURE_HOLDING_IT_WRONG=0" >> "$GITHUB_ENV" ;;
                 no-evidence) echo "PWNKIT_FEATURE_EVIDENCE_GATE=0" >> "$GITHUB_ENV" ;;
+                # Stable feature isolation tokens — see xbow-bench.yml
+                # for context. Used to isolate which stable feature
+                # causes the npm-bench FPR increase (see pwnkit#72).
+                no-early-stop) echo "PWNKIT_FEATURE_EARLY_STOP=0" >> "$GITHUB_ENV" ;;
+                no-loop-detection) echo "PWNKIT_FEATURE_LOOP_DETECTION=0" >> "$GITHUB_ENV" ;;
+                no-context-compaction) echo "PWNKIT_FEATURE_CONTEXT_COMPACTION=0" >> "$GITHUB_ENV" ;;
+                no-script-templates) echo "PWNKIT_FEATURE_SCRIPT_TEMPLATES=0" >> "$GITHUB_ENV" ;;
+                no-handoff) echo "PWNKIT_FEATURE_PROGRESS_HANDOFF=0" >> "$GITHUB_ENV" ;;
               esac
             done
             echo "Running with features: $FEATURES"
