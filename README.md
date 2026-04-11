@@ -44,8 +44,6 @@
 
 > Fully autonomous agentic pentesting for web apps, AI/LLM apps, package ecosystems, and source code.
 
-> **A PwnKit Labs product.**
-
 This README is the fast path. The detailed command reference, configuration, architecture notes, recipes, and benchmark breakdowns live in the docs site.
 
 ## Quick Start
@@ -162,4 +160,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-[Apache 2.0](LICENSE) — built by [PwnKit Labs](https://github.com/PwnKit-Labs) and [Doruk Tan Ozturk](https://doruk.ch).
+[Apache 2.0](LICENSE)
