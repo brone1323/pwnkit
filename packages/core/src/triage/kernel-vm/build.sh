@@ -5,10 +5,8 @@
 #
 # Outputs:
 #   bzImage       — KASAN-enabled kernel
-#   rootfs.img    — Debian root filesystem with GCC/binutils + pwnkit-init
+#   rootfs.img    — Debian root filesystem with GCC/binutils + shared-workdir boot path
 #   kernel.config — kernel .config
-#   pwnkit_vm_key — SSH private key for the guest
-#   pwnkit_vm_key.pub — matching public key
 #
 # After building, configure the kernel VM runner:
 #   export PWNKIT_KERNEL_QEMU=1

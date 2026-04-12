@@ -32,8 +32,13 @@ pwnkit ingest --verify /path/to/crash-reports/
 - Debian Bookworm minimal
 - GCC + binutils + libc-dev for reproducer compilation
 - gdb, strace for debugging
-- generated `pwnkit_vm_key` / `pwnkit_vm_key.pub` pair for non-interactive SSH
 - dedicated `/sbin/pwnkit-init` boot path that mounts the host 9p share and runs `/mnt/pwnkit/runner.sh`
+
+## CI
+
+The real GitHub Actions E2E lane lives in `.github/workflows/kernel-validator-e2e.yml`.
+It builds the VM artifacts, boots QEMU, and runs `ingest --verify` against a real
+syzbot crash/reproducer pair while uploading the VM logs and runner outputs as artifacts.
 
 ## Environment variables
 

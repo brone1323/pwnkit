@@ -1,7 +1,7 @@
 # pwnkit kernel crash validator — KASAN-enabled kernel builder
 #
 # Builds a minimal Linux kernel with KASAN + UBSAN enabled, plus a
-# Debian root filesystem with SSH and GCC for reproducer compilation.
+# Debian root filesystem that boots into a shared-workdir reproducer runner.
 #
 # Usage:
 #   docker build -t pwnkit-kernel-builder -f Dockerfile .
@@ -9,7 +9,7 @@
 #
 # Outputs in /out:
 #   bzImage       — KASAN-enabled kernel
-#   rootfs.img    — ext4 root filesystem (512MB) with SSH + GCC
+#   rootfs.img    — ext4 root filesystem (512MB) with GCC/binutils + pwnkit-init
 #   kernel.config — .config used for the build
 #
 # The resulting artifacts work with the kernel-vm-runner.ts QEMU config:
