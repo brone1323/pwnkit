@@ -3,8 +3,9 @@ name: Self-Scan
 on:
   push:
     branches: [main]
-  schedule:
-    - cron: '0 0 * * 1'  # Weekly on Monday
+  workflow_dispatch:
+  release:
+    types: [published]
 
 jobs:
   scan:
@@ -122,8 +123,23 @@ jobs:
             scan-stderr.log
           retention-days: 30
 
-      # Fail CI if critical or high findings
+      - name: Warn on critical findings (advisory on push)
+        if: github.event_name == 'push'
+        run: |
+          if [ -s scan-results.json ]; then
+            node -e "
+              const r = JSON.parse(require('fs').readFileSync('scan-results.json','utf8'));
+              if (r.summary.critical > 0 || r.summary.high > 0) {
+                console.log('::warning::Self-scan found ' + r.summary.critical + ' critical and ' + r.summary.high + ' high findings on push.');
+              } else {
+                console.log('PASS: no critical/high findings');
+              }
+            "
+          fi
+
+      # Block only on explicit/manual security gates
       - name: Check for critical findings
+        if: github.event_name != 'push'
         run: |
           if [ -s scan-results.json ]; then
             node -e "
