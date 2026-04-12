@@ -252,6 +252,7 @@ export PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC=120
 export PWNKIT_KERNEL_QEMU_TIMEOUT_SEC=60
 export PWNKIT_KERNEL_QEMU_ACCEL=kvm
 export PWNKIT_KERNEL_QEMU_SHARE_TAG=pwnkitshare
+export PWNKIT_KERNEL_QEMU_ARTIFACT_DIR=/tmp/pwnkit-kvm-runs
 ```
 
 If the VM is not configured, pwnkit does **not** claim a reproduced crash; it reports static-only verification with capped confidence.

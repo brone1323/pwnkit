@@ -48,3 +48,4 @@ pwnkit ingest --verify /path/to/crash-reports/
 | `PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC` | `120` | Boot timeout |
 | `PWNKIT_KERNEL_QEMU_ACCEL` | - | QEMU accelerator (e.g. `kvm`) |
 | `PWNKIT_KERNEL_QEMU_SHARE_TAG` | `pwnkitshare` | 9p mount tag used by the guest boot script |
+| `PWNKIT_KERNEL_QEMU_ARTIFACT_DIR` | - | Preserve VM run artifacts (serial log, compile log, dmesg, runner outputs) instead of deleting the temp directory |

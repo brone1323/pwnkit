@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ReproducerResult, CrashReport } from "./kernel-oracle.js";
@@ -17,6 +17,7 @@ export interface KernelVmConfig {
   initrdPath?: string;
   timeoutSec: number;
   shareTag: string;
+  artifactDir?: string;
 }
 
 function shellQuote(value: string): string {
@@ -58,6 +59,7 @@ export function loadKernelVmConfigFromEnv(): KernelVmConfig {
     initrdPath: process.env.PWNKIT_KERNEL_QEMU_INITRD?.trim() || undefined,
     timeoutSec: parseInt(process.env.PWNKIT_KERNEL_QEMU_TIMEOUT_SEC?.trim() || "60", 10),
     shareTag: process.env.PWNKIT_KERNEL_QEMU_SHARE_TAG?.trim() || "pwnkitshare",
+    artifactDir: process.env.PWNKIT_KERNEL_QEMU_ARTIFACT_DIR?.trim() || undefined,
   };
 }
 
@@ -185,7 +187,12 @@ export async function runReproducerInKernelVm(report: CrashReport): Promise<Repr
   }
 
   const config = loadKernelVmConfigFromEnv();
-  const hostTmpDir = mkdtempSync(join(tmpdir(), "pwnkit-kvm-"));
+  const hostTmpDir = config.artifactDir
+    ? (() => {
+        mkdirSync(config.artifactDir!, { recursive: true });
+        return mkdtempSync(join(config.artifactDir!, "pwnkit-kvm-"));
+      })()
+    : mkdtempSync(join(tmpdir(), "pwnkit-kvm-"));
   const sourcePath = join(hostTmpDir, "repro.c");
   const runnerScriptPath = join(hostTmpDir, "runner.sh");
   const serialLogPath = join(hostTmpDir, "serial.log");
@@ -230,6 +237,8 @@ export async function runReproducerInKernelVm(report: CrashReport): Promise<Repr
     };
   } finally {
     await stopVm(vmProc);
-    rmSync(hostTmpDir, { recursive: true, force: true });
+    if (!config.artifactDir) {
+      rmSync(hostTmpDir, { recursive: true, force: true });
+    }
   }
 }
