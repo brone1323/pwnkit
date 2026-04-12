@@ -126,7 +126,7 @@ export type { VisibleActions } from "./scan-ui-state.js";
 export { toolCallPreview, summariseTurnToolCalls } from "./agent/tool-preview.js";
 
 // Kernel crash ingest (crash report → Finding pipeline)
-export { parseCrashReport, crashToFinding, ingestFile, ingestDirectory, crashTypeToCategory, crashSeverity } from "./ingest/index.js";
+export { parseCrashReport, crashToFinding, ingestArtifactsFromDirectory, ingestArtifactsFromFile, ingestFile, ingestDirectory, crashTypeToCategory, crashSeverity } from "./ingest/index.js";
 
 // Kernel crash verification oracle
 export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, validateCrashReportConsistency } from "./triage/kernel-oracle.js";

@@ -3,15 +3,15 @@
  *
  * Verifies kernel crash reports (KASAN, UBSAN, null-deref, etc.) by:
  *   1. Checking if a reproducer exists and is compilable
- *   2. Running it in a Docker container with a KASAN-enabled kernel (when QEMU is available)
+ *   2. Running it in a configured kernel VM (QEMU + SSH) when available
  *   3. Comparing the crash output to the original report
  *
- * When no QEMU environment is available (PWNKIT_KERNEL_QEMU != "1"), the oracle
+ * When no kernel VM environment is available (PWNKIT_KERNEL_QEMU != "1"), the oracle
  * falls back to static analysis of the reproducer and crash report consistency.
  */
 
 import type { Finding } from "@pwnkit/shared";
-import { execInDocker } from "../agent/docker-executor.js";
+import { runReproducerInKernelVm } from "./kernel-vm-runner.js";
 
 // ────────────────────────────────────────────────────────────────────
 // Types
@@ -91,8 +91,6 @@ function notVerifiable(reason: string): KernelOracleResult {
   };
 }
 
-const REPRODUCER_TIMEOUT_S = 60;
-
 /**
  * Known kernel function prefixes that indicate a plausible symbol name.
  * Used by consistency checks to filter out garbage stack frames.
@@ -144,10 +142,11 @@ const SUBSYSTEM_SYSCALLS: Record<string, RegExp[]> = {
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * Compile and run the reproducer in a Docker container.
+ * Compile and run the reproducer inside a configured kernel VM.
  *
- * When `PWNKIT_KERNEL_QEMU=1`, this actually compiles and executes the
- * reproducer. Otherwise it returns a stub indicating no execution.
+ * When `PWNKIT_KERNEL_QEMU=1`, this boots the configured VM assets and
+ * executes the reproducer over SSH. Otherwise it returns a stub indicating
+ * no execution.
  */
 export async function compileAndRunReproducer(
   report: CrashReport,
@@ -177,49 +176,18 @@ export async function compileAndRunReproducer(
     };
   }
 
-  // Write reproducer to container and compile
-  const escapedSource = report.reproducer.replace(/'/g, "'\\''");
-  const compileCmd = [
-    `echo '${escapedSource}' > /tmp/repro.c`,
-    `gcc -o /tmp/repro /tmp/repro.c -lpthread 2>&1`,
-  ].join(" && ");
-
-  const compileResult = await execInDocker(compileCmd, REPRODUCER_TIMEOUT_S);
-  if (compileResult.exitCode !== 0) {
+  try {
+    return await runReproducerInKernelVm(report);
+  } catch (error) {
     return {
       compiled: false,
       executed: false,
-      output: compileResult.output,
+      output: `[kernel-vm-error] ${error instanceof Error ? error.message : String(error)}`,
       dmesg: "",
-      exitCode: compileResult.exitCode,
-      timedOut: compileResult.timedOut,
+      exitCode: 1,
+      timedOut: false,
     };
   }
-
-  // Execute the reproducer and capture dmesg
-  const runCmd = [
-    `dmesg --clear 2>/dev/null || true`,
-    `timeout ${REPRODUCER_TIMEOUT_S} /tmp/repro 2>&1 || true`,
-    `dmesg 2>/dev/null || true`,
-  ].join(" ; ");
-
-  const runResult = await execInDocker(runCmd, REPRODUCER_TIMEOUT_S + 10);
-
-  // Split output: everything before the last dmesg is program output,
-  // the rest is kernel log
-  const output = runResult.output;
-  const dmesgMarker = output.lastIndexOf("[    ");
-  const programOutput = dmesgMarker >= 0 ? output.slice(0, dmesgMarker) : output;
-  const dmesg = dmesgMarker >= 0 ? output.slice(dmesgMarker) : "";
-
-  return {
-    compiled: true,
-    executed: true,
-    output: programOutput,
-    dmesg,
-    exitCode: runResult.exitCode,
-    timedOut: runResult.timedOut,
-  };
 }
 
 /**
@@ -487,7 +455,7 @@ function staticAnalyzeReproducer(report: CrashReport): {
  * Steps:
  *   1. Check if the crash report has a reproducer — bail early if not
  *   2. Validate the crash report's internal consistency
- *   3. Attempt to compile and run the reproducer in Docker (if QEMU available)
+ *   3. Attempt to compile and run the reproducer in a configured kernel VM
  *   4. Compare reproduced output to original report (or do static analysis)
  *   5. Return verdict with confidence
  */

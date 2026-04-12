@@ -188,6 +188,75 @@ npx pwnkit-cli review ./my-repo --diff-base origin/main --changed-only
 | `--db-path <path>` | Path to SQLite database | `~/.pwnkit/pwnkit.db` |
 | `--verbose` | Detailed agent output | `false` |
 
+## ingest
+
+Import kernel crash reports and optionally verify them against attached reproducers.
+
+```bash
+# Parse one crash report into findings
+npx pwnkit-cli ingest ./crashes/report.log
+
+# Parse a directory of syzbot-style reports and reproducers
+npx pwnkit-cli ingest ./crashes --output json
+
+# Validate reports against attached reproducers
+npx pwnkit-cli ingest ./crashes --verify --output json
+```
+
+For directory ingest, reproducers are attached by matching filename prefix:
+
+- `crash001.log` + `crash001.c`
+- `bug-42.report` + `bug-42.syz`
+
+When `--verify` is enabled, the command returns a richer result object per crash:
+
+- `sourcePath`
+- `reproducerPath`
+- `finding`
+- `verification`
+
+Without a configured kernel VM, verification falls back to static consistency and reproducer analysis only.
+
+**Key flags:**
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `<path>` | Crash report file or directory of reports | (required) |
+| `--format <fmt>` | Input hint: `auto`, `kasan`, `ubsan`, `oops`, `syzkaller`, `generic` | `auto` |
+| `--output <fmt>` | Output format: `terminal`, `json`, `sarif` | `terminal` |
+| `--verify` | Run the kernel oracle for each parsed report | `false` |
+| `--verbose` | Include extra crash-analysis detail in terminal output | `false` |
+
+### Real kernel VM verification
+
+Set `PWNKIT_KERNEL_QEMU=1` to enable VM-backed execution. The runner expects a bootable guest image with:
+
+- an SSH server reachable on port 22 inside the guest
+- a working C toolchain (`gcc`)
+- permission to read kernel logs via `dmesg`
+
+Required environment variables:
+
+```bash
+export PWNKIT_KERNEL_QEMU=1
+export PWNKIT_KERNEL_QEMU_KERNEL=/path/to/bzImage
+export PWNKIT_KERNEL_QEMU_DISK=/path/to/rootfs.qcow2
+```
+
+Useful optional variables:
+
+```bash
+export PWNKIT_KERNEL_QEMU_SSH_USER=root
+export PWNKIT_KERNEL_QEMU_SSH_KEY=/path/to/id_ed25519
+export PWNKIT_KERNEL_QEMU_SSH_PORT=10022
+export PWNKIT_KERNEL_QEMU_APPEND='console=ttyS0 root=/dev/vda rw nokaslr panic=-1'
+export PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC=120
+export PWNKIT_KERNEL_QEMU_TIMEOUT_SEC=60
+export PWNKIT_KERNEL_QEMU_ACCEL=kvm
+```
+
+If the VM is not configured, pwnkit does **not** claim a reproduced crash; it reports static-only verification with capped confidence.
+
 ## triage
 
 Triage findings and manage learned false-positive memories. Every time you mark a finding as a false positive, pwnkit stores a pattern that future verify passes will consult — think Semgrep's `nosemgrep` but learned automatically.
