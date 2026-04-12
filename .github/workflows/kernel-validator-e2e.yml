@@ -33,9 +33,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
-    env:
-      KERNEL_VM_ARTIFACT_ROOT: ${{ runner.temp }}/kernel-vm
-
     steps:
       - uses: actions/checkout@v6
 
@@ -56,7 +53,7 @@ jobs:
         id: kernel-vm-cache
         uses: actions/cache/restore@v4
         with:
-          path: ${{ env.KERNEL_VM_ARTIFACT_ROOT }}
+          path: ${{ runner.temp }}/kernel-vm
           key: kernel-vm-artifacts-${{ runner.os }}-${{ hashFiles('packages/core/src/triage/kernel-vm/Dockerfile', 'packages/core/src/triage/kernel-vm/build.sh') }}
 
       - name: Build kernel VM artifacts
@@ -64,7 +61,7 @@ jobs:
         env:
           PWNKIT_KERNEL_VM_MAKE_JOBS: "4"
         run: |
-          ARTIFACT_ROOT="${KERNEL_VM_ARTIFACT_ROOT}"
+          ARTIFACT_ROOT="${RUNNER_TEMP}/kernel-vm"
           mkdir -p "${ARTIFACT_ROOT}"
           bash packages/core/src/triage/kernel-vm/build.sh "${ARTIFACT_ROOT}"
 
@@ -72,14 +69,14 @@ jobs:
         if: steps.kernel-vm-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
         with:
-          path: ${{ env.KERNEL_VM_ARTIFACT_ROOT }}
+          path: ${{ runner.temp }}/kernel-vm
           key: ${{ steps.kernel-vm-cache.outputs.cache-primary-key }}
 
       - name: Verify kernel VM artifacts exist
         run: |
-          test -f "${KERNEL_VM_ARTIFACT_ROOT}/bzImage"
-          test -f "${KERNEL_VM_ARTIFACT_ROOT}/rootfs.img"
-          test -f "${KERNEL_VM_ARTIFACT_ROOT}/kernel.config"
+          test -f "${RUNNER_TEMP}/kernel-vm/bzImage"
+          test -f "${RUNNER_TEMP}/kernel-vm/rootfs.img"
+          test -f "${RUNNER_TEMP}/kernel-vm/kernel.config"
 
       - name: Run real kernel validator E2E
         env:
