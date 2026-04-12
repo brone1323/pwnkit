@@ -95,6 +95,26 @@ Call Trace:
  [<ffffffff81ccddee>] ext4_write_end+0x60/0x180
 `;
 
+const KERNEL_OOPS_INVALID_OPCODE = `
+------------[ cut here ]------------
+kernel BUG at fs/f2fs/segment.c:1900!
+Oops: invalid opcode: 0000 [#1] SMP KASAN PTI
+CPU: 1 UID: 0 PID: 7532 Comm: syz.1.186 Not tainted syzkaller #0 PREEMPT
+RIP: 0010:f2fs_issue_discard_timeout+0x59b/0x5a0 fs/f2fs/segment.c:1900
+Call Trace:
+ <TASK>
+ __f2fs_remount fs/f2fs/super.c:2960 [inline]
+ f2fs_reconfigure+0x108a/0x1710 fs/f2fs/super.c:5443
+ reconfigure_super+0x227/0x8a0 fs/super.c:1080
+ path_mount+0xdc5/0x10e0 fs/namespace.c:4151
+ do_mount fs/namespace.c:4172 [inline]
+ __se_sys_mount+0x31d/0x420 fs/namespace.c:4338
+ do_syscall_64+0x14d/0xf80 arch/x86/entry/syscall_64.c:94
+ entry_SYSCALL_64_after_hwframe+0x77/0x7f
+ </TASK>
+---[ end trace 0000000000000000 ]---
+`;
+
 const GP_FAULT = `
 general protection fault, probably for non-canonical address 0xdead000000000000: 0000 [#1] PREEMPT SMP
 CPU: 0 PID: 42 Comm: syzkaller Not tainted 6.1.0 #3
@@ -160,6 +180,13 @@ describe("parseCrashReport", () => {
     const report = parseCrashReport(KERNEL_OOPS_WITH_IP);
     expect(report.crashType).toBe("kernel-oops");
     expect(report.faultingFunction).toBe("ext4_dirty_inode");
+  });
+
+  it("extracts kernel oops with invalid opcode RIP line", () => {
+    const report = parseCrashReport(KERNEL_OOPS_INVALID_OPCODE);
+    expect(report.crashType).toBe("kernel-oops");
+    expect(report.faultingFunction).toBe("f2fs_issue_discard_timeout");
+    expect(report.subsystem).toBe("f2fs");
   });
 
   it("extracts general protection fault", () => {
@@ -395,6 +422,15 @@ describe("ingestFile", () => {
     expect(findings).toHaveLength(2);
     expect(findings.map((f) => f.category)).toContain("heap-overflow");
     expect(findings.map((f) => f.category)).toContain("use-after-free");
+  });
+
+  it("ingests kernel oops reports with invalid opcode RIP headers", () => {
+    const filePath = writeTmpFile(KERNEL_OOPS_INVALID_OPCODE);
+    const findings = ingestFile(filePath);
+
+    expect(findings).toHaveLength(1);
+    expect(findings[0]!.templateId).toBe("kernel-kernel-oops");
+    expect(findings[0]!.title).toContain("f2fs_issue_discard_timeout");
   });
 
   it("returns empty array for non-crash-report files", () => {

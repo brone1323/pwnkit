@@ -10,7 +10,7 @@ const KASAN_HEADER = /BUG:\s*KASAN:\s*([\w-]+)\s+in\s+(\S+)/;
 const KASAN_ACCESS = /(Read|Write)\s+of\s+size\s+(\d+)\s+at\s+addr\s+([0-9a-fA-Fx]+)/;
 const UBSAN_HEADER = /UBSAN:\s*([\w\s-]+)\s+in\s+(\S+)/;
 const KERNEL_PANIC = /Kernel panic\s*-\s*not syncing:\s*(.*)/;
-const KERNEL_OOPS = /Oops:\s+([0-9a-fA-F]+)/;
+const KERNEL_OOPS = /Oops:\s+(?:[^:\n]+:\s+)?([0-9a-fA-F]+)/;
 const KERNEL_BUG = /BUG:\s+(?!KASAN)(.+)/;
 const GP_FAULT = /general protection fault,?\s*(?:#?(\w+))?.*?:\s*([0-9a-fA-F]+)/;
 const RCU_STALL = /rcu:\s*(.*stall.*)/i;
@@ -22,7 +22,7 @@ const KERNEL_VERSION = /Linux version\s+([\d.]+[\w.-]*)/;
 const COMMIT_HASH = /Linux version\s+\S+\s+\(.*?\)\s+.*?#\d+\s+\w+\s+.*?\b([0-9a-f]{7,40})\b/;
 const ALLOC_SITE = /Allocated by task.*?:\n([\s\S]*?)(?:\n\n|\nFreed)/;
 const FREE_SITE = /Freed by task.*?:\n([\s\S]*?)(?:\n\n|\n(?:The|BUG|=))/;
-const IP_LINE = /IP:\s*(?:\[<[0-9a-fA-F]+>\])?\s*(\S+)/;
+const IP_LINE = /(?:RIP|IP):\s*(?:[0-9a-fA-F]+:)?(?:\[<[0-9a-fA-F]+>\])?\s*(\S+)/;
 
 // ── Subsystem inference ──
 
