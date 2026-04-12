@@ -4,6 +4,8 @@ import {
   crashToFinding,
   crashTypeToCategory,
   crashSeverity,
+  ingestArtifactsFromDirectory,
+  ingestArtifactsFromFile,
   ingestFile,
   ingestDirectory,
 } from "../kernel-crash.js";
@@ -414,6 +416,16 @@ describe("ingestFile", () => {
     expect(findings[0]!.category).toBe("heap-overflow");
   });
 
+  it("returns artifact metadata for a single crash report file", () => {
+    const filePath = writeTmpFile(KASAN_SLAB_OOB);
+    const artifacts = ingestArtifactsFromFile(filePath);
+
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]!.sourcePath).toBe(filePath);
+    expect(artifacts[0]!.report.crashType).toBe("kasan-oob");
+    expect(artifacts[0]!.finding.category).toBe("heap-overflow");
+  });
+
   it("splits multi-report files separated by ===", () => {
     const multiReport = [KASAN_SLAB_OOB, "===", KASAN_UAF].join("\n");
     const filePath = writeTmpFile(multiReport);
@@ -475,6 +487,23 @@ describe("ingestDirectory", () => {
     expect(findings).toHaveLength(1);
     // The reproducer is attached to the report; evidence.request carries it
     expect(findings[0]!.evidence.request).toContain("repro");
+  });
+
+  it("returns artifact metadata with reproducer path", () => {
+    const dir = makeTmpDir();
+    const reportPath = path.join(dir, "crash001.log");
+    const reproPath = path.join(dir, "crash001.c");
+    fs.writeFileSync(reportPath, KASAN_SLAB_OOB);
+    fs.writeFileSync(
+      reproPath,
+      '#include <stdio.h>\nint main() { printf("repro"); return 0; }',
+    );
+
+    const artifacts = ingestArtifactsFromDirectory(dir);
+    expect(artifacts).toHaveLength(1);
+    expect(artifacts[0]!.sourcePath).toBe(reportPath);
+    expect(artifacts[0]!.reproducerPath).toBe(reproPath);
+    expect(artifacts[0]!.report.reproducer).toContain("repro");
   });
 
   it("deduplicates by function + crashType", () => {

@@ -3,6 +3,7 @@ import chalk from "chalk";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
 import type { Finding } from "@pwnkit/shared";
+import type { KernelOracleResult } from "@pwnkit/core";
 
 const VALID_FORMATS = ["auto", "kasan", "ubsan", "oops", "syzkaller", "generic"] as const;
 const VALID_OUTPUT_FORMATS = ["terminal", "json", "sarif"] as const;
@@ -13,7 +14,15 @@ type IngestOutputFormat = (typeof VALID_OUTPUT_FORMATS)[number];
 interface IngestOpts {
   format: string;
   output: string;
+  verify?: boolean;
   verbose?: boolean;
+}
+
+interface VerifiedCrashResult {
+  sourcePath: string;
+  reproducerPath?: string;
+  finding: Finding;
+  verification: KernelOracleResult;
 }
 
 export function registerIngestCommand(program: Command): void {
@@ -23,6 +32,7 @@ export function registerIngestCommand(program: Command): void {
     .argument("<path>", "Path to a crash report file or directory of reports")
     .option("--format <format>", "Input format: auto | kasan | ubsan | oops | syzkaller | generic", "auto")
     .option("-o, --output <format>", "Output format: terminal | json | sarif", "terminal")
+    .option("--verify", "Run kernel oracle verification for each report/reproducer")
     .option("-v, --verbose", "Verbose output")
     .action(async (inputPath: string, opts: IngestOpts) => {
       try {
@@ -39,20 +49,55 @@ export function registerIngestCommand(program: Command): void {
             `Invalid output format '${outputFormat}'. Valid: ${VALID_OUTPUT_FORMATS.join(", ")}`,
           );
         }
+        if (opts.verify && outputFormat === "sarif") {
+          throw new Error("Output format 'sarif' is not supported with --verify. Use 'terminal' or 'json'.");
+        }
 
         const resolved = resolve(inputPath);
         const stat = statSync(resolved);
 
-        const { ingestFile, ingestDirectory } = await import("@pwnkit/core");
+        const {
+          ingestFile,
+          ingestDirectory,
+          ingestArtifactsFromFile,
+          ingestArtifactsFromDirectory,
+          verifyKernelCrash,
+        } = await import("@pwnkit/core");
 
         let findings: Finding[];
+        let verifiedResults: VerifiedCrashResult[] | undefined;
 
-        if (stat.isDirectory()) {
-          console.log(chalk.blue(`Scanning directory: ${resolved}`));
-          findings = ingestDirectory(resolved);
+        if (opts.verify) {
+          const artifacts = stat.isDirectory()
+            ? (console.log(chalk.blue(`Scanning and verifying directory: ${resolved}`)), ingestArtifactsFromDirectory(resolved))
+            : (console.log(chalk.blue(`Parsing and verifying crash report: ${resolved}`)), ingestArtifactsFromFile(resolved));
+
+          verifiedResults = await Promise.all(
+            artifacts.map(async (artifact) => ({
+              sourcePath: artifact.sourcePath,
+              reproducerPath: artifact.reproducerPath,
+              finding: artifact.finding,
+              verification: await verifyKernelCrash(artifact.finding, {
+                raw: artifact.report.rawText,
+                crashType: artifact.report.crashType,
+                faultingFunction: artifact.report.faultingFunction,
+                stackFrames: artifact.report.callStack,
+                reproducer: artifact.report.reproducer,
+                accessType: artifact.report.accessType,
+                accessSize: artifact.report.accessSize,
+                subsystem: artifact.report.subsystem,
+              }),
+            })),
+          );
+          findings = verifiedResults.map((result) => result.finding);
         } else {
-          console.log(chalk.blue(`Parsing crash report: ${resolved}`));
-          findings = ingestFile(resolved);
+          if (stat.isDirectory()) {
+            console.log(chalk.blue(`Scanning directory: ${resolved}`));
+            findings = ingestDirectory(resolved);
+          } else {
+            console.log(chalk.blue(`Parsing crash report: ${resolved}`));
+            findings = ingestFile(resolved);
+          }
         }
 
         if (findings.length === 0) {
@@ -67,7 +112,7 @@ export function registerIngestCommand(program: Command): void {
         );
 
         if (outputFormat === "json") {
-          console.log(JSON.stringify(findings, null, 2));
+          console.log(JSON.stringify(verifiedResults ?? findings, null, 2));
           return;
         }
 
@@ -80,6 +125,10 @@ export function registerIngestCommand(program: Command): void {
           info: chalk.gray,
         };
 
+        const verifiedById = new Map<string, VerifiedCrashResult>(
+          (verifiedResults ?? []).map((result) => [result.finding.id, result]),
+        );
+
         for (const f of findings) {
           const color = severityColor[f.severity] ?? chalk.white;
           console.log(
@@ -88,6 +137,22 @@ export function registerIngestCommand(program: Command): void {
           console.log(
             `           ${chalk.gray(`category=${f.category}  confidence=${(f.confidence ?? 0).toFixed(1)}  id=${f.id.slice(0, 8)}`)}`,
           );
+          const verified = verifiedById.get(f.id);
+          if (verified) {
+            const verdict = verified.verification.verified
+              ? chalk.green("VERIFIED")
+              : verified.verification.reproduced
+                ? chalk.yellow("MISMATCH")
+                : chalk.gray("UNVERIFIED");
+            console.log(
+              `           ${verdict} ${chalk.gray(`runner=${verified.verification.reproduced ? "kernel-vm" : "static"} oracle_confidence=${verified.verification.confidence.toFixed(2)}`)}`,
+            );
+            if (verified.verification.reason) {
+              console.log(
+                chalk.gray(`           reason=${verified.verification.reason}`),
+              );
+            }
+          }
           if (opts.verbose && f.evidence.analysis) {
             console.log(
               chalk.gray(`           ${f.evidence.analysis.slice(0, 200)}`),
@@ -111,6 +176,14 @@ export function registerIngestCommand(program: Command): void {
             const color = severityColor[sev] ?? chalk.white;
             console.log(`  ${color(`${sev}: ${bySeverity[sev]}`)}`);
           }
+        }
+        if (verifiedResults) {
+          const verifiedCount = verifiedResults.filter((r) => r.verification.verified).length;
+          const reproducedCount = verifiedResults.filter((r) => r.verification.reproduced).length;
+          console.log(chalk.white.bold("Verification:"));
+          console.log(`  ${chalk.green(`verified: ${verifiedCount}`)}`);
+          console.log(`  ${chalk.yellow(`reproduced-but-mismatch: ${reproducedCount - verifiedCount}`)}`);
+          console.log(`  ${chalk.gray(`static-only/unverified: ${verifiedResults.length - reproducedCount}`)}`);
         }
       } catch (err) {
         console.error(

@@ -4,6 +4,13 @@ import { join, basename } from "node:path";
 import type { Finding, AttackCategory, CrashReport, CrashType } from "@pwnkit/shared";
 import type { Severity } from "@pwnkit/shared";
 
+export interface KernelCrashArtifact {
+  sourcePath: string;
+  reproducerPath?: string;
+  report: CrashReport;
+  finding: Finding;
+}
+
 // ── Regex patterns for kernel crash detection ──
 
 const KASAN_HEADER = /BUG:\s*KASAN:\s*([\w-]+)\s+in\s+(\S+)/;
@@ -398,10 +405,10 @@ function splitReports(text: string): string[] {
 
 // ── File ingest ──
 
-export function ingestFile(filePath: string): Finding[] {
+export function ingestArtifactsFromFile(filePath: string): KernelCrashArtifact[] {
   const text = readFileSync(filePath, "utf-8");
   const segments = splitReports(text);
-  const findings: Finding[] = [];
+  const artifacts: KernelCrashArtifact[] = [];
 
   for (const segment of segments) {
     // Skip segments that don't look like crash reports
@@ -410,10 +417,18 @@ export function ingestFile(filePath: string): Finding[] {
     }
     const report = parseCrashReport(segment);
     if (report.crashType === "unknown") continue;
-    findings.push(crashToFinding(report));
+    artifacts.push({
+      sourcePath: filePath,
+      report,
+      finding: crashToFinding(report),
+    });
   }
 
-  return findings;
+  return artifacts;
+}
+
+export function ingestFile(filePath: string): Finding[] {
+  return ingestArtifactsFromFile(filePath).map((artifact) => artifact.finding);
 }
 
 // ── Directory ingest ──
@@ -421,12 +436,12 @@ export function ingestFile(filePath: string): Finding[] {
 const CRASH_EXTENSIONS = new Set([".txt", ".log", ".report", ".crash"]);
 const REPRO_EXTENSIONS = new Set([".c", ".syz"]);
 
-export function ingestDirectory(dirPath: string): Finding[] {
+export function ingestArtifactsFromDirectory(dirPath: string): KernelCrashArtifact[] {
   const entries = readdirSync(dirPath);
 
   // Collect crash files and reproducer files
   const crashFiles: string[] = [];
-  const reproMap = new Map<string, { content: string; lang: "c" | "syz" | "bash" }>();
+  const reproMap = new Map<string, { path: string; content: string; lang: "c" | "syz" | "bash" }>();
 
   for (const entry of entries) {
     const fullPath = join(dirPath, entry);
@@ -443,12 +458,12 @@ export function ingestDirectory(dirPath: string): Finding[] {
       crashFiles.push(fullPath);
     } else if (REPRO_EXTENSIONS.has(ext)) {
       const lang = ext === ".c" ? "c" as const : "syz" as const;
-      reproMap.set(prefix, { content: readFileSync(fullPath, "utf-8"), lang });
+      reproMap.set(prefix, { path: fullPath, content: readFileSync(fullPath, "utf-8"), lang });
     }
   }
 
   // Parse crash files, attach reproducers by filename prefix
-  const allFindings: Finding[] = [];
+  const artifacts: KernelCrashArtifact[] = [];
   const seen = new Set<string>();
 
   for (const crashFile of crashFiles) {
@@ -477,9 +492,18 @@ export function ingestDirectory(dirPath: string): Finding[] {
       if (seen.has(dedup)) continue;
       seen.add(dedup);
 
-      allFindings.push(crashToFinding(report));
+      artifacts.push({
+        sourcePath: crashFile,
+        reproducerPath: repro?.path,
+        report,
+        finding: crashToFinding(report),
+      });
     }
   }
 
-  return allFindings;
+  return artifacts;
+}
+
+export function ingestDirectory(dirPath: string): Finding[] {
+  return ingestArtifactsFromDirectory(dirPath).map((artifact) => artifact.finding);
 }

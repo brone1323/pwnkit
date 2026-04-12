@@ -77,6 +77,9 @@ npx pwnkit-cli audit lodash
 # Review source code
 npx pwnkit-cli review ./my-app
 
+# Import and verify kernel crash reports
+npx pwnkit-cli ingest ./kernel-crashes --verify --output json
+
 # Auto-detect — just give it a target
 npx pwnkit-cli https://example.com
 ```
@@ -96,6 +99,7 @@ bun add -g pwnkit-cli
 - `scan` targets AI / LLM apps, web apps, REST / OpenAPI APIs, and MCP servers.
 - `audit` installs and inspects packages across `npm`, `pypi`, `cargo`, and `oci` with ecosystem-specific prep, static analysis, and AI review.
 - `review` performs deep source-code security review on a local repo or Git URL.
+- `ingest` parses kernel crash reports and can validate them against reproducers, including a real QEMU/SSH kernel VM path when configured.
 - `triage-data` turns benchmark runs and verified findings into labeled JSONL for triage-model training.
 - `cloud-sink` can stream findings and final reports to an orchestrator with `PWNKIT_CLOUD_SINK` + `PWNKIT_CLOUD_SCAN_ID`.
 - `dashboard`, `history`, `findings`, and `triage` provide local persistence and review workflows.
