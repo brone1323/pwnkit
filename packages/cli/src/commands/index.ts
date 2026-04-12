@@ -13,4 +13,5 @@ export { registerDbCommand } from "./db.js";
 export { registerMcpServerCommand } from "./mcp-server.js";
 export { registerTriageCommand } from "./triage.js";
 export { registerEvalCommand } from "./eval.js";
+export { registerIngestCommand } from "./ingest.js";
 export { runUnified } from "./run.js";

@@ -236,6 +236,81 @@ const CATEGORY_JUDGES: Partial<Record<AttackCategory, CategoryJudge>> = {
       /user\s*id\s*[:=]\s*\d+/i,
     ],
   },
+  "heap-overflow": {
+    label: "Heap overflow: KASAN out-of-bounds or crash evidence",
+    patterns: [
+      /BUG:\s*KASAN:\s*(slab-)?out-of-bounds/i,
+      /heap-buffer-overflow/i,
+      /\bKASAN\b.*\b(read|write)\b.*\bsize\s+\d+\b/i,
+      /allocated by task/i,
+      /Oops:.*\[#\d+\]/,
+    ],
+  },
+  "use-after-free": {
+    label: "UAF: KASAN use-after-free or freed-object access",
+    patterns: [
+      /BUG:\s*KASAN:\s*(slab-)?use-after-free/i,
+      /Freed by task/i,
+      /\buse-after-free\b/i,
+      /\bKASAN\b.*\bfreed\b/i,
+      /allocated by task.*\nfreed by task/is,
+    ],
+  },
+  "stack-buffer-overflow": {
+    label: "Stack overflow: KASAN stack-out-of-bounds",
+    patterns: [
+      /BUG:\s*KASAN:\s*stack-out-of-bounds/i,
+      /stack-buffer-overflow/i,
+      /\bKASAN\b.*\bstack\b/i,
+    ],
+  },
+  "null-pointer-deref": {
+    label: "Null deref: kernel NULL pointer dereference",
+    patterns: [
+      /BUG:\s*kernel NULL pointer dereference/i,
+      /unable to handle kernel NULL pointer/i,
+      /general protection fault.*0000/i,
+      /Oops:.*\[#\d+\]/,
+      /IP:.*\+0x/,
+    ],
+  },
+  "integer-overflow": {
+    label: "Integer overflow: UBSAN or arithmetic overflow",
+    patterns: [
+      /UBSAN:\s*(shift|integer|array)/i,
+      /signed integer overflow/i,
+      /unsigned integer overflow/i,
+      /shift.*out of range/i,
+      /division by zero/i,
+    ],
+  },
+  "race-condition": {
+    label: "Race: RCU stall or lock dependency violation",
+    patterns: [
+      /rcu.*stall/i,
+      /INFO:\s*possible circular locking/i,
+      /WARNING:.*lockdep/i,
+      /DEADLOCK/i,
+      /inconsistent lock state/i,
+    ],
+  },
+  "double-free": {
+    label: "Double free: KASAN double-free detection",
+    patterns: [
+      /BUG:\s*KASAN:\s*double-free/i,
+      /KASAN.*double.?free/i,
+      /Object already free/i,
+    ],
+  },
+  "type-confusion": {
+    label: "Type confusion: invalid cast or type mismatch",
+    patterns: [
+      /UBSAN:\s*member access.*type/i,
+      /type.*confusion/i,
+      /invalid.*downcast/i,
+      /load of misaligned address/i,
+    ],
+  },
 };
 
 interface JudgeVerdict {
