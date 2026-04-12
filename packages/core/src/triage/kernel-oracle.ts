@@ -1,0 +1,629 @@
+/**
+ * Kernel crash verification oracle.
+ *
+ * Verifies kernel crash reports (KASAN, UBSAN, null-deref, etc.) by:
+ *   1. Checking if a reproducer exists and is compilable
+ *   2. Running it in a Docker container with a KASAN-enabled kernel (when QEMU is available)
+ *   3. Comparing the crash output to the original report
+ *
+ * When no QEMU environment is available (PWNKIT_KERNEL_QEMU != "1"), the oracle
+ * falls back to static analysis of the reproducer and crash report consistency.
+ */
+
+import type { Finding } from "@pwnkit/shared";
+import { execInDocker } from "../agent/docker-executor.js";
+
+// ────────────────────────────────────────────────────────────────────
+// Types
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Minimal crash report shape expected by the oracle.  The canonical
+ * CrashReport type lives in the ingest layer — we define a compatible
+ * interface here so the oracle can be used standalone without coupling
+ * to a specific ingest implementation.
+ */
+export interface CrashReport {
+  /** Raw crash log / dmesg output. */
+  raw: string;
+  /** Parsed crash type, e.g. "kasan-uaf", "kasan-oob", "null-deref". */
+  crashType: string;
+  /** Faulting function name extracted from the report. */
+  faultingFunction: string;
+  /** Parsed kernel stack trace frames. */
+  stackFrames: string[];
+  /** Optional C reproducer source code. */
+  reproducer?: string;
+  /** Access type from KASAN reports ("read" | "write"). */
+  accessType?: string;
+  /** Access size from KASAN reports. */
+  accessSize?: number;
+  /** Subsystem hint (e.g. "nfs", "tcp", "ext4"). */
+  subsystem?: string;
+}
+
+export interface KernelOracleResult {
+  verified: boolean;
+  confidence: number;
+  evidence: string;
+  reason: string;
+  reproduced: boolean;
+  crashMatch: boolean;
+  originalCrashType?: string;
+  reproducedCrashType?: string;
+  matchedFunction?: string;
+}
+
+export interface ReproducerResult {
+  compiled: boolean;
+  executed: boolean;
+  output: string;
+  dmesg: string;
+  exitCode: number;
+  timedOut: boolean;
+}
+
+export interface CrashSignatureMatch {
+  matched: boolean;
+  score: number;
+  matchedFields: string[];
+  mismatchedFields: string[];
+}
+
+export interface ConsistencyResult {
+  valid: boolean;
+  score: number;
+  checks: { name: string; passed: boolean; detail: string }[];
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Helpers
+// ────────────────────────────────────────────────────────────────────
+
+function notVerifiable(reason: string): KernelOracleResult {
+  return {
+    verified: false,
+    confidence: 0,
+    evidence: "",
+    reason,
+    reproduced: false,
+    crashMatch: false,
+  };
+}
+
+const REPRODUCER_TIMEOUT_S = 60;
+
+/**
+ * Known kernel function prefixes that indicate a plausible symbol name.
+ * Used by consistency checks to filter out garbage stack frames.
+ */
+const KNOWN_PREFIXES = [
+  "nfs_", "tcp_", "udp_", "ip_", "ext4_", "btrfs_", "xfs_",
+  "sock_", "sk_", "net_", "sctp_", "unix_", "pipe_", "do_",
+  "sys_", "__sys_", "ksys_", "vfs_", "__vfs_", "fuse_",
+  "kobject_", "kfree", "kmalloc", "kmem_", "slab_",
+  "rcu_", "mutex_", "spin_", "raw_spin_", "lock_",
+  "schedule", "__schedule", "worker_", "kthread",
+  "page_", "__page_", "folio_", "mm_", "mmap_",
+  "blk_", "bio_", "dm_", "md_", "raid",
+  "usb_", "pci_", "irq_", "softirq",
+  "cgroup_", "ns_", "inode_", "dentry_",
+  "security_", "selinux_", "apparmor_",
+];
+
+/**
+ * Map from crash type keywords to expected content in the report.
+ */
+const CRASH_TYPE_CONTENT: Record<string, RegExp> = {
+  "kasan-oob": /out-of-bounds/i,
+  "kasan-uaf": /use-after-free/i,
+  "kasan-double-free": /double-free/i,
+  "null-deref": /NULL pointer dereference|unable to handle kernel NULL/i,
+  "stack-oob": /stack-out-of-bounds/i,
+  "ubsan": /UBSAN/i,
+  "general-protection": /general protection fault/i,
+};
+
+/**
+ * Syscall families relevant to certain subsystems. Used in static
+ * analysis to check whether a reproducer plausibly targets the
+ * subsystem indicated by the crash report.
+ */
+const SUBSYSTEM_SYSCALLS: Record<string, RegExp[]> = {
+  nfs: [/\bmount\b/, /\bnfs\b/i, /\bsocket\b/, /\bconnect\b/],
+  tcp: [/\bsocket\b/, /\bconnect\b/, /\bbind\b/, /\blisten\b/, /\bsend\b/],
+  udp: [/\bsocket\b/, /\bsendto\b/, /\brecvfrom\b/],
+  ext4: [/\bmount\b/, /\bopen\b/, /\bwrite\b/, /\bfallocate\b/, /\bioctl\b/],
+  usb: [/\bioctl\b/, /\bopen\b/, /\bUSBDEVFS\b/i],
+  pipe: [/\bpipe\b/, /\bsplice\b/, /\bvmsplice\b/],
+  netlink: [/\bsocket\b/, /\bnetlink\b/i, /\bbind\b/, /\bsendmsg\b/],
+};
+
+// ────────────────────────────────────────────────────────────────────
+// Core functions
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Compile and run the reproducer in a Docker container.
+ *
+ * When `PWNKIT_KERNEL_QEMU=1`, this actually compiles and executes the
+ * reproducer. Otherwise it returns a stub indicating no execution.
+ */
+export async function compileAndRunReproducer(
+  report: CrashReport,
+): Promise<ReproducerResult> {
+  if (!report.reproducer) {
+    return {
+      compiled: false,
+      executed: false,
+      output: "",
+      dmesg: "",
+      exitCode: -1,
+      timedOut: false,
+    };
+  }
+
+  const useQemu = process.env.PWNKIT_KERNEL_QEMU === "1";
+
+  if (!useQemu) {
+    // Dry-run mode — no actual execution
+    return {
+      compiled: false,
+      executed: false,
+      output: "[dry-run] PWNKIT_KERNEL_QEMU not set, skipping execution",
+      dmesg: "",
+      exitCode: -1,
+      timedOut: false,
+    };
+  }
+
+  // Write reproducer to container and compile
+  const escapedSource = report.reproducer.replace(/'/g, "'\\''");
+  const compileCmd = [
+    `echo '${escapedSource}' > /tmp/repro.c`,
+    `gcc -o /tmp/repro /tmp/repro.c -lpthread 2>&1`,
+  ].join(" && ");
+
+  const compileResult = await execInDocker(compileCmd, REPRODUCER_TIMEOUT_S);
+  if (compileResult.exitCode !== 0) {
+    return {
+      compiled: false,
+      executed: false,
+      output: compileResult.output,
+      dmesg: "",
+      exitCode: compileResult.exitCode,
+      timedOut: compileResult.timedOut,
+    };
+  }
+
+  // Execute the reproducer and capture dmesg
+  const runCmd = [
+    `dmesg --clear 2>/dev/null || true`,
+    `timeout ${REPRODUCER_TIMEOUT_S} /tmp/repro 2>&1 || true`,
+    `dmesg 2>/dev/null || true`,
+  ].join(" ; ");
+
+  const runResult = await execInDocker(runCmd, REPRODUCER_TIMEOUT_S + 10);
+
+  // Split output: everything before the last dmesg is program output,
+  // the rest is kernel log
+  const output = runResult.output;
+  const dmesgMarker = output.lastIndexOf("[    ");
+  const programOutput = dmesgMarker >= 0 ? output.slice(0, dmesgMarker) : output;
+  const dmesg = dmesgMarker >= 0 ? output.slice(dmesgMarker) : "";
+
+  return {
+    compiled: true,
+    executed: true,
+    output: programOutput,
+    dmesg,
+    exitCode: runResult.exitCode,
+    timedOut: runResult.timedOut,
+  };
+}
+
+/**
+ * Compare the original crash report signature against the output from
+ * a reproduced crash. Scoring:
+ *   - Crash type exact match:      0.3
+ *   - Faulting function exact:      0.3  (substring: 0.15)
+ *   - Top 3 stack frames:          0.1 each (max 0.3)
+ *   - Access type + size:          0.1
+ */
+export function matchCrashSignature(
+  original: CrashReport,
+  reproOutput: string,
+): CrashSignatureMatch {
+  let score = 0;
+  const matchedFields: string[] = [];
+  const mismatchedFields: string[] = [];
+
+  // ── Crash type ─────────────────────────────────────────────
+  const crashTypeNormalized = original.crashType.toLowerCase();
+  const reproLower = reproOutput.toLowerCase();
+
+  // Map normalized crash type to patterns we look for in output
+  const typePatterns: Record<string, RegExp> = {
+    "kasan-oob": /kasan.*out-of-bounds|slab-out-of-bounds/i,
+    "kasan-uaf": /kasan.*use-after-free|slab-use-after-free/i,
+    "kasan-double-free": /kasan.*double-free/i,
+    "null-deref": /null pointer dereference|kernel null pointer/i,
+    "stack-oob": /kasan.*stack-out-of-bounds|stack-buffer-overflow/i,
+    "ubsan": /ubsan/i,
+  };
+
+  const typePattern = typePatterns[crashTypeNormalized];
+  if (typePattern && typePattern.test(reproOutput)) {
+    score += 0.3;
+    matchedFields.push("crashType");
+  } else if (reproLower.includes(crashTypeNormalized)) {
+    score += 0.3;
+    matchedFields.push("crashType");
+  } else {
+    mismatchedFields.push("crashType");
+  }
+
+  // ── Faulting function ──────────────────────────────────────
+  if (original.faultingFunction) {
+    if (reproOutput.includes(original.faultingFunction)) {
+      score += 0.3;
+      matchedFields.push("faultingFunction");
+    } else {
+      // Try substring: strip trailing offset (e.g. "+0x1a/0x30")
+      const baseName = original.faultingFunction.replace(/\+0x[\da-f]+\/0x[\da-f]+$/i, "");
+      if (baseName && reproOutput.includes(baseName)) {
+        score += 0.15;
+        matchedFields.push("faultingFunction(substring)");
+      } else {
+        mismatchedFields.push("faultingFunction");
+      }
+    }
+  }
+
+  // ── Top 3 stack frames ─────────────────────────────────────
+  const topFrames = original.stackFrames.slice(0, 3);
+  for (let i = 0; i < topFrames.length; i++) {
+    const frame = topFrames[i]!;
+    // Extract the function name from the frame (strip offset + module)
+    const funcMatch = frame.match(/([a-zA-Z_][\w]*)\+0x/);
+    const funcName = funcMatch ? funcMatch[1]! : frame.trim();
+    if (reproOutput.includes(funcName)) {
+      score += 0.1;
+      matchedFields.push(`stackFrame[${i}]:${funcName}`);
+    } else {
+      mismatchedFields.push(`stackFrame[${i}]:${funcName}`);
+    }
+  }
+
+  // ── Access type and size ───────────────────────────────────
+  if (original.accessType) {
+    const accessPattern = new RegExp(
+      `\\b${original.accessType}\\b.*\\bsize\\s+${original.accessSize ?? "\\d+"}\\b`,
+      "i",
+    );
+    if (accessPattern.test(reproOutput)) {
+      score += 0.1;
+      matchedFields.push("accessType+size");
+    } else if (reproLower.includes(original.accessType)) {
+      score += 0.05;
+      matchedFields.push("accessType(partial)");
+    } else {
+      mismatchedFields.push("accessType+size");
+    }
+  }
+
+  return {
+    matched: score >= 0.5,
+    score: Math.min(1, score),
+    matchedFields,
+    mismatchedFields,
+  };
+}
+
+/**
+ * Validate the internal consistency of a crash report via static checks.
+ */
+export function validateCrashReportConsistency(
+  report: CrashReport,
+): ConsistencyResult {
+  const checks: { name: string; passed: boolean; detail: string }[] = [];
+
+  // ── 1. Stack frames look like real kernel functions ────────
+  const realFrameCount = report.stackFrames.filter(
+    (f) => /\+0x[\da-f]+\/0x[\da-f]+/i.test(f),
+  ).length;
+  const frameRatio = report.stackFrames.length > 0
+    ? realFrameCount / report.stackFrames.length
+    : 0;
+  checks.push({
+    name: "stack_frame_format",
+    passed: frameRatio >= 0.5,
+    detail: `${realFrameCount}/${report.stackFrames.length} frames have +0x offsets (ratio=${frameRatio.toFixed(2)})`,
+  });
+
+  // ── 2. KASAN alloc/free sections for UAF ───────────────────
+  const isUaf = /uaf|use-after-free/i.test(report.crashType);
+  if (isUaf) {
+    const hasAlloc = /allocated by task/i.test(report.raw);
+    const hasFree = /freed by task/i.test(report.raw);
+    checks.push({
+      name: "kasan_alloc_free_sections",
+      passed: hasAlloc && hasFree,
+      detail: `alloc=${hasAlloc} free=${hasFree}`,
+    });
+  }
+
+  // ── 3. KASAN OOB format ────────────────────────────────────
+  const isOob = /oob|out-of-bounds/i.test(report.crashType);
+  if (isOob) {
+    const hasAccessSize = /\b(read|write)\s+of\s+size\s+\d+\b/i.test(report.raw);
+    const hasAlloc = /allocated by task/i.test(report.raw);
+    checks.push({
+      name: "kasan_oob_format",
+      passed: hasAccessSize && hasAlloc,
+      detail: `accessSize=${hasAccessSize} alloc=${hasAlloc}`,
+    });
+  }
+
+  // ── 4. Access addresses in kernel space ────────────────────
+  const addrMatches = report.raw.match(/\b0x([\da-f]{8,16})\b/gi) ?? [];
+  const kernelAddrs = addrMatches.filter((a) => {
+    const hex = a.replace(/^0x/i, "");
+    // x86_64 kernel addresses start with ffff
+    return hex.length >= 12 && hex.startsWith("ffff");
+  });
+  checks.push({
+    name: "kernel_space_addresses",
+    passed: kernelAddrs.length > 0 || addrMatches.length === 0,
+    detail: `${kernelAddrs.length} kernel-space addresses out of ${addrMatches.length} total`,
+  });
+
+  // ── 5. Plausible function names ────────────────────────────
+  const funcNames = report.stackFrames.map((f) => {
+    const m = f.match(/([a-zA-Z_][\w]*)\+0x/);
+    return m ? m[1]! : f.trim();
+  });
+  const plausibleCount = funcNames.filter((name) =>
+    KNOWN_PREFIXES.some((prefix) => name.startsWith(prefix)) ||
+    /^[a-z_][\w]{2,60}$/i.test(name),
+  ).length;
+  const plausibleRatio = funcNames.length > 0
+    ? plausibleCount / funcNames.length
+    : 0;
+  checks.push({
+    name: "plausible_function_names",
+    passed: plausibleRatio >= 0.6,
+    detail: `${plausibleCount}/${funcNames.length} names are plausible (ratio=${plausibleRatio.toFixed(2)})`,
+  });
+
+  // ── 6. Crash type matches content ─────────────────────────
+  const contentPattern = CRASH_TYPE_CONTENT[report.crashType.toLowerCase()];
+  if (contentPattern) {
+    const matches = contentPattern.test(report.raw);
+    checks.push({
+      name: "crash_type_content_match",
+      passed: matches,
+      detail: `crashType="${report.crashType}" content match=${matches}`,
+    });
+  }
+
+  // ── Score ──────────────────────────────────────────────────
+  const passedCount = checks.filter((c) => c.passed).length;
+  const score = checks.length > 0 ? passedCount / checks.length : 0;
+
+  return {
+    valid: score >= 0.6,
+    score,
+    checks,
+  };
+}
+
+/**
+ * Perform static analysis of the reproducer against the crash report.
+ * Used as a fallback when QEMU execution is unavailable.
+ */
+function staticAnalyzeReproducer(report: CrashReport): {
+  score: number;
+  evidence: string[];
+} {
+  const evidence: string[] = [];
+  let score = 0;
+
+  if (!report.reproducer) {
+    return { score: 0, evidence: ["no reproducer available"] };
+  }
+
+  const src = report.reproducer;
+
+  // Check if reproducer references the faulting function
+  if (report.faultingFunction) {
+    const baseName = report.faultingFunction.replace(/\+0x[\da-f]+\/0x[\da-f]+$/i, "");
+    if (baseName && src.includes(baseName)) {
+      score += 0.2;
+      evidence.push(`reproducer references faulting function: ${baseName}`);
+    }
+  }
+
+  // Check if reproducer uses relevant syscalls for the subsystem
+  if (report.subsystem) {
+    const patterns = SUBSYSTEM_SYSCALLS[report.subsystem.toLowerCase()];
+    if (patterns) {
+      const matched = patterns.filter((p) => p.test(src));
+      if (matched.length > 0) {
+        score += 0.2 * Math.min(1, matched.length / patterns.length);
+        evidence.push(
+          `reproducer uses ${matched.length}/${patterns.length} relevant syscalls for ${report.subsystem}`,
+        );
+      }
+    }
+  }
+
+  // Basic compilability check: has main() and includes
+  if (/\bint\s+main\s*\(/.test(src) || /\bvoid\s+main\s*\(/.test(src)) {
+    score += 0.1;
+    evidence.push("reproducer has main() entry point");
+  }
+  if (/#include\s*</.test(src)) {
+    score += 0.05;
+    evidence.push("reproducer has system includes");
+  }
+
+  // Check for syscall wrappers (syz_* functions indicate syzkaller reproducers)
+  if (/\bsyz_/.test(src) || /\bsyscall\s*\(/.test(src)) {
+    score += 0.15;
+    evidence.push("reproducer uses syscall() or syzkaller wrappers");
+  }
+
+  return { score: Math.min(1, score), evidence };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Main entry point
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Verify a kernel crash finding by reproducing it or analyzing it statically.
+ *
+ * Steps:
+ *   1. Check if the crash report has a reproducer — bail early if not
+ *   2. Validate the crash report's internal consistency
+ *   3. Attempt to compile and run the reproducer in Docker (if QEMU available)
+ *   4. Compare reproduced output to original report (or do static analysis)
+ *   5. Return verdict with confidence
+ */
+export async function verifyKernelCrash(
+  finding: Finding,
+  crashReport: CrashReport,
+): Promise<KernelOracleResult> {
+  // ── 1. Reproducer existence check ─────────────────────────
+  if (!crashReport.reproducer) {
+    // Even without a reproducer we can validate the report consistency
+    const consistency = validateCrashReportConsistency(crashReport);
+    if (consistency.valid) {
+      return {
+        verified: false,
+        confidence: consistency.score * 0.3,
+        evidence: `report consistency: ${consistency.checks.map((c) => `${c.name}=${c.passed}`).join(", ")}`,
+        reason: "no reproducer available — report is internally consistent but unverified",
+        reproduced: false,
+        crashMatch: false,
+        originalCrashType: crashReport.crashType,
+      };
+    }
+    return notVerifiable("no reproducer available");
+  }
+
+  // ── 2. Validate crash report consistency ───────────────────
+  const consistency = validateCrashReportConsistency(crashReport);
+
+  // ── 3. Attempt compilation and execution ───────────────────
+  const reproResult = await compileAndRunReproducer(crashReport);
+
+  // ── 4a. QEMU path: compare crash signatures ───────────────
+  if (reproResult.compiled && reproResult.executed) {
+    const crashOutput = reproResult.dmesg || reproResult.output;
+    const sigMatch = matchCrashSignature(crashReport, crashOutput);
+
+    const confidence = sigMatch.score * 0.7 + consistency.score * 0.3;
+
+    if (sigMatch.matched) {
+      return {
+        verified: true,
+        confidence: Math.min(1, confidence),
+        evidence: `crash reproduced: score=${sigMatch.score.toFixed(2)}, matched=[${sigMatch.matchedFields.join(", ")}]`,
+        reason: "",
+        reproduced: true,
+        crashMatch: true,
+        originalCrashType: crashReport.crashType,
+        reproducedCrashType: extractCrashType(crashOutput),
+        matchedFunction: crashReport.faultingFunction,
+      };
+    }
+
+    // Reproduced but didn't match
+    return {
+      verified: false,
+      confidence: Math.min(0.4, confidence * 0.5),
+      evidence: `crash did not match: score=${sigMatch.score.toFixed(2)}, mismatched=[${sigMatch.mismatchedFields.join(", ")}]`,
+      reason: `reproducer ran but crash signature mismatch (score=${sigMatch.score.toFixed(2)})`,
+      reproduced: true,
+      crashMatch: false,
+      originalCrashType: crashReport.crashType,
+      reproducedCrashType: extractCrashType(crashOutput),
+    };
+  }
+
+  // ── 4b. Static analysis fallback ──────────────────────────
+  const staticResult = staticAnalyzeReproducer(crashReport);
+  const staticConfidence = staticResult.score * 0.5 + consistency.score * 0.5;
+
+  if (staticConfidence >= 0.5 && consistency.valid) {
+    return {
+      verified: false,
+      confidence: Math.min(0.6, staticConfidence),
+      evidence: [
+        `static analysis: ${staticResult.evidence.join("; ")}`,
+        `consistency: score=${consistency.score.toFixed(2)}`,
+      ].join(" | "),
+      reason: "verified via static analysis only (no QEMU execution)",
+      reproduced: false,
+      crashMatch: false,
+      originalCrashType: crashReport.crashType,
+    };
+  }
+
+  // Compilation failed
+  if (reproResult.compiled === false && reproResult.exitCode !== -1) {
+    return {
+      verified: false,
+      confidence: Math.max(0, staticConfidence * 0.3),
+      evidence: `compilation failed: ${reproResult.output.slice(0, 500)}`,
+      reason: "reproducer failed to compile",
+      reproduced: false,
+      crashMatch: false,
+      originalCrashType: crashReport.crashType,
+    };
+  }
+
+  return {
+    verified: false,
+    confidence: Math.max(0, staticConfidence * 0.5),
+    evidence: `static analysis: ${staticResult.evidence.join("; ")}`,
+    reason: "insufficient evidence from static analysis",
+    reproduced: false,
+    crashMatch: false,
+    originalCrashType: crashReport.crashType,
+  };
+}
+
+// ────────────────────────────────────────────────────────────────────
+// Utilities
+// ────────────────────────────────────────────────────────────────────
+
+/**
+ * Extract the crash type from raw dmesg/KASAN output.
+ */
+function extractCrashType(output: string): string | undefined {
+  if (/KASAN.*slab-out-of-bounds|KASAN.*out-of-bounds/i.test(output)) {
+    return "kasan-oob";
+  }
+  if (/KASAN.*slab-use-after-free|KASAN.*use-after-free/i.test(output)) {
+    return "kasan-uaf";
+  }
+  if (/KASAN.*double-free/i.test(output)) {
+    return "kasan-double-free";
+  }
+  if (/KASAN.*stack-out-of-bounds/i.test(output)) {
+    return "stack-oob";
+  }
+  if (/NULL pointer dereference|kernel NULL pointer/i.test(output)) {
+    return "null-deref";
+  }
+  if (/UBSAN/i.test(output)) {
+    return "ubsan";
+  }
+  if (/general protection fault/i.test(output)) {
+    return "general-protection";
+  }
+  return undefined;
+}

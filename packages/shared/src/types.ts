@@ -87,7 +87,16 @@ export type AttackCategory =
   | "sql-injection"
   | "xss"
   | "cors"
-  | "security-misconfiguration";
+  | "security-misconfiguration"
+  // Memory corruption / binary categories (kernel crash validation)
+  | "heap-overflow"
+  | "use-after-free"
+  | "stack-buffer-overflow"
+  | "null-pointer-deref"
+  | "integer-overflow"
+  | "race-condition"
+  | "type-confusion"
+  | "double-free";
 
 export interface AttackTemplate {
   id: string;
@@ -194,7 +203,8 @@ export type TriageLayerName =
   | "structured_verify"
   | "consensus"
   | "memories"
-  | "debate";
+  | "debate"
+  | "kernel_oracle";
 
 export type LayerVerdictKind =
   | "pass"      // layer ran and approved the finding
@@ -345,6 +355,47 @@ export interface Evidence {
   request: string;
   response: string;
   analysis?: string;
+}
+
+// ── Kernel Crash Reports ──
+
+export type CrashType =
+  | "kasan-oob"          // KASAN: out-of-bounds
+  | "kasan-uaf"          // KASAN: use-after-free
+  | "kasan-null"         // KASAN: null-ptr-deref
+  | "kasan-wild"         // KASAN: wild-memory-access
+  | "ubsan"              // UBSAN: undefined behavior
+  | "kernel-bug"         // BUG()/BUG_ON()
+  | "kernel-oops"        // Kernel oops
+  | "kernel-panic"       // Kernel panic
+  | "general-protection" // general protection fault
+  | "rcu-stall"          // RCU stall
+  | "lockdep"            // Lock dependency violation
+  | "unknown";
+
+export interface CrashReport {
+  rawText: string;
+  crashType: CrashType;
+  faultingFunction: string;
+  callStack: string[];
+  subsystem: string;
+  accessType?: "read" | "write";
+  accessSize?: number;
+  accessAddress?: string;
+  allocSite?: string;
+  freeSite?: string;
+  reproducer?: string;
+  reproducerLanguage?: "c" | "syz" | "bash";
+  kernelVersion?: string;
+  commitHash?: string;
+  configFragment?: string;
+}
+
+export interface IngestConfig {
+  inputPath: string;
+  format?: "auto" | "kasan" | "ubsan" | "oops" | "syzkaller" | "generic";
+  outputFormat: OutputFormat;
+  verbose?: boolean;
 }
 
 // ── Attack Results ──

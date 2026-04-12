@@ -124,3 +124,10 @@ export type { VisibleActions } from "./scan-ui-state.js";
 // Tool call preview formatter (pure, used by scan TUI sub-action emission
 // in the agentic scanner and reusable by logs / cloud-sink / dashboard).
 export { toolCallPreview, summariseTurnToolCalls } from "./agent/tool-preview.js";
+
+// Kernel crash ingest (crash report → Finding pipeline)
+export { parseCrashReport, crashToFinding, ingestFile, ingestDirectory, crashTypeToCategory, crashSeverity } from "./ingest/index.js";
+
+// Kernel crash verification oracle
+export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, validateCrashReportConsistency } from "./triage/kernel-oracle.js";
+export type { KernelOracleResult, ReproducerResult, CrashSignatureMatch, ConsistencyResult } from "./triage/kernel-oracle.js";
