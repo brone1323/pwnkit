@@ -22,6 +22,7 @@ const KERNEL_BUG = /BUG:\s+(?!KASAN)(.+)/;
 const GP_FAULT = /general protection fault,?\s*(?:#?(\w+))?.*?:\s*([0-9a-fA-F]+)/;
 const RCU_STALL = /rcu:\s*(.*stall.*)/i;
 const LOCKDEP = /(?:BUG|WARNING):\s*.*lock(?:dep|ing)/i;
+const KERNEL_WARNING = /WARNING:.*\bat\s+\S+\s+(\S+)\+0x[0-9a-fA-F]+\/0x[0-9a-fA-F]+/;
 const CALL_TRACE_START = /Call Trace:/;
 const STACK_FRAME = /\[<([0-9a-fA-F]+)>\]\s*(\S+)/;
 const STACK_FRAME_ALT = /^\s*(\S+)\+0x[0-9a-fA-F]+\/0x[0-9a-fA-F]+/;
@@ -247,6 +248,10 @@ export function parseCrashReport(text: string): CrashReport {
   } else if (LOCKDEP.test(text)) {
     report.crashType = "lockdep";
     report.faultingFunction = report.callStack[0] || "unknown";
+  } else if (KERNEL_WARNING.test(text)) {
+    report.crashType = "kernel-oops"; // WARNINGs are soft oops
+    const warnMatch = text.match(KERNEL_WARNING)!;
+    report.faultingFunction = warnMatch[1].replace(/\+0x.*$/, "");
   } else if (KERNEL_OOPS.test(text)) {
     report.crashType = "kernel-oops";
     const ipMatch = text.match(IP_LINE);

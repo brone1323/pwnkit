@@ -6,7 +6,7 @@
  * inference on CPU.
  *
  * The model was trained on triage-dataset-v2.jsonl (1514 rows) and
- * achieves F1=0.944 in 5-fold CV on the 45-feature vector. Per-slice
+ * achieves F1=0.944 in 5-fold CV on the 55-feature vector (45 web + 10 kernel). Per-slice
  * performance: npm-bench F1=0.930, xbow-wb F1=0.914, xbow-bb F1=0.721.
  *
  * Feature flag: PWNKIT_FEATURE_LEARNED_ROUTER (default OFF).

@@ -2,8 +2,9 @@ import type { Command } from "commander";
 import chalk from "chalk";
 import { statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { Finding } from "@pwnkit/shared";
+import type { Finding, ScanReport, Severity } from "@pwnkit/shared";
 import type { KernelOracleResult } from "@pwnkit/core";
+import { formatSarif } from "../formatters/sarif.js";
 
 const VALID_FORMATS = ["auto", "kasan", "ubsan", "oops", "syzkaller", "generic"] as const;
 const VALID_OUTPUT_FORMATS = ["terminal", "json", "sarif"] as const;
@@ -49,9 +50,7 @@ export function registerIngestCommand(program: Command): void {
             `Invalid output format '${outputFormat}'. Valid: ${VALID_OUTPUT_FORMATS.join(", ")}`,
           );
         }
-        if (opts.verify && outputFormat === "sarif") {
-          throw new Error("Output format 'sarif' is not supported with --verify. Use 'terminal' or 'json'.");
-        }
+        // sarif+verify is supported: verification results are embedded as SARIF result properties
 
         const resolved = resolve(inputPath);
         const stat = statSync(resolved);
@@ -113,6 +112,63 @@ export function registerIngestCommand(program: Command): void {
 
         if (outputFormat === "json") {
           console.log(JSON.stringify(verifiedResults ?? findings, null, 2));
+          return;
+        }
+
+        if (outputFormat === "sarif") {
+          const now = new Date().toISOString();
+          const bySev = (sev: Severity) => findings.filter((f) => f.severity === sev).length;
+          const syntheticReport: ScanReport = {
+            target: resolved,
+            scanDepth: "default",
+            startedAt: now,
+            completedAt: now,
+            durationMs: 0,
+            summary: {
+              totalAttacks: 0,
+              totalFindings: findings.length,
+              critical: bySev("critical"),
+              high: bySev("high"),
+              medium: bySev("medium"),
+              low: bySev("low"),
+              info: bySev("info"),
+            },
+            findings,
+            warnings: [],
+          };
+
+          let sarifOutput = formatSarif(syntheticReport);
+
+          // If --verify was used, embed verification results as properties on each SARIF result
+          if (verifiedResults) {
+            const verifiedById = new Map(
+              verifiedResults.map((r) => [r.finding.id, r]),
+            );
+            const sarif = JSON.parse(sarifOutput);
+            const results = sarif.runs?.[0]?.results as Array<{ ruleId: string; properties?: Record<string, unknown> }> | undefined;
+            if (results) {
+              // Results are in the same order as findings
+              for (let i = 0; i < results.length; i++) {
+                const f = findings[i];
+                if (!f) continue;
+                const v = verifiedById.get(f.id);
+                if (v) {
+                  results[i].properties = {
+                    ...results[i].properties,
+                    verification: {
+                      verified: v.verification.verified,
+                      reproduced: v.verification.reproduced,
+                      confidence: v.verification.confidence,
+                      reason: v.verification.reason,
+                    },
+                  };
+                }
+              }
+            }
+            sarifOutput = JSON.stringify(sarif, null, 2);
+          }
+
+          console.log(sarifOutput);
           return;
         }
 

@@ -28,9 +28,9 @@ const idx = (name: string) => {
 };
 
 describe("extractFeatures", () => {
-  it("returns a 45-element vector", () => {
+  it("returns a 55-element vector", () => {
     const features = extractFeatures(makeFinding());
-    expect(features).toHaveLength(45);
+    expect(features).toHaveLength(55);
     expect(features).toHaveLength(FEATURE_NAMES.length);
   });
 
@@ -125,7 +125,7 @@ describe("extractFeatures", () => {
   it("handles empty evidence gracefully", () => {
     const finding = makeFinding({ evidence: { request: "", response: "" } });
     const features = extractFeatures(finding);
-    expect(features).toHaveLength(45);
+    expect(features).toHaveLength(55);
     for (const f of features) {
       expect(typeof f).toBe("number");
       expect(isNaN(f)).toBe(false);
@@ -145,7 +145,7 @@ describe("extractFeatures", () => {
       timestamp: Date.now(),
     };
     const features = extractFeatures(minimal);
-    expect(features).toHaveLength(45);
+    expect(features).toHaveLength(55);
     for (const f of features) {
       expect(typeof f).toBe("number");
       expect(isNaN(f)).toBe(false);

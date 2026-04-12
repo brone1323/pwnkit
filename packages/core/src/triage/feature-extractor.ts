@@ -1,7 +1,7 @@
 /**
  * Layer 1: Handcrafted Feature Extractor for Finding Triage
  *
- * Extracts a 45-element numeric vector from a Finding using pure
+ * Extracts a 55-element numeric vector from a Finding using pure
  * regex/string operations. No LLM calls, no network requests.
  *
  * Inspired by VulnBERT's hybrid architecture — handcrafted features
@@ -9,10 +9,10 @@
  * they reach 92% recall / 1.2% FPR.
  */
 
-import type { AttackCategory, Finding, Severity } from "@pwnkit/shared";
+import type { AttackCategory, CrashType, Finding, Severity } from "@pwnkit/shared";
 
 // ────────────────────────────────────────────────────────────────────
-// Feature name registry (45 features, ordered by group)
+// Feature name registry (55 features, ordered by group)
 // ────────────────────────────────────────────────────────────────────
 
 export const FEATURE_NAMES: string[] = [
@@ -70,6 +70,18 @@ export const FEATURE_NAMES: string[] = [
   "cross_severity_confidence_interaction",
   "cross_response_request_length_ratio",
   "cross_evidence_completeness",
+
+  // Kernel crash features (10) — indices 45-54
+  "kernel_crash_type_ordinal",
+  "kernel_stack_depth",
+  "kernel_has_reproducer",
+  "kernel_access_is_write",
+  "kernel_access_size",
+  "kernel_network_subsystem",
+  "kernel_has_alloc_site",
+  "kernel_has_free_site",
+  "kernel_is_kasan",
+  "kernel_subsystem_criticality",
 ];
 
 // ────────────────────────────────────────────────────────────────────
@@ -551,16 +563,144 @@ function contentTypeMatches(response: string, category: AttackCategory): boolean
 }
 
 // ────────────────────────────────────────────────────────────────────
+// Kernel crash feature helpers
+// ────────────────────────────────────────────────────────────────────
+
+/** Ordinal encoding for CrashType — higher = more exploitable */
+const CRASH_TYPE_ORDINAL: Record<CrashType, number> = {
+  unknown: 0,
+  lockdep: 1,
+  "kasan-null": 2,
+  "rcu-stall": 3,
+  "kasan-oob": 4,
+  "kasan-uaf": 5,
+  "kasan-stack-oob": 6,
+  "kasan-double-free": 7,
+  "kasan-wild": 8,
+  ubsan: 9,
+  "kernel-bug": 10,
+  "kernel-oops": 11,
+  "kernel-panic": 12,
+  "general-protection": 13,
+};
+
+/** Network-facing subsystems where crashes have higher impact */
+const KERNEL_NETWORK_SUBSYSTEMS = new Set([
+  "net/tcp", "net/udp", "net/sctp", "net/ip", "net/netfilter",
+  "drivers/bluetooth", "net/wireless", "net/core",
+  "fs/nfsd",
+]);
+
+/** Subsystem criticality ordinal: 0=unknown, 1=drivers, 2=fs, 3=net, 4=mm/core */
+function subsystemCriticality(subsystem: string): number {
+  if (subsystem.startsWith("mm") || subsystem.startsWith("kernel/")) return 4;
+  if (subsystem.startsWith("net/") || KERNEL_NETWORK_SUBSYSTEMS.has(subsystem)) return 3;
+  if (subsystem.startsWith("fs/")) return 2;
+  if (subsystem.startsWith("drivers/") || subsystem === "sound" || subsystem === "block") return 1;
+  return 0;
+}
+
+/** Detect if a finding is a kernel crash finding */
+function isKernelFinding(templateId: string | undefined, category: AttackCategory): boolean {
+  if (templateId?.startsWith("kernel-")) return true;
+  // Kernel crash categories that web findings never produce
+  const kernelCategories: Set<AttackCategory> = new Set([
+    "heap-overflow", "stack-buffer-overflow", "use-after-free",
+    "double-free", "null-pointer-deref", "integer-overflow",
+    "race-condition", "type-confusion",
+  ]);
+  return kernelCategories.has(category);
+}
+
+/** Extract kernel crash features (10 features, indices 45-54) */
+function extractKernelFeatures(finding: Finding): number[] {
+  const { evidence, category, templateId } = finding;
+  const analysis = evidence.analysis || "";
+  const request = evidence.request || "";
+  const description = finding.description || "";
+  const allText = `${description}\n${analysis}`;
+
+  if (!isKernelFinding(templateId, category)) {
+    // Not a kernel finding — return 10 zeros
+    return [0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+  }
+
+  // 45: crash type ordinal — extract from analysis line "Crash type: <type>"
+  let crashTypeOrdinal = 0;
+  const crashTypeMatch = analysis.match(/Crash type:\s*([\w-]+)/);
+  if (crashTypeMatch) {
+    const ct = crashTypeMatch[1] as CrashType;
+    crashTypeOrdinal = CRASH_TYPE_ORDINAL[ct] ?? 0;
+  }
+
+  // 46: stack depth — extract from analysis line "Stack depth: N frames"
+  let stackDepth = 0;
+  const stackDepthMatch = analysis.match(/Stack depth:\s*(\d+)\s*frames/);
+  if (stackDepthMatch) {
+    stackDepth = parseInt(stackDepthMatch[1], 10);
+  } else {
+    // Fallback: count "Call path:" entries or stack-like lines
+    const callPathMatch = description.match(/Call path:\s*(.+)/);
+    if (callPathMatch) {
+      stackDepth = callPathMatch[1].split("→").length;
+    }
+  }
+
+  // 47: has reproducer — 1 if evidence.request is not the placeholder
+  const hasReproducer = b(request !== "N/A (kernel crash report)" && request.length > 0);
+
+  // 48: access is write — check analysis or description for "write"
+  const accessIsWrite = b(/\baccess.*write\b/i.test(allText) || /\bWrite of size\b/i.test(allText) || /\baccess:\s*write\b/i.test(allText));
+
+  // 49: access size — extract from "size N" or "size=N"
+  let accessSize = 0;
+  const accessSizeMatch = allText.match(/(?:size[=\s]+)(\d+)/i);
+  if (accessSizeMatch) {
+    accessSize = parseInt(accessSizeMatch[1], 10);
+  }
+
+  // 50: network subsystem
+  const subsystemMatch = analysis.match(/Subsystem:\s*(\S+)/);
+  const subsystem = subsystemMatch ? subsystemMatch[1] : "";
+  const networkSubsystem = b(KERNEL_NETWORK_SUBSYSTEMS.has(subsystem));
+
+  // 51: has alloc site
+  const hasAllocSite = b(/\bAlloc site:\s*\S+/i.test(analysis));
+
+  // 52: has free site
+  const hasFreeSite = b(/\bFree site:\s*\S+/i.test(analysis));
+
+  // 53: is KASAN
+  const isKasan = b(crashTypeMatch ? crashTypeMatch[1].startsWith("kasan-") : false);
+
+  // 54: subsystem criticality
+  const criticalityScore = subsystemCriticality(subsystem);
+
+  return [
+    crashTypeOrdinal,
+    stackDepth,
+    hasReproducer,
+    accessIsWrite,
+    accessSize,
+    networkSubsystem,
+    hasAllocSite,
+    hasFreeSite,
+    isKasan,
+    criticalityScore,
+  ];
+}
+
+// ────────────────────────────────────────────────────────────────────
 // Main extractor
 // ────────────────────────────────────────────────────────────────────
 
 /**
- * Extract a 45-element numeric feature vector from a Finding.
+ * Extract a 55-element numeric feature vector from a Finding.
  *
  * All features are computed via pure regex/string operations.
  * No LLM calls, no network requests.
  *
- * @returns number[] of length 45, ordered per FEATURE_NAMES
+ * @returns number[] of length 55, ordered per FEATURE_NAMES
  */
 export function extractFeatures(finding: Finding): number[] {
   const { evidence, severity, category, confidence, description, templateId } = finding;
@@ -689,6 +829,10 @@ export function extractFeatures(finding: Finding): number[] {
   const evidenceCount =
     b(request.length > 0) + b(response.length > 0) + b(analysis.length > 0);
   features.push(evidenceCount / 3);
+
+  // ── Kernel crash features (10) ──
+
+  features.push(...extractKernelFeatures(finding));
 
   return features;
 }
