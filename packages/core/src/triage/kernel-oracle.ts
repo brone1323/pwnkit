@@ -113,11 +113,11 @@ const KNOWN_PREFIXES = [
  * Map from crash type keywords to expected content in the report.
  */
 const CRASH_TYPE_CONTENT: Record<string, RegExp> = {
-  "kasan-oob": /out-of-bounds/i,
+  "kasan-oob": /slab-out-of-bounds|global-out-of-bounds|out-of-bounds/i,
+  "kasan-stack-oob": /stack-out-of-bounds|stack-buffer-overflow/i,
   "kasan-uaf": /use-after-free/i,
-  "kasan-double-free": /double-free/i,
-  "null-deref": /NULL pointer dereference|unable to handle kernel NULL/i,
-  "stack-oob": /stack-out-of-bounds/i,
+  "kasan-double-free": /double-free|invalid-free/i,
+  "kasan-null": /null-ptr-deref|NULL pointer dereference|unable to handle kernel NULL/i,
   "ubsan": /UBSAN/i,
   "general-protection": /general protection fault/i,
 };

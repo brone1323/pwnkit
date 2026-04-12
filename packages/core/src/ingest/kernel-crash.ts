@@ -70,15 +70,18 @@ const NETWORK_SUBSYSTEMS = new Set([
 ]);
 
 function inferSubsystem(frames: string[]): string {
-  const joined = frames.slice(0, 10).join(" ");
+  // First pass: check all frames (not just top 10) for known subsystem patterns.
+  // Prefer matches deeper in the stack over generic infrastructure functions
+  // (e.g., rhashtable, lock, kasan) that appear at the top.
+  const joined = frames.join(" ");
   for (const [pat, sub] of SUBSYSTEM_PATTERNS) {
     if (pat.test(joined)) return sub;
   }
-  // Fallback: use top frame's prefix
-  if (frames.length > 0) {
-    const top = frames[0];
-    const prefix = top.split("_")[0];
-    if (prefix && prefix.length > 1) return prefix;
+  // Fallback: use top non-infrastructure frame's prefix
+  const infraPrefixes = new Set(["dump", "print", "kasan", "lock", "spin", "rcu", "slab", "kmem", "kfree", "kmalloc", "raw", "rht", "rhashtable", "instrument", "atomic", "check"]);
+  for (const frame of frames) {
+    const prefix = frame.split("_")[0];
+    if (prefix && prefix.length > 1 && !infraPrefixes.has(prefix)) return prefix;
   }
   return "unknown";
 }
@@ -162,8 +165,12 @@ function extractFramesFromBlock(block: string): string[] {
 
 function kasanSubType(bugType: string): CrashType {
   const lower = bugType.toLowerCase();
-  if (lower.includes("out-of-bounds") || lower.includes("slab-out-of-bounds") || lower.includes("global-out-of-bounds") || lower.includes("stack-out-of-bounds")) {
-    return "kasan-oob";
+  // Order matters: more specific patterns before general ones
+  if (lower.includes("double-free") || lower.includes("invalid-free")) {
+    return "kasan-double-free";
+  }
+  if (lower.includes("stack-out-of-bounds") || lower.includes("stack-buffer-overflow")) {
+    return "kasan-stack-oob";
   }
   if (lower.includes("use-after-free") || lower.includes("slab-use-after-free")) {
     return "kasan-uaf";
@@ -173,6 +180,9 @@ function kasanSubType(bugType: string): CrashType {
   }
   if (lower.includes("wild-memory-access") || lower.includes("wild")) {
     return "kasan-wild";
+  }
+  if (lower.includes("out-of-bounds") || lower.includes("slab-out-of-bounds") || lower.includes("global-out-of-bounds")) {
+    return "kasan-oob";
   }
   // Default for unrecognized KASAN types
   return "kasan-oob";
@@ -268,7 +278,9 @@ export function parseCrashReport(text: string): CrashReport {
 export function crashTypeToCategory(crashType: CrashType): AttackCategory {
   switch (crashType) {
     case "kasan-oob": return "heap-overflow";
+    case "kasan-stack-oob": return "stack-buffer-overflow";
     case "kasan-uaf": return "use-after-free";
+    case "kasan-double-free": return "double-free";
     case "kasan-null": return "null-pointer-deref";
     case "kasan-wild": return "use-after-free";
     case "ubsan": return "integer-overflow";

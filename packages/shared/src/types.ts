@@ -360,8 +360,10 @@ export interface Evidence {
 // ── Kernel Crash Reports ──
 
 export type CrashType =
-  | "kasan-oob"          // KASAN: out-of-bounds
+  | "kasan-oob"          // KASAN: heap out-of-bounds
+  | "kasan-stack-oob"    // KASAN: stack-out-of-bounds
   | "kasan-uaf"          // KASAN: use-after-free
+  | "kasan-double-free"  // KASAN: double-free or invalid-free
   | "kasan-null"         // KASAN: null-ptr-deref
   | "kasan-wild"         // KASAN: wild-memory-access
   | "ubsan"              // UBSAN: undefined behavior
