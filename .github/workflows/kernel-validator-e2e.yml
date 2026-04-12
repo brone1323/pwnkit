@@ -33,6 +33,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
+    env:
+      KERNEL_VM_ARTIFACT_ROOT: ${{ runner.temp }}/kernel-vm
+
     steps:
       - uses: actions/checkout@v6
 
@@ -49,13 +52,34 @@ jobs:
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y qemu-system-x86 qemu-utils
 
+      - name: Restore cached kernel VM artifacts
+        id: kernel-vm-cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.KERNEL_VM_ARTIFACT_ROOT }}
+          key: kernel-vm-artifacts-${{ runner.os }}-${{ hashFiles('packages/core/src/triage/kernel-vm/Dockerfile', 'packages/core/src/triage/kernel-vm/build.sh') }}
+
       - name: Build kernel VM artifacts
+        if: steps.kernel-vm-cache.outputs.cache-hit != 'true'
         env:
           PWNKIT_KERNEL_VM_MAKE_JOBS: "4"
         run: |
-          ARTIFACT_ROOT="${RUNNER_TEMP}/kernel-vm"
+          ARTIFACT_ROOT="${KERNEL_VM_ARTIFACT_ROOT}"
           mkdir -p "${ARTIFACT_ROOT}"
           bash packages/core/src/triage/kernel-vm/build.sh "${ARTIFACT_ROOT}"
+
+      - name: Save kernel VM artifacts cache
+        if: steps.kernel-vm-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.KERNEL_VM_ARTIFACT_ROOT }}
+          key: ${{ steps.kernel-vm-cache.outputs.cache-primary-key }}
+
+      - name: Verify kernel VM artifacts exist
+        run: |
+          test -f "${KERNEL_VM_ARTIFACT_ROOT}/bzImage"
+          test -f "${KERNEL_VM_ARTIFACT_ROOT}/rootfs.img"
+          test -f "${KERNEL_VM_ARTIFACT_ROOT}/kernel.config"
 
       - name: Run real kernel validator E2E
         env:
