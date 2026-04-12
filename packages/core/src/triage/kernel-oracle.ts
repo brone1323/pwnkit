@@ -145,8 +145,8 @@ const SUBSYSTEM_SYSCALLS: Record<string, RegExp[]> = {
  * Compile and run the reproducer inside a configured kernel VM.
  *
  * When `PWNKIT_KERNEL_QEMU=1`, this boots the configured VM assets and
- * executes the reproducer over SSH. Otherwise it returns a stub indicating
- * no execution.
+ * executes the reproducer via a host-shared working directory. Otherwise
+ * it returns a stub indicating no execution.
  */
 export async function compileAndRunReproducer(
   report: CrashReport,

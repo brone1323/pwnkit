@@ -21,6 +21,9 @@ FROM debian:bookworm-slim AS kernel-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
+    gcc-x86-64-linux-gnu \
+    binutils-x86-64-linux-gnu \
+    libc6-dev-amd64-cross \
     bc \
     bison \
     flex \
@@ -36,6 +39,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 ARG KERNEL_VERSION=6.8.12
 ARG KERNEL_URL=https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-${KERNEL_VERSION}.tar.xz
+ARG KERNEL_MAKE_JOBS=4
 
 # Download and extract kernel source
 WORKDIR /build
@@ -46,7 +50,9 @@ RUN wget -q "${KERNEL_URL}" -O linux.tar.xz \
 
 # Generate kernel config with KASAN + UBSAN + debug info
 WORKDIR /build/linux
-RUN make defconfig \
+ENV ARCH=x86_64
+ENV CROSS_COMPILE=x86_64-linux-gnu-
+RUN make x86_64_defconfig \
     && scripts/config \
         --enable CONFIG_KASAN \
         --set-str CONFIG_KASAN_MODE "generic" \
@@ -94,15 +100,17 @@ RUN make defconfig \
         --enable CONFIG_IP_SCTP \
         --enable CONFIG_9P_FS \
         --enable CONFIG_NET_9P \
+        --enable CONFIG_NET_9P_VIRTIO \
         --disable CONFIG_RANDOMIZE_BASE \
         --set-val CONFIG_FRAME_WARN 2048 \
     && make olddefconfig
 
-# Build kernel (parallel, uses all cores)
-RUN make -j$(nproc) bzImage
+# Build kernel. Default to a conservative job count because this often runs
+# under amd64 emulation on arm64 hosts, where `-j$(nproc)` is prone to GCC ICEs.
+RUN make -j"${KERNEL_MAKE_JOBS}" bzImage
 
 # ── Root filesystem builder ──
-FROM debian:bookworm-slim AS rootfs-builder
+FROM --platform=linux/amd64 debian:bookworm-slim AS rootfs-builder
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     debootstrap \
@@ -115,29 +123,59 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN mkdir -p /rootfs \
     && debootstrap --variant=minbase --include=\
 openssh-server,gcc,libc6-dev,make,kmod,procps,iproute2,iputils-ping,\
-net-tools,strace,gdb,dmesg,systemd-sysv \
+net-tools,strace,util-linux,systemd-sysv \
     bookworm /rootfs http://deb.debian.org/debian
 
 # Configure rootfs
 RUN chroot /rootfs bash -c '\
     echo "root:root" | chpasswd && \
     mkdir -p /root/.ssh && \
+    ssh-keygen -t ed25519 -N "" -f /root/.ssh/pwnkit_vm_key && \
+    cat /root/.ssh/pwnkit_vm_key.pub >> /root/.ssh/authorized_keys && \
+    chmod 600 /root/.ssh/authorized_keys && \
     ssh-keygen -A && \
+    echo "nameserver 8.8.8.8" > /etc/resolv.conf && \
     sed -i "s/#PermitRootLogin.*/PermitRootLogin yes/" /etc/ssh/sshd_config && \
     sed -i "s/#PasswordAuthentication.*/PasswordAuthentication yes/" /etc/ssh/sshd_config && \
-    systemctl enable ssh && \
+    apt-get update && \
+    apt-get install -y --no-install-recommends gdb isc-dhcp-client binutils && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/* && \
     echo "pwnkit-kernel" > /etc/hostname && \
-    mkdir -p /root/pwnkit-kernel && \
-    echo "nameserver 8.8.8.8" > /etc/resolv.conf \
+    mkdir -p /root/pwnkit-kernel \
 '
 
-# Create ext4 disk image
-RUN dd if=/dev/zero of=/rootfs.img bs=1M count=512 \
-    && mkfs.ext4 -F /rootfs.img \
-    && mkdir -p /mnt/rootfs \
-    && mount -o loop /rootfs.img /mnt/rootfs \
-    && cp -a /rootfs/* /mnt/rootfs/ \
-    && umount /mnt/rootfs
+RUN printf '%s\n' \
+    '#!/bin/sh' \
+    'mount -t proc proc /proc 2>/dev/null || true' \
+    'mount -t sysfs sysfs /sys 2>/dev/null || true' \
+    'mount -t devtmpfs devtmpfs /dev 2>/dev/null || true' \
+    'mount -t tmpfs tmpfs /run 2>/dev/null || true' \
+    'mount -t tmpfs tmpfs /tmp 2>/dev/null || true' \
+    'echo "PWNKIT_INIT_START" > /dev/kmsg 2>/dev/null || true' \
+    'mkdir -p /mnt/pwnkit' \
+    'if mount -t 9p -o trans=virtio,version=9p2000.L pwnkitshare /mnt/pwnkit 2>/tmp/pwnkit-mount.err; then' \
+    '  echo "PWNKIT_INIT_SHARE_MOUNTED" > /dev/kmsg 2>/dev/null || true' \
+    'else' \
+    '  err=$(tr "\n" " " </tmp/pwnkit-mount.err 2>/dev/null || true)' \
+    '  echo "PWNKIT_INIT_SHARE_MOUNT_FAILED:${err:-unknown}" > /dev/kmsg 2>/dev/null || true' \
+    'fi' \
+    'if [ -f /mnt/pwnkit/runner.sh ]; then' \
+    '  echo "PWNKIT_INIT_RUNNER_START" > /dev/kmsg 2>/dev/null || true' \
+    '  /bin/sh /mnt/pwnkit/runner.sh' \
+    '  status=$?' \
+    '  echo "PWNKIT_INIT_RUNNER_EXIT:${status}" > /dev/kmsg 2>/dev/null || true' \
+    '  sync' \
+    '  poweroff -f 2>/dev/null || halt -f 2>/dev/null || reboot -f 2>/dev/null || exit "$status"' \
+    'fi' \
+    'echo "PWNKIT_INIT_IDLE" > /dev/kmsg 2>/dev/null || true' \
+    'sleep infinity' \
+    > /rootfs/sbin/pwnkit-init \
+    && chmod 755 /rootfs/sbin/pwnkit-init
+
+# Create ext4 disk image without requiring loop-mount support inside Docker build
+RUN truncate -s 512M /rootfs.img \
+    && mkfs.ext4 -F -d /rootfs /rootfs.img
 
 # ── Final output stage ──
 FROM debian:bookworm-slim
@@ -145,6 +183,18 @@ FROM debian:bookworm-slim
 COPY --from=kernel-builder /build/linux/arch/x86/boot/bzImage /artifacts/bzImage
 COPY --from=kernel-builder /build/linux/.config /artifacts/kernel.config
 COPY --from=rootfs-builder /rootfs.img /artifacts/rootfs.img
+COPY --from=rootfs-builder /rootfs/root/.ssh/pwnkit_vm_key /artifacts/pwnkit_vm_key
+COPY --from=rootfs-builder /rootfs/root/.ssh/pwnkit_vm_key.pub /artifacts/pwnkit_vm_key.pub
 
-# Output script: copy artifacts to /out volume
-CMD ["sh", "-c", "cp /artifacts/* /out/ && echo 'Kernel VM artifacts exported to /out/' && ls -lh /out/"]
+# Output script: copy artifacts to /out volume with host-friendly ownership.
+CMD ["sh", "-c", "\
+set -eu; \
+uid=${HOST_UID:-0}; gid=${HOST_GID:-0}; \
+install -o \"$uid\" -g \"$gid\" -m 0644 /artifacts/bzImage /out/bzImage; \
+install -o \"$uid\" -g \"$gid\" -m 0644 /artifacts/kernel.config /out/kernel.config; \
+install -o \"$uid\" -g \"$gid\" -m 0644 /artifacts/rootfs.img /out/rootfs.img; \
+install -o \"$uid\" -g \"$gid\" -m 0600 /artifacts/pwnkit_vm_key /out/pwnkit_vm_key; \
+install -o \"$uid\" -g \"$gid\" -m 0644 /artifacts/pwnkit_vm_key.pub /out/pwnkit_vm_key.pub; \
+echo 'Kernel VM artifacts exported to /out/'; \
+ls -lh /out/ \
+"]

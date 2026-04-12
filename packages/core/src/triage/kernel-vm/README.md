@@ -30,9 +30,10 @@ pwnkit ingest --verify /path/to/crash-reports/
 
 **Root filesystem** (rootfs.img, 512MB ext4):
 - Debian Bookworm minimal
-- OpenSSH server (root:root)
-- GCC + libc-dev for reproducer compilation
+- GCC + binutils + libc-dev for reproducer compilation
 - gdb, strace for debugging
+- generated `pwnkit_vm_key` / `pwnkit_vm_key.pub` pair for non-interactive SSH
+- dedicated `/sbin/pwnkit-init` boot path that mounts the host 9p share and runs `/mnt/pwnkit/runner.sh`
 
 ## Environment variables
 
@@ -41,9 +42,9 @@ pwnkit ingest --verify /path/to/crash-reports/
 | `PWNKIT_KERNEL_QEMU` | - | Set to `1` to enable |
 | `PWNKIT_KERNEL_QEMU_KERNEL` | - | Path to bzImage |
 | `PWNKIT_KERNEL_QEMU_DISK` | - | Path to rootfs.img |
-| `PWNKIT_KERNEL_QEMU_SSH_PORT` | `10022` | SSH forwarded port |
 | `PWNKIT_KERNEL_QEMU_MEMORY_MB` | `2048` | VM memory |
 | `PWNKIT_KERNEL_QEMU_SMP` | `2` | CPU cores |
 | `PWNKIT_KERNEL_QEMU_TIMEOUT_SEC` | `60` | Reproducer timeout |
 | `PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC` | `120` | Boot timeout |
 | `PWNKIT_KERNEL_QEMU_ACCEL` | - | QEMU accelerator (e.g. `kvm`) |
+| `PWNKIT_KERNEL_QEMU_SHARE_TAG` | `pwnkitshare` | 9p mount tag used by the guest boot script |
