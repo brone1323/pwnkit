@@ -5,7 +5,7 @@ vi.mock("./kernel-vm-runner.js", () => ({
   runReproducerInKernelVm: vi.fn(),
 }));
 
-import { compileAndRunReproducer, verifyKernelCrash } from "./kernel-oracle.js";
+import { compileAndRunReproducer, verifyKernelCrash, matchCrashSignature } from "./kernel-oracle.js";
 import { runReproducerInKernelVm } from "./kernel-vm-runner.js";
 
 const runVmMock = vi.mocked(runReproducerInKernelVm);
@@ -122,5 +122,36 @@ Allocated by task 1100:
     expect(result.reproduced).toBe(true);
     expect(result.crashMatch).toBe(true);
     expect(result.reproducedCrashType).toBe("kasan-oob");
+  });
+});
+
+describe("matchCrashSignature", () => {
+  it("ignores generic reporting frames and accepts invalid-free for double-free reports", () => {
+    const result = matchCrashSignature(
+      {
+        raw: "BUG: KASAN: invalid-free",
+        crashType: "kasan-double-free",
+        faultingFunction: "release_gid_table",
+        stackFrames: [
+          "dump_stack_lvl+0xe8/0x150",
+          "print_address_description+0x55/0x1e0",
+          "print_report+0x58/0x70",
+          "release_gid_table+0x1a/0x30",
+          "gid_table_release_one+0x384/0x470",
+        ],
+      },
+      `
+BUG: KASAN: invalid-free in release_gid_table+0x1a/0x30
+Call Trace:
+ release_gid_table+0x1a/0x30
+ gid_table_release_one+0x384/0x470
+ ib_device_release+0xd2/0x1c0
+`,
+    );
+
+    expect(result.matched).toBe(true);
+    expect(result.matchedFields).toContain("crashType");
+    expect(result.matchedFields).toContain("faultingFunction");
+    expect(result.mismatchedFields).not.toContain("stackFrame[0]:dump_stack_lvl");
   });
 });
