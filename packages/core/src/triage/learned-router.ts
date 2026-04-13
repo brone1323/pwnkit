@@ -5,9 +5,9 @@
  * directly. No native bindings, no ONNX, no Python. Sub-millisecond
  * inference on CPU.
  *
- * The model was trained on triage-dataset-v2.jsonl (1514 rows) and
- * achieves F1=0.944 in 5-fold CV on the 55-feature vector (45 web + 10 kernel). Per-slice
- * performance: npm-bench F1=0.930, xbow-wb F1=0.914, xbow-bb F1=0.721.
+ * v2 model: 200 trees, 55 features (45 web + 10 kernel), trained on
+ * triage-dataset-v2.jsonl (1514 rows). 5-fold CV F1=0.962, precision=0.960,
+ * recall=0.963. Replaces the v1 model (100 trees, F1=0.944).
  *
  * Feature flag: PWNKIT_FEATURE_LEARNED_ROUTER (default OFF).
  * See pwnkit#113 for the design doc.
@@ -133,15 +133,15 @@ function getModel(): XGBModel | null {
   const thisDir = dirname(fileURLToPath(import.meta.url));
   const candidates = [
     // From packages/core/src/triage/ → packages/benchmark/results/
-    join(thisDir, "../../../../benchmark/results/triage-router-v1.json"),
+    join(thisDir, "../../../../benchmark/results/triage-router-v2.json"),
     // From packages/core/dist/triage/ → packages/benchmark/results/
-    join(thisDir, "../../../../benchmark/results/triage-router-v1.json"),
+    join(thisDir, "../../../../benchmark/results/triage-router-v2.json"),
     // From monorepo root
-    join(process.cwd(), "packages/benchmark/results/triage-router-v1.json"),
+    join(process.cwd(), "packages/benchmark/results/triage-router-v2.json"),
     // From packages/core/
-    join(process.cwd(), "../benchmark/results/triage-router-v1.json"),
+    join(process.cwd(), "../benchmark/results/triage-router-v2.json"),
     // Fallback
-    join(process.cwd(), "triage-router-v1.json"),
+    join(process.cwd(), "triage-router-v2.json"),
   ];
 
   for (const path of candidates) {
