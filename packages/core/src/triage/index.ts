@@ -40,6 +40,8 @@ export type {
 export { MemoryStore, scoreMemory, inferPackage } from "./memories.js";
 export { routeFinding } from "./learned-router.js";
 export type { RouterResult, RouterDecision } from "./learned-router.js";
+export { hybridRoute } from "./hybrid-router.js";
+export type { HybridRouterResult, LlmVerdict } from "./hybrid-router.js";
 export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, validateCrashReportConsistency } from "./kernel-oracle.js";
 export type { KernelOracleResult, ReproducerResult, CrashSignatureMatch, ConsistencyResult } from "./kernel-oracle.js";
 export type {
