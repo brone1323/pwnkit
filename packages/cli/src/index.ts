@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
+import type { HomeSelection } from "./tui/run.js";
 import {
   registerScanCommand,
   registerResumeCommand,
@@ -53,11 +54,21 @@ registerIngestCommand(program);
 
 // ── Interactive menu (Ink) ──
 async function showInteractiveMenu(): Promise<void> {
-  const { showInkMenu } = await import("./ui/Menu.js");
-  const { action, target } = await showInkMenu();
+  const { isBunRuntime, showOpenTuiHome } = await import("./tui/run.js");
+  const selection: HomeSelection | null = isBunRuntime()
+    ? await showOpenTuiHome()
+    : await (await import("./ui/Menu.js")).showInkMenu() as HomeSelection | null;
+  if (!selection) return;
+  const { action, target } = selection;
 
   if (action === "history") {
     process.argv = [process.argv[0], process.argv[1], "history"];
+    await program.parseAsync();
+    return;
+  }
+
+  if (action === "findings") {
+    process.argv = [process.argv[0], process.argv[1], "findings"];
     await program.parseAsync();
     return;
   }
@@ -74,12 +85,6 @@ async function showInteractiveMenu(): Promise<void> {
     return;
   }
 
-  if (action === "dashboard") {
-    process.argv = [process.argv[0], process.argv[1], "dashboard"];
-    await program.parseAsync();
-    return;
-  }
-
   if (action === "tui") {
     process.argv = [process.argv[0], process.argv[1], "tui"];
     await program.parseAsync();
@@ -89,11 +94,44 @@ async function showInteractiveMenu(): Promise<void> {
   if (!target) return;
 
   if (action === "scan") {
-    process.argv = [process.argv[0], process.argv[1], "scan", "--target", target, "--depth", "quick"];
+    process.argv = [
+      process.argv[0],
+      process.argv[1],
+      "scan",
+      "--target",
+      target,
+      "--depth",
+      selection.depth ?? "default",
+      "--runtime",
+      selection.runtime ?? "auto",
+    ];
+    if (selection.mode && selection.mode !== "auto") {
+      process.argv.push("--mode", selection.mode);
+    }
   } else if (action === "audit") {
-    process.argv = [process.argv[0], process.argv[1], "audit", target];
+    process.argv = [
+      process.argv[0],
+      process.argv[1],
+      "audit",
+      target,
+      "--depth",
+      selection.depth ?? "default",
+      "--runtime",
+      selection.runtime ?? "auto",
+      "--ecosystem",
+      selection.ecosystem ?? "npm",
+    ];
   } else if (action === "review") {
-    process.argv = [process.argv[0], process.argv[1], "review", target];
+    process.argv = [
+      process.argv[0],
+      process.argv[1],
+      "review",
+      target,
+      "--depth",
+      selection.depth ?? "default",
+      "--runtime",
+      selection.runtime ?? "auto",
+    ];
   }
 
   await program.parseAsync();

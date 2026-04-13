@@ -2,11 +2,21 @@ import type { Command } from "commander";
 import chalk from "chalk";
 import { getRuntimeAvailability } from "../utils.js";
 
+function canUseOpenTui(): boolean {
+  return process.stdout.isTTY && process.stdin.isTTY;
+}
+
 export function registerDoctorCommand(program: Command): void {
   program
     .command("doctor")
     .description("Check local runtime prerequisites and suggest the next command")
     .action(async () => {
+      const { isBunRuntime, showOpenTuiDoctor } = await import("../tui/run.js");
+      if (isBunRuntime() && canUseOpenTui()) {
+        await showOpenTuiDoctor();
+        return;
+      }
+
       const { hasApiKey, availableRuntimes, apiRuntime } = await getRuntimeAvailability();
       const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] ?? "0", 10);
       const hasSupportedNode = nodeMajor >= 20;

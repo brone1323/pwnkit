@@ -175,11 +175,16 @@ export async function runUnified(opts: RunOptions): Promise<void> {
   let eventHandler: (event: any) => void = () => {};
 
   if (format === "terminal" && process.stdout.isTTY && process.stdin.isTTY) {
-    const { renderScanUI } = await import("../ui/renderScan.js");
     const mode = opts.targetType === "npm-package" || opts.targetType === "pypi-package" || opts.targetType === "cargo-package" || opts.targetType === "oci-image" ? "audit"
       : opts.targetType === "source-code" ? "review"
       : "scan";
-    inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+    const { isBunRuntime, createOpenTuiSession } = await import("../tui/run.js");
+    if (isBunRuntime()) {
+      inkUI = await createOpenTuiSession({ target, depth, mode });
+    } else {
+      const { renderScanUI } = await import("../ui/renderScan.js");
+      inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+    }
     eventHandler = inkUI.onEvent;
   }
 

@@ -1,4 +1,5 @@
 import { VERSION } from "@pwnkit/shared";
+import { RAIL } from "./theme.js";
 
 // Lazy-loaded cfonts module (loaded once, cached)
 let _cfonts: any = null;
@@ -24,27 +25,19 @@ export async function preloadBanner(): Promise<void> {
  * the fancy font; otherwise falls back to plain text.
  */
 export function printBanner(subtitle?: string): void {
-  const r = "\x1b[31m";
+  const p = `\x1b[38;2;250;178;131m`;
+  const t = `\x1b[38;2;238;238;238m`;
+  const m = `\x1b[38;2;128;128;128m`;
   const d = "\x1b[2m";
   const b = "\x1b[1m";
   const x = "\x1b[0m";
 
   console.log("");
-  if (_cfonts) {
-    try {
-      _cfonts.say(`pwnkit|v${VERSION}`, {
-        font: "tiny",
-        colors: ["red", "gray"],
-        space: false,
-      });
-    } catch {
-      console.log(`  ${r}${b}pwnkit${x} ${d}v${VERSION}${x}`);
-    }
-  } else {
-    console.log(`  ${r}${b}pwnkit${x} ${d}v${VERSION}${x}`);
-  }
+  console.log(`  ${p}${RAIL}${x} ${t}${b}pwnkit${x} ${m}v${VERSION}${x}`);
   if (subtitle) {
-    console.log(`  ${d}${subtitle}${x}`);
+    console.log(`    ${d}${subtitle}${x}`);
+  } else {
+    console.log(`    ${d}agentic security operations in a terminal-native shell${x}`);
   }
   console.log("");
 }

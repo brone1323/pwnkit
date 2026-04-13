@@ -6,6 +6,21 @@ import {
   selectVisibleActions,
   truncateStageAction,
 } from "@pwnkit/core";
+import {
+  ACCENT,
+  BORDER,
+  BULLET,
+  ERROR,
+  INFO,
+  MUTED,
+  PRIMARY,
+  RAIL,
+  SECONDARY,
+  SUCCESS,
+  TEXT,
+  WARNING,
+  severityTone,
+} from "./theme.js";
 
 // ── Types ──
 
@@ -48,6 +63,9 @@ export interface ScanUIProps {
   stages: StageState[];
   summary: ScanSummary | null;
   thinking: string | null;
+  target: string;
+  depth: string;
+  mode: string;
   exitHint?: string | null;
   /**
    * When false (the default), each stage shows only the last 3 actions and
@@ -59,25 +77,65 @@ export interface ScanUIProps {
   verbose?: boolean;
 }
 
-// ── Colors ──
-
-const CRIMSON = "#DC2626";
-const GREEN = "#22C55E";
-const GRAY = "#6B7280";
-const YELLOW = "#EAB308";
-const CYAN = "#06B6D4";
-
-function severityColor(s: string): string {
-  switch (s.toLowerCase()) {
-    case "critical": case "high": return CRIMSON;
-    case "medium": return YELLOW;
-    case "low": return CYAN;
-    default: return GRAY;
-  }
-}
-
 function formatDuration(ms: number): string {
   return ms < 1000 ? `${ms}ms` : `${(ms / 1000).toFixed(1)}s`;
+}
+
+function toneForStage(status: StageStatusKind): string {
+  if (status === "running") return PRIMARY;
+  if (status === "done") return SUCCESS;
+  if (status === "error") return ERROR;
+  return BORDER;
+}
+
+function RailBlock({
+  tone,
+  title,
+  meta,
+  children,
+}: {
+  tone: string;
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <Box>
+      <Text color={tone}>{RAIL}</Text>
+      <Box flexDirection="column" marginLeft={1}>
+        <Box justifyContent="space-between">
+          <Text color={TEXT} bold>{title}</Text>
+          {meta ? <Text color={MUTED}>{meta}</Text> : null}
+        </Box>
+        {children}
+      </Box>
+    </Box>
+  );
+}
+
+function InlineBadge({ label, value, color }: { label: string; value: string; color?: string }): React.ReactElement {
+  return (
+    <Text color={color ?? MUTED}>
+      {label} <Text color={TEXT} bold>{value}</Text>
+    </Text>
+  );
+}
+
+function SessionHeader({ target, mode, depth, summary }: { target: string; mode: string; depth: string; summary: ScanSummary | null }): React.ReactElement {
+  return (
+    <RailBlock
+      tone={PRIMARY}
+      title="Live session"
+      meta={summary ? "final report ready" : "streaming"}
+    >
+      <Text color={TEXT} bold>{target}</Text>
+      <Box gap={2}>
+        <InlineBadge label="mode" value={mode} color={PRIMARY} />
+        <InlineBadge label="depth" value={depth} color={SECONDARY} />
+        <InlineBadge label="view" value={summary ? "report" : "pipeline"} color={MUTED} />
+      </Box>
+    </RailBlock>
+  );
 }
 
 // ── Stage Row ──
@@ -85,13 +143,13 @@ function formatDuration(ms: number): string {
 function StageRow({ stage, verbose }: { stage: StageState; verbose: boolean }) {
   const icon =
     stage.status === "done" ? (
-      <Text color={GREEN}>{"✓"}</Text>
+      <Text color={SUCCESS}>{"✓"}</Text>
     ) : stage.status === "running" ? (
-      <Text color={CRIMSON}><Spinner type="dots" /></Text>
+      <Text color={PRIMARY}><Spinner type="dots" /></Text>
     ) : stage.status === "error" ? (
-      <Text color={CRIMSON}>{"✗"}</Text>
+      <Text color={ERROR}>{"✗"}</Text>
     ) : (
-      <Text color={GRAY}>{"◌"}</Text>
+      <Text color={BORDER}>{"◌"}</Text>
     );
 
   // Compute verify confirmed count
@@ -105,67 +163,46 @@ function StageRow({ stage, verbose }: { stage: StageState; verbose: boolean }) {
   }
 
   return (
-    <Box flexDirection="column">
+    <RailBlock
+      tone={toneForStage(stage.status)}
+      title={`${stage.label}${stage.duration !== undefined ? ` · ${formatDuration(stage.duration)}` : ""}`}
+      meta={verifyCount || undefined}
+    >
       <Box gap={1}>
-        <Text>{"  "}</Text>
         {icon}
-        <Text bold color={stage.status === "pending" ? GRAY : undefined}>
-          {stage.label.padEnd(12)}
-        </Text>
-        {verifyCount ? (
-          <Text color={GREEN}>{verifyCount}</Text>
-        ) : stage.detail ? (
-          <Text
-            color={stage.status === "done" ? GRAY : undefined}
-            dimColor={stage.status === "done"}
-          >
+        {stage.detail ? (
+          <Text color={stage.status === "done" ? MUTED : TEXT} dimColor={stage.status === "done"}>
             {formatStageDetail(stage.detail, verbose)}
           </Text>
-        ) : null}
-        {stage.duration !== undefined && (
-          <Text color={GRAY}> {formatDuration(stage.duration)}</Text>
+        ) : (
+          <Text color={MUTED}>{stage.status === "pending" ? "waiting" : stage.status}</Text>
         )}
       </Box>
 
-      {/* Tool call actions — visible during and after execution */}
       {stage.actions.length > 0 && (() => {
         const { shown, hiddenCount } = selectVisibleActions(stage.actions, verbose);
         return (
-          <Box flexDirection="column" marginLeft={6}>
+          <Box flexDirection="column" marginTop={1}>
             {hiddenCount > 0 && (
-              <Text color={GRAY} dimColor>
-                {`  … ${hiddenCount} earlier ${hiddenCount === 1 ? "action" : "actions"} hidden`}
+              <Text color={MUTED}>
+                {`… ${hiddenCount} earlier ${hiddenCount === 1 ? "action" : "actions"} hidden`}
               </Text>
             )}
             {shown.map((rawAction, i) => {
               const action = truncateStageAction(rawAction, verbose);
-              // Verify stage: confirmed (✓) green+bold, rejected (✗) dim red+strikethrough
               if (stage.id === "verify") {
                 const isConfirmed = action.startsWith("\u2713");
                 const isRejected = action.startsWith("\u2717");
-                if (isConfirmed) {
-                  return (
-                    <Text key={i} color={GREEN} bold>
-                      {"→ "}{action}
-                    </Text>
-                  );
-                }
-                if (isRejected) {
-                  return (
-                    <Text key={i} color={CRIMSON} dimColor strikethrough>
-                      {"→ "}{action}
-                    </Text>
-                  );
-                }
+                const color = isConfirmed ? SUCCESS : isRejected ? ERROR : SECONDARY;
                 return (
-                  <Text key={i} color={CYAN}>
-                    {"→ "}{action}
+                  <Text key={i} color={color} dimColor={isRejected} strikethrough={isRejected}>
+                    {BULLET} {action}
                   </Text>
                 );
               }
               return (
-                <Text key={i} color={stage.status === "done" ? GRAY : CYAN} dimColor={stage.status === "done"}>
-                  {"→ "}{action}
+                <Text key={i} color={stage.status === "done" ? MUTED : SECONDARY} dimColor={stage.status === "done"}>
+                  {BULLET} {action}
                 </Text>
               );
             })}
@@ -173,22 +210,16 @@ function StageRow({ stage, verbose }: { stage: StageState; verbose: boolean }) {
         );
       })()}
 
-      {/* Thinking text */}
-      {stage.status === "running" && stage.actions.length === 0 && stage.detail && (
-        <Box marginLeft={6}><Text color={GRAY} dimColor>{""}</Text></Box>
-      )}
-
-      {/* Findings */}
       {stage.findings.length > 0 && (
-        <Box flexDirection="column" marginLeft={6}>
+        <Box flexDirection="column" marginTop={1}>
           {stage.findings.map((f, i) => (
-            <Text key={i} color={severityColor(f.severity)}>
-              {"⚡ "}<Text bold>[{f.severity}]</Text> {f.title}
+            <Text key={i} color={severityTone(f.severity)}>
+              {BULLET} <Text bold>{f.severity.toUpperCase()}</Text> {f.title}
             </Text>
           ))}
         </Box>
       )}
-    </Box>
+    </RailBlock>
   );
 }
 
@@ -196,33 +227,27 @@ function StageRow({ stage, verbose }: { stage: StageState; verbose: boolean }) {
 
 function SummaryBar({ summary }: { summary: ScanSummary }) {
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Text color={GRAY}>{"  ──────────────────────────────────────"}</Text>
-      <Box marginLeft={2} gap={2}>
-        <Text color={summary.critical > 0 ? CRIMSON : GRAY} bold={summary.critical > 0}>
+    <RailBlock tone={summary.critical > 0 || summary.high > 0 ? ERROR : PRIMARY} title="Report" meta={summary.duration !== undefined ? formatDuration(summary.duration) : undefined}>
+      <Box gap={2}>
+        <Text color={summary.critical > 0 ? ERROR : MUTED} bold={summary.critical > 0}>
           {summary.critical} critical
         </Text>
-        <Text color={summary.high > 0 ? CRIMSON : GRAY} bold={summary.high > 0}>
+        <Text color={summary.high > 0 ? ERROR : MUTED} bold={summary.high > 0}>
           {summary.high} high
         </Text>
-        <Text color={summary.medium > 0 ? YELLOW : GRAY} bold={summary.medium > 0}>
+        <Text color={summary.medium > 0 ? WARNING : MUTED} bold={summary.medium > 0}>
           {summary.medium} medium
         </Text>
-        <Text color={GRAY}>{summary.low} low</Text>
-        <Text color={GRAY}>{summary.info ?? 0} info</Text>
+        <Text color={MUTED}>{summary.low} low</Text>
+        <Text color={MUTED}>{summary.info ?? 0} info</Text>
       </Box>
-      {summary.duration !== undefined && (
-        <Box marginLeft={2}>
-          <Text color={GRAY}>{formatDuration(summary.duration)}</Text>
-        </Box>
-      )}
       {summary.shareUrl && (
-        <Box marginTop={1} marginLeft={2}>
-          <Text color={GRAY}>Share: </Text>
-          <Text color={CYAN}>{summary.shareUrl}</Text>
+        <Box marginTop={1}>
+          <Text color={MUTED}>share </Text>
+          <Text color={SECONDARY}>{summary.shareUrl}</Text>
         </Box>
       )}
-    </Box>
+    </RailBlock>
   );
 }
 
@@ -243,45 +268,49 @@ function OutcomeBlock({ stages }: { stages: StageState[] }) {
   );
   if (withDetail.length === 0) return null;
   return (
-    <Box flexDirection="column" marginTop={1} marginLeft={2}>
-      <Text color={GRAY} dimColor>Outcome:</Text>
-      {withDetail.map((s) => (
-        <Box key={s.id} marginLeft={2} flexDirection="column">
-          <Box gap={1}>
-            <Text color={GRAY} bold>{s.label}:</Text>
+    <RailBlock tone={BORDER} title="Outcome" meta={`${withDetail.length} stage notes`}>
+      <Box flexDirection="column">
+        {withDetail.map((s) => (
+          <Box key={s.id} flexDirection="column" marginBottom={1}>
+            <Text color={TEXT} bold>{s.label}</Text>
+            <Text color={MUTED} wrap="wrap">{s.detail}</Text>
           </Box>
-          <Box marginLeft={2}>
-            <Text color={GRAY} dimColor wrap="wrap">{s.detail}</Text>
-          </Box>
-        </Box>
-      ))}
-    </Box>
+        ))}
+      </Box>
+    </RailBlock>
   );
 }
 
 // ── Main ──
 
-export function ScanUI({ stages, summary, thinking, exitHint, verbose = false }: ScanUIProps) {
+export function ScanUI({ stages, summary, thinking, target, depth, mode, exitHint, verbose = false }: ScanUIProps) {
   return (
-    <Box flexDirection="column">
+    <Box flexDirection="column" paddingLeft={2} paddingRight={2}>
+      <SessionHeader target={target} mode={mode} depth={depth} summary={summary} />
+      <Box marginTop={1} marginLeft={2} gap={2}>
+        <Text color={MUTED}>{verbose ? "verbose on" : "v / ctrl+o verbose"}</Text>
+        <Text color={MUTED}>{summary ? "enter / esc / q close" : "watching agent activity"}</Text>
+      </Box>
+      <Box marginTop={1} flexDirection="column">
       {stages.map((stage) => (
         <StageRow key={stage.id} stage={stage} verbose={verbose} />
       ))}
+      </Box>
       {thinking && (
-        <Box marginLeft={6}>
-          <Text color={GRAY} dimColor wrap={verbose ? "wrap" : "truncate"}>
+        <RailBlock tone={ACCENT} title="Latest thought" meta={verbose ? "expanded" : "tail"}>
+          <Text color={MUTED} wrap={verbose ? "wrap" : "truncate"}>
             {verbose ? thinking : thinking.slice(-80)}
           </Text>
-        </Box>
+        </RailBlock>
       )}
       {summary && <SummaryBar summary={summary} />}
       {summary && <OutcomeBlock stages={stages} />}
       <Box marginTop={1} marginLeft={2} gap={2}>
-        <Text color={GRAY} dimColor>
-          {verbose ? "verbose on" : "v / ctrl+o"} {verbose ? "" : "verbose"}
+        <Text color={MUTED}>
+          {verbose ? "verbose on" : "compact mode"}
         </Text>
         {summary && exitHint && (
-          <Text color={GRAY} dimColor>{exitHint}</Text>
+          <Text color={MUTED}>{exitHint}</Text>
         )}
       </Box>
     </Box>

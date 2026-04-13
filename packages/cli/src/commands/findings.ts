@@ -32,6 +32,20 @@ type FindingRow = {
   evidenceAnalysis?: string | null;
 };
 
+function canUseOpenTui(): boolean {
+  return process.stdout.isTTY && process.stdin.isTTY;
+}
+
+function resolveFindingsOptions(opts: FindingsListOptions, command?: Command): FindingsListOptions {
+  const inherited = command?.parent && typeof command.parent.opts === "function"
+    ? command.parent.opts() as FindingsListOptions
+    : {};
+  const local = command && typeof command.opts === "function"
+    ? command.opts() as FindingsListOptions
+    : {};
+  return { ...inherited, ...local, ...opts };
+}
+
 function withFindingsListOptions(command: Command): Command {
   return command
     .option("--db-path <path>", "Path to SQLite database")
@@ -187,16 +201,50 @@ export function registerFindingsCommand(program: Command): void {
     program
       .command("findings")
       .description("Browse and manage persisted findings")
-  ).action(async (opts: FindingsListOptions) => {
-    await renderFindingsList(opts);
+  ).action(async (opts: FindingsListOptions, command: Command) => {
+    const resolved = resolveFindingsOptions(opts, command);
+    const limit = Number.parseInt(resolved.limit ?? "50", 10);
+    const { isBunRuntime, showOpenTuiFindings } = await import("../tui/run.js");
+    if (isBunRuntime() && canUseOpenTui()) {
+      await showOpenTuiFindings({
+        dbPath: resolved.dbPath,
+        scan: resolved.scan,
+        severity: resolved.severity,
+        category: resolved.category,
+        status: resolved.status,
+        triage: resolved.triage,
+        limit,
+        all: resolved.all,
+      });
+      return;
+    }
+
+    await renderFindingsList(resolved);
   });
 
   withFindingsListOptions(
     findingsCmd
       .command("list")
       .description("List findings from the database")
-  ).action(async (opts: FindingsListOptions) => {
-    await renderFindingsList(opts);
+  ).action(async (opts: FindingsListOptions, command: Command) => {
+    const resolved = resolveFindingsOptions(opts, command);
+    const limit = Number.parseInt(resolved.limit ?? "50", 10);
+    const { isBunRuntime, showOpenTuiFindings } = await import("../tui/run.js");
+    if (isBunRuntime() && canUseOpenTui()) {
+      await showOpenTuiFindings({
+        dbPath: resolved.dbPath,
+        scan: resolved.scan,
+        severity: resolved.severity,
+        category: resolved.category,
+        status: resolved.status,
+        triage: resolved.triage,
+        limit,
+        all: resolved.all,
+      });
+      return;
+    }
+
+    await renderFindingsList(resolved);
   });
 
   findingsCmd

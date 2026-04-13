@@ -13,10 +13,14 @@ export function registerTuiCommand(program: Command): void {
     .option("--db-path <path>", "Path to SQLite database")
     .option("--refresh-ms <n>", "Refresh interval in milliseconds", "4000")
     .action(async (opts: TuiOptions) => {
+      const refreshMs = Number.parseInt(opts.refreshMs ?? "4000", 10);
+      const { isBunRuntime, showOpenTuiOps } = await import("../tui/run.js");
+      if (isBunRuntime()) {
+        await showOpenTuiOps({ dbPath: opts.dbPath, refreshMs });
+        return;
+      }
+
       const { showOperatorTui } = await import("../ui/Tui.js");
-      await showOperatorTui({
-        dbPath: opts.dbPath,
-        refreshMs: Number.parseInt(opts.refreshMs ?? "4000", 10),
-      });
+      await showOperatorTui({ dbPath: opts.dbPath, refreshMs });
     });
 }

@@ -1,9 +1,5 @@
 import React, { useState, useEffect } from "react";
 import { render, useInput } from "ink";
-import { readFileSync } from "fs";
-import { join, dirname } from "path";
-import { fileURLToPath } from "url";
-import { VERSION } from "@pwnkit/shared";
 import {
   appendStageAction,
   normalizeStageAction,
@@ -80,6 +76,9 @@ export function renderScanUI(opts: RenderScanOptions): RenderScanResult {
       stages,
       summary,
       thinking,
+      target: opts.target,
+      depth: opts.depth,
+      mode: opts.mode,
       verbose,
       exitHint: summary ? "Press Enter, Esc, or q to close." : null,
     });
