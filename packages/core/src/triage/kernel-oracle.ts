@@ -137,6 +137,33 @@ const SUBSYSTEM_SYSCALLS: Record<string, RegExp[]> = {
   netlink: [/\bsocket\b/, /\bnetlink\b/i, /\bbind\b/, /\bsendmsg\b/],
 };
 
+const NOISY_CRASH_FRAMES = [
+  /^dump_stack/,
+  /^print_/,
+  /^kasan_report/,
+  /^__kasan_/,
+  /^check_slab_allocation$/,
+  /^kfree$/,
+  /^report_cfi_failure$/,
+  /^ubsan_/,
+  /^__ubsan_/,
+];
+
+function extractFrameFunction(frame: string): string {
+  const funcMatch = frame.match(/([a-zA-Z_][\w]*)\+0x/);
+  return funcMatch ? funcMatch[1]! : frame.trim();
+}
+
+function isNoisyCrashFrame(frame: string): boolean {
+  const funcName = extractFrameFunction(frame);
+  return NOISY_CRASH_FRAMES.some((pattern) => pattern.test(funcName));
+}
+
+function selectRelevantFrames(frames: string[]): string[] {
+  const filtered = frames.filter((frame) => !isNoisyCrashFrame(frame));
+  return filtered.length > 0 ? filtered : frames;
+}
+
 // ────────────────────────────────────────────────────────────────────
 // Core functions
 // ────────────────────────────────────────────────────────────────────
@@ -145,8 +172,8 @@ const SUBSYSTEM_SYSCALLS: Record<string, RegExp[]> = {
  * Compile and run the reproducer inside a configured kernel VM.
  *
  * When `PWNKIT_KERNEL_QEMU=1`, this boots the configured VM assets and
- * executes the reproducer over SSH. Otherwise it returns a stub indicating
- * no execution.
+ * executes the reproducer via a host-shared working directory. Otherwise
+ * it returns a stub indicating no execution.
  */
 export async function compileAndRunReproducer(
   report: CrashReport,
@@ -214,7 +241,7 @@ export function matchCrashSignature(
   const typePatterns: Record<string, RegExp> = {
     "kasan-oob": /kasan.*out-of-bounds|slab-out-of-bounds/i,
     "kasan-uaf": /kasan.*use-after-free|slab-use-after-free/i,
-    "kasan-double-free": /kasan.*double-free/i,
+    "kasan-double-free": /kasan.*double-free|kasan.*invalid-free|invalid-free/i,
     "null-deref": /null pointer dereference|kernel null pointer/i,
     "stack-oob": /kasan.*stack-out-of-bounds|stack-buffer-overflow/i,
     "ubsan": /ubsan/i,
@@ -249,12 +276,10 @@ export function matchCrashSignature(
   }
 
   // ── Top 3 stack frames ─────────────────────────────────────
-  const topFrames = original.stackFrames.slice(0, 3);
+  const topFrames = selectRelevantFrames(original.stackFrames).slice(0, 3);
   for (let i = 0; i < topFrames.length; i++) {
     const frame = topFrames[i]!;
-    // Extract the function name from the frame (strip offset + module)
-    const funcMatch = frame.match(/([a-zA-Z_][\w]*)\+0x/);
-    const funcName = funcMatch ? funcMatch[1]! : frame.trim();
+    const funcName = extractFrameFunction(frame);
     if (reproOutput.includes(funcName)) {
       score += 0.1;
       matchedFields.push(`stackFrame[${i}]:${funcName}`);

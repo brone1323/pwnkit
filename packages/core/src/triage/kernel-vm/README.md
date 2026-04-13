@@ -30,9 +30,15 @@ pwnkit ingest --verify /path/to/crash-reports/
 
 **Root filesystem** (rootfs.img, 512MB ext4):
 - Debian Bookworm minimal
-- OpenSSH server (root:root)
-- GCC + libc-dev for reproducer compilation
+- GCC + binutils + libc-dev for reproducer compilation
 - gdb, strace for debugging
+- dedicated `/sbin/pwnkit-init` boot path that mounts the host 9p share and runs `/mnt/pwnkit/runner.sh`
+
+## CI
+
+The real GitHub Actions E2E lane lives in `.github/workflows/kernel-validator-e2e.yml`.
+It builds the VM artifacts, boots QEMU, and runs `ingest --verify` against a real
+syzbot crash/reproducer pair while uploading the VM logs and runner outputs as artifacts.
 
 ## Environment variables
 
@@ -41,9 +47,10 @@ pwnkit ingest --verify /path/to/crash-reports/
 | `PWNKIT_KERNEL_QEMU` | - | Set to `1` to enable |
 | `PWNKIT_KERNEL_QEMU_KERNEL` | - | Path to bzImage |
 | `PWNKIT_KERNEL_QEMU_DISK` | - | Path to rootfs.img |
-| `PWNKIT_KERNEL_QEMU_SSH_PORT` | `10022` | SSH forwarded port |
 | `PWNKIT_KERNEL_QEMU_MEMORY_MB` | `2048` | VM memory |
 | `PWNKIT_KERNEL_QEMU_SMP` | `2` | CPU cores |
 | `PWNKIT_KERNEL_QEMU_TIMEOUT_SEC` | `60` | Reproducer timeout |
 | `PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC` | `120` | Boot timeout |
 | `PWNKIT_KERNEL_QEMU_ACCEL` | - | QEMU accelerator (e.g. `kvm`) |
+| `PWNKIT_KERNEL_QEMU_SHARE_TAG` | `pwnkitshare` | 9p mount tag used by the guest boot script |
+| `PWNKIT_KERNEL_QEMU_ARTIFACT_DIR` | - | Preserve VM run artifacts (serial log, compile log, dmesg, runner outputs) instead of deleting the temp directory |

@@ -1,5 +1,5 @@
-import { execFile, spawn } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
+import { spawn } from "node:child_process";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ReproducerResult, CrashReport } from "./kernel-oracle.js";
@@ -9,28 +9,16 @@ export interface KernelVmConfig {
   kernelImage: string;
   diskImage: string;
   diskFormat: "raw" | "qcow2";
-  sshBinary: string;
-  scpBinary: string;
-  sshHost: string;
-  sshPort: number;
-  sshUser: string;
-  sshKeyPath?: string;
   bootTimeoutSec: number;
   memoryMb: number;
   smp: number;
-  remoteWorkDir: string;
   kernelAppend: string;
   qemuAccel?: string;
   initrdPath?: string;
   timeoutSec: number;
+  shareTag: string;
+  artifactDir?: string;
 }
-
-const SSH_COMMON_ARGS = [
-  "-o", "StrictHostKeyChecking=no",
-  "-o", "UserKnownHostsFile=/dev/null",
-  "-o", "BatchMode=yes",
-  "-o", "ConnectTimeout=5",
-];
 
 function shellQuote(value: string): string {
   return `'${value.replace(/'/g, `'\\''`)}'`;
@@ -63,32 +51,30 @@ export function loadKernelVmConfigFromEnv(): KernelVmConfig {
     kernelImage: resolvedKernelImage,
     diskImage: resolvedDiskImage,
     diskFormat: (process.env.PWNKIT_KERNEL_QEMU_DISK_FORMAT?.trim() as "raw" | "qcow2" | undefined) || inferDiskFormat(resolvedDiskImage),
-    sshBinary: process.env.PWNKIT_KERNEL_QEMU_SSH_BINARY?.trim() || "ssh",
-    scpBinary: process.env.PWNKIT_KERNEL_QEMU_SCP_BINARY?.trim() || "scp",
-    sshHost: process.env.PWNKIT_KERNEL_QEMU_SSH_HOST?.trim() || "127.0.0.1",
-    sshPort: parseInt(process.env.PWNKIT_KERNEL_QEMU_SSH_PORT?.trim() || "10022", 10),
-    sshUser: process.env.PWNKIT_KERNEL_QEMU_SSH_USER?.trim() || "root",
-    sshKeyPath: process.env.PWNKIT_KERNEL_QEMU_SSH_KEY?.trim() || undefined,
     bootTimeoutSec: parseInt(process.env.PWNKIT_KERNEL_QEMU_BOOT_TIMEOUT_SEC?.trim() || "120", 10),
     memoryMb: parseInt(process.env.PWNKIT_KERNEL_QEMU_MEMORY_MB?.trim() || "2048", 10),
     smp: parseInt(process.env.PWNKIT_KERNEL_QEMU_SMP?.trim() || "2", 10),
-    remoteWorkDir: process.env.PWNKIT_KERNEL_QEMU_REMOTE_DIR?.trim() || "/root/pwnkit-kernel",
-    kernelAppend: process.env.PWNKIT_KERNEL_QEMU_APPEND?.trim() || "console=ttyS0 root=/dev/vda rw nokaslr panic=-1",
+    kernelAppend: process.env.PWNKIT_KERNEL_QEMU_APPEND?.trim() || "console=ttyS0 root=/dev/vda rw nokaslr panic=-1 init=/sbin/pwnkit-init",
     qemuAccel: process.env.PWNKIT_KERNEL_QEMU_ACCEL?.trim() || undefined,
     initrdPath: process.env.PWNKIT_KERNEL_QEMU_INITRD?.trim() || undefined,
     timeoutSec: parseInt(process.env.PWNKIT_KERNEL_QEMU_TIMEOUT_SEC?.trim() || "60", 10),
+    shareTag: process.env.PWNKIT_KERNEL_QEMU_SHARE_TAG?.trim() || "pwnkitshare",
+    artifactDir: process.env.PWNKIT_KERNEL_QEMU_ARTIFACT_DIR?.trim() || undefined,
   };
 }
 
-export function buildQemuCommand(config: KernelVmConfig, serialLogPath: string): { command: string; args: string[] } {
+export function buildQemuCommand(
+  config: KernelVmConfig,
+  serialLogPath: string,
+  sharedDir: string,
+): { command: string; args: string[] } {
   const args = [
     "-m", String(config.memoryMb),
     "-smp", String(config.smp),
     "-kernel", config.kernelImage,
     "-drive", `file=${config.diskImage},format=${config.diskFormat},if=virtio`,
     "-append", config.kernelAppend,
-    "-netdev", `user,id=net0,hostfwd=tcp::${config.sshPort}-:22`,
-    "-device", "virtio-net-pci,netdev=net0",
+    "-virtfs", `local,path=${sharedDir},mount_tag=${config.shareTag},security_model=none,id=hostshare`,
     "-nographic",
     "-monitor", "none",
     "-serial", `file:${serialLogPath}`,
@@ -103,50 +89,6 @@ export function buildQemuCommand(config: KernelVmConfig, serialLogPath: string):
   }
 
   return { command: config.qemuBinary, args };
-}
-
-function buildSshBaseArgs(config: KernelVmConfig): string[] {
-  const args = [...SSH_COMMON_ARGS];
-  if (config.sshKeyPath) {
-    args.push("-i", config.sshKeyPath);
-  }
-  return args;
-}
-
-function execFileCaptured(
-  file: string,
-  args: string[],
-  timeoutMs: number,
-): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-  return new Promise((resolve) => {
-    execFile(
-      file,
-      args,
-      {
-        encoding: "utf-8",
-        timeout: timeoutMs,
-        maxBuffer: 4 * 1024 * 1024,
-      },
-      (error, stdout, stderr) => {
-        if (!error) {
-          resolve({
-            stdout: stdout ?? "",
-            stderr: stderr ?? "",
-            exitCode: 0,
-            timedOut: false,
-          });
-          return;
-        }
-        const err = error as NodeJS.ErrnoException & { code?: string; killed?: boolean; signal?: string; };
-        resolve({
-          stdout: stdout ?? "",
-          stderr: stderr ?? String(error),
-          exitCode: typeof (err as { code?: number }).code === "number" ? (err as { code?: number }).code! : 1,
-          timedOut: err.killed || err.signal === "SIGTERM",
-        });
-      },
-    );
-  });
 }
 
 async function sleep(ms: number): Promise<void> {
@@ -165,44 +107,71 @@ async function stopVm(proc: ReturnType<typeof spawn>): Promise<void> {
   }
 }
 
-async function waitForVmSsh(config: KernelVmConfig, proc: ReturnType<typeof spawn>, bootLogPath: string): Promise<void> {
-  const target = `${config.sshUser}@${config.sshHost}`;
-  const deadline = Date.now() + config.bootTimeoutSec * 1000;
+function renderGuestRunnerScript(config: KernelVmConfig): string {
+  return [
+    "#!/bin/sh",
+    "set -eu",
+    "SHARE_DIR=/mnt/pwnkit",
+    "WORK_DIR=/tmp/pwnkit-run",
+    "mkdir -p \"$WORK_DIR\"",
+    "compiled=0",
+    "executed=0",
+    "exit_code=0",
+    "timed_out=0",
+    "cp \"$SHARE_DIR/repro.c\" \"$WORK_DIR/repro.c\"",
+    `if /usr/bin/gcc -B/usr/bin/ -O0 -g -o "$WORK_DIR/repro" "$WORK_DIR/repro.c" -lpthread >"$SHARE_DIR/compile.log" 2>&1; then`,
+    "  compiled=1",
+    "else",
+    "  exit_code=$?",
+    "fi",
+    "if [ \"$compiled\" = \"1\" ]; then",
+    "  dmesg -C 2>/dev/null || true",
+    `  if timeout ${shellQuote(String(config.timeoutSec))}s "$WORK_DIR/repro" >"$SHARE_DIR/run.log" 2>&1; then`,
+    "    executed=1",
+    "    exit_code=0",
+    "  else",
+    "    exit_code=$?",
+    "    if [ \"$exit_code\" = \"124\" ]; then",
+    "      timed_out=1",
+    "    else",
+    "      executed=1",
+    "    fi",
+    "  fi",
+    "else",
+    "  : > \"$SHARE_DIR/run.log\"",
+    "fi",
+    "dmesg 2>/dev/null > \"$SHARE_DIR/dmesg.log\" || true",
+    "printf '%s\\n' \"$compiled\" > \"$SHARE_DIR/compiled.ok\"",
+    "printf '%s\\n' \"$executed\" > \"$SHARE_DIR/executed.ok\"",
+    "printf '%s\\n' \"$exit_code\" > \"$SHARE_DIR/exit_code\"",
+    "printf '%s\\n' \"$timed_out\" > \"$SHARE_DIR/timed_out\"",
+    "sync",
+  ].join("\n");
+}
+
+async function waitForVmResult(
+  config: KernelVmConfig,
+  proc: ReturnType<typeof spawn>,
+  hostTmpDir: string,
+  bootLogPath: string,
+): Promise<void> {
+  const totalBudgetSec = config.bootTimeoutSec + config.timeoutSec + 60;
+  const deadline = Date.now() + totalBudgetSec * 1000;
+  const compiledMarker = join(hostTmpDir, "compiled.ok");
 
   while (Date.now() < deadline) {
+    if (existsSync(compiledMarker)) {
+      return;
+    }
     if (proc.exitCode !== null) {
       const bootLog = existsSync(bootLogPath) ? readFileSync(bootLogPath, "utf-8").slice(-4000) : "";
-      throw new Error(`kernel VM exited before SSH became available (exit=${proc.exitCode}).\n${bootLog}`);
+      throw new Error(`kernel VM exited before producing results (exit=${proc.exitCode}).\n${bootLog}`);
     }
-    const result = await execFileCaptured(
-      config.sshBinary,
-      [...buildSshBaseArgs(config), "-p", String(config.sshPort), target, "true"],
-      7_000,
-    );
-    if (result.exitCode === 0) return;
     await sleep(2_000);
   }
 
   const bootLog = existsSync(bootLogPath) ? readFileSync(bootLogPath, "utf-8").slice(-4000) : "";
-  throw new Error(`timed out waiting for kernel VM SSH on ${config.sshHost}:${config.sshPort}.\n${bootLog}`);
-}
-
-async function runRemoteCommand(config: KernelVmConfig, command: string, timeoutSec: number): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-  const target = `${config.sshUser}@${config.sshHost}`;
-  return execFileCaptured(
-    config.sshBinary,
-    [...buildSshBaseArgs(config), "-p", String(config.sshPort), target, "bash", "-lc", command],
-    timeoutSec * 1000,
-  );
-}
-
-async function copyFileToVm(config: KernelVmConfig, localPath: string, remotePath: string): Promise<{ stdout: string; stderr: string; exitCode: number; timedOut: boolean }> {
-  const target = `${config.sshUser}@${config.sshHost}:${remotePath}`;
-  return execFileCaptured(
-    config.scpBinary,
-    [...buildSshBaseArgs(config), "-P", String(config.sshPort), localPath, target],
-    30_000,
-  );
+  throw new Error(`timed out waiting for kernel VM results in shared dir ${hostTmpDir} after ${totalBudgetSec}s.\n${bootLog}`);
 }
 
 export async function runReproducerInKernelVm(report: CrashReport): Promise<ReproducerResult> {
@@ -218,84 +187,58 @@ export async function runReproducerInKernelVm(report: CrashReport): Promise<Repr
   }
 
   const config = loadKernelVmConfigFromEnv();
-  const hostTmpDir = mkdtempSync(join(tmpdir(), "pwnkit-kvm-"));
+  const hostTmpDir = config.artifactDir
+    ? (() => {
+        mkdirSync(config.artifactDir!, { recursive: true });
+        return mkdtempSync(join(config.artifactDir!, "pwnkit-kvm-"));
+      })()
+    : mkdtempSync(join(tmpdir(), "pwnkit-kvm-"));
   const sourcePath = join(hostTmpDir, "repro.c");
+  const runnerScriptPath = join(hostTmpDir, "runner.sh");
   const serialLogPath = join(hostTmpDir, "serial.log");
-  const remoteDir = config.remoteWorkDir.replace(/\/+$/, "");
-  const remoteSource = `${remoteDir}/repro.c`;
-  const remoteBinary = `${remoteDir}/repro`;
   writeFileSync(sourcePath, report.reproducer, "utf-8");
+  writeFileSync(runnerScriptPath, renderGuestRunnerScript(config), "utf-8");
 
-  const { command, args } = buildQemuCommand(config, serialLogPath);
+  const { command, args } = buildQemuCommand(config, serialLogPath, hostTmpDir);
   const vmProc = spawn(command, args, {
     stdio: "ignore",
   });
 
   try {
-    await waitForVmSsh(config, vmProc, serialLogPath);
+    await waitForVmResult(config, vmProc, hostTmpDir, serialLogPath);
 
-    const mkdirResult = await runRemoteCommand(
-      config,
-      `mkdir -p ${shellQuote(remoteDir)}`,
-      15,
-    );
-    if (mkdirResult.exitCode !== 0) {
-      return {
-        compiled: false,
-        executed: false,
-        output: mkdirResult.stderr || mkdirResult.stdout,
-        dmesg: "",
-        exitCode: mkdirResult.exitCode,
-        timedOut: mkdirResult.timedOut,
-      };
-    }
-
-    const scpResult = await copyFileToVm(config, sourcePath, remoteSource);
-    if (scpResult.exitCode !== 0) {
-      return {
-        compiled: false,
-        executed: false,
-        output: scpResult.stderr || scpResult.stdout,
-        dmesg: existsSync(serialLogPath) ? readFileSync(serialLogPath, "utf-8").slice(-4000) : "",
-        exitCode: scpResult.exitCode,
-        timedOut: scpResult.timedOut,
-      };
-    }
-
-    const compileResult = await runRemoteCommand(
-      config,
-      `gcc -O0 -g -o ${shellQuote(remoteBinary)} ${shellQuote(remoteSource)} -lpthread 2>&1`,
-      config.timeoutSec,
-    );
-    if (compileResult.exitCode !== 0) {
-      return {
-        compiled: false,
-        executed: false,
-        output: (compileResult.stdout + compileResult.stderr).trim(),
-        dmesg: "",
-        exitCode: compileResult.exitCode,
-        timedOut: compileResult.timedOut,
-      };
-    }
-
-    await runRemoteCommand(config, "dmesg -C 2>/dev/null || true", 10);
-    const runResult = await runRemoteCommand(
-      config,
-      `timeout ${config.timeoutSec}s ${shellQuote(remoteBinary)} 2>&1 || true`,
-      config.timeoutSec + 15,
-    );
-    const dmesgResult = await runRemoteCommand(config, "dmesg 2>/dev/null || true", 20);
+    const compiled = readFileSync(join(hostTmpDir, "compiled.ok"), "utf-8").trim() === "1";
+    const executed = existsSync(join(hostTmpDir, "executed.ok"))
+      ? readFileSync(join(hostTmpDir, "executed.ok"), "utf-8").trim() === "1"
+      : false;
+    const exitCode = existsSync(join(hostTmpDir, "exit_code"))
+      ? parseInt(readFileSync(join(hostTmpDir, "exit_code"), "utf-8").trim(), 10)
+      : 1;
+    const timedOut = existsSync(join(hostTmpDir, "timed_out"))
+      ? readFileSync(join(hostTmpDir, "timed_out"), "utf-8").trim() === "1"
+      : false;
+    const compileLog = existsSync(join(hostTmpDir, "compile.log"))
+      ? readFileSync(join(hostTmpDir, "compile.log"), "utf-8").trim()
+      : "";
+    const runLog = existsSync(join(hostTmpDir, "run.log"))
+      ? readFileSync(join(hostTmpDir, "run.log"), "utf-8").trim()
+      : "";
+    const dmesg = existsSync(join(hostTmpDir, "dmesg.log"))
+      ? readFileSync(join(hostTmpDir, "dmesg.log"), "utf-8").trim()
+      : "";
 
     return {
-      compiled: true,
-      executed: true,
-      output: (runResult.stdout + runResult.stderr).trim(),
-      dmesg: (dmesgResult.stdout + dmesgResult.stderr).trim(),
-      exitCode: runResult.exitCode,
-      timedOut: runResult.timedOut,
+      compiled,
+      executed,
+      output: compiled ? runLog : compileLog,
+      dmesg,
+      exitCode: Number.isFinite(exitCode) ? exitCode : 1,
+      timedOut,
     };
   } finally {
     await stopVm(vmProc);
-    rmSync(hostTmpDir, { recursive: true, force: true });
+    if (!config.artifactDir) {
+      rmSync(hostTmpDir, { recursive: true, force: true });
+    }
   }
 }

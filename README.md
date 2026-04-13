@@ -99,7 +99,7 @@ bun add -g pwnkit-cli
 - `scan` targets AI / LLM apps, web apps, REST / OpenAPI APIs, and MCP servers.
 - `audit` installs and inspects packages across `npm`, `pypi`, `cargo`, and `oci` with ecosystem-specific prep, static analysis, and AI review.
 - `review` performs deep source-code security review on a local repo or Git URL.
-- `ingest` parses kernel crash reports and can validate them against reproducers, including a real QEMU/SSH kernel VM path when configured.
+- `ingest` parses kernel crash reports and can validate them against reproducers, including a real QEMU kernel VM path that compiles and runs reproducers inside the guest when configured.
 - `triage-data` turns benchmark runs and verified findings into labeled JSONL for triage-model training.
 - `cloud-sink` can stream findings and final reports to an orchestrator with `PWNKIT_CLOUD_SINK` + `PWNKIT_CLOUD_SCAN_ID`.
 - `dashboard`, `history`, `findings`, and `triage` provide local persistence and review workflows.
