@@ -229,7 +229,20 @@ export function parseCrashReport(text: string): CrashReport {
   } else if (UBSAN_HEADER.test(text)) {
     report.crashType = "ubsan";
     const ubMatch = text.match(UBSAN_HEADER)!;
-    report.faultingFunction = ubMatch[2].replace(/\+0x.*$/, "");
+    const ubsanLocation = ubMatch[2];
+    // UBSAN headers give file:line:col, not function names.
+    // The real function is the first non-ubsan frame in the call trace,
+    // or we extract it from the file path as a fallback.
+    const ubsanCallerFrame = report.callStack.find(
+      f => !/^__?ubsan_|^dump_stack|^print_report|^ubsan_epilogue/.test(f)
+    );
+    if (ubsanCallerFrame) {
+      report.faultingFunction = ubsanCallerFrame;
+    } else {
+      // Extract function-like name from file path: drivers/ata/libata-core.c:5166 → libata-core
+      const fileMatch = ubsanLocation.match(/([^/]+)\.\w+:\d+/);
+      report.faultingFunction = fileMatch ? fileMatch[1] : ubsanLocation.replace(/:\d+.*$/, "");
+    }
   } else if (KERNEL_PANIC.test(text)) {
     report.crashType = "kernel-panic";
     const ipMatch = text.match(IP_LINE);

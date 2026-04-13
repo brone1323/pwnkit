@@ -175,7 +175,9 @@ describe("parseCrashReport", () => {
   it("extracts UBSAN shift-out-of-range fields", () => {
     const report = parseCrashReport(UBSAN_SHIFT);
     expect(report.crashType).toBe("ubsan");
-    expect(report.faultingFunction).toBe("drivers/media/v4l2-core/v4l2_ctrl");
+    // After the UBSAN fix, we extract the real function name from the call trace
+    // (first non-ubsan frame) instead of the file:line:col from the UBSAN header
+    expect(report.faultingFunction).toBe("v4l2_ctrl");
   });
 
   it("extracts kernel oops with IP line", () => {
