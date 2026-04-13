@@ -36,6 +36,15 @@ export interface RunOptions {
   costCeilingUsd?: number;
   /** Open the operator TUI after the run completes. */
   tui?: boolean;
+  sessionUiFactory?: (options: {
+    target: string;
+    depth: string;
+    mode: "scan" | "audit" | "review";
+  }) => Promise<{
+    onEvent: (event: any) => void;
+    setReport: (report: any) => void;
+    waitForExit: () => Promise<void>;
+  }>;
 }
 
 interface ResultLinePayload {
@@ -178,12 +187,16 @@ export async function runUnified(opts: RunOptions): Promise<void> {
     const mode = opts.targetType === "npm-package" || opts.targetType === "pypi-package" || opts.targetType === "cargo-package" || opts.targetType === "oci-image" ? "audit"
       : opts.targetType === "source-code" ? "review"
       : "scan";
-    const { isBunRuntime, createOpenTuiSession } = await import("../tui/run.js");
-    if (isBunRuntime()) {
-      inkUI = await createOpenTuiSession({ target, depth, mode });
+    if (opts.sessionUiFactory) {
+      inkUI = await opts.sessionUiFactory({ target, depth, mode });
     } else {
-      const { renderScanUI } = await import("../ui/renderScan.js");
-      inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+      const { isBunRuntime, createOpenTuiSession } = await import("../tui/run.js");
+      if (isBunRuntime()) {
+        inkUI = await createOpenTuiSession({ target, depth, mode });
+      } else {
+        const { renderScanUI } = await import("../ui/renderScan.js");
+        inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+      }
     }
     eventHandler = inkUI.onEvent;
   }

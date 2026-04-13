@@ -55,7 +55,8 @@ type ConsoleRoute =
   | { type: "doctor" }
   | { type: "history"; dbPath?: string; limit: number }
   | { type: "findings"; options: FindingsScreenOptions }
-  | { type: "replay"; dbPath?: string; scanId?: string };
+  | { type: "replay"; dbPath?: string; scanId?: string }
+  | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; onClose: () => void };
 
 interface ShellNav {
   canGoBack: boolean;
@@ -1024,16 +1025,16 @@ function HomeScreen({ onResolve, onExit }: { onResolve: (selection: HomeSelectio
           <box flexDirection="column" border borderColor={PRIMARY} backgroundColor={PANEL} paddingX={1} paddingY={0}>
             {composeFields.map((field, fieldIndex) => {
               const active = fieldIndex === focusIndex;
-              const displayValue = field.value || field.placeholder || "";
               return (
                 <box key={field.key} flexDirection="row">
                   <RailBar tone={active ? PRIMARY : BORDER} />
                   <box flexDirection="column" marginLeft={1} width="100%">
                     <text fg={active ? TEXT : MUTED}>{field.label}</text>
                     <box flexDirection="row" justifyContent="space-between" width="100%">
-                      <text fg={field.value ? (active ? TEXT : "#CCCCCC") : MUTED}>{displayValue}</text>
+                      <text fg={field.value ? (active ? TEXT : "#CCCCCC") : MUTED}>{field.value || ""}</text>
                       <text fg={active ? ACCENT : MUTED}>{field.editable ? "type" : "left/right"}</text>
                     </box>
+                    {field.editable && !field.value ? <text fg={MUTED}>{field.placeholder}</text> : null}
                     {active && field.editable ? <text fg={INFO}>█</text> : null}
                   </box>
                 </box>
@@ -1749,7 +1750,13 @@ function ReplayScreen({ dbPath, scanId, onExit, shell }: { dbPath?: string; scan
   );
 }
 
-function SessionScreen({ state, onExit }: { state: SessionState; onExit: () => void }) {
+function ConsoleSessionRoute({ route, shell }: { route: Extract<ConsoleRoute, { type: "session" }>; shell: ShellNav }) {
+  const [state, setState] = useState(route.initialState);
+  useEffect(() => route.subscribe(setState), [route]);
+  return <SessionScreen state={state} onExit={route.onClose} shell={shell} />;
+}
+
+function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: () => void; shell?: ShellNav }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteSelected, setPaletteSelected] = useState(0);
@@ -1840,7 +1847,8 @@ function SessionScreen({ state, onExit }: { state: SessionState; onExit: () => v
       suggested: true,
       action: onExit,
     },
-  ], [onExit, sidebarVisible, toolCardIds]);
+    ...createShellCommands(shell),
+  ], [onExit, shell, sidebarVisible, toolCardIds]);
 
   const filteredPalette = useMemo(() => {
     const base = paletteQuery.trim() ? paletteCommands : paletteCommands.filter((command) => command.suggested);
@@ -1863,6 +1871,15 @@ function SessionScreen({ state, onExit }: { state: SessionState; onExit: () => v
 
     if (key.ctrl && key.sequence === "\\") {
       setSidebarVisible((current) => !current);
+      return;
+    }
+
+    if (shell && key.sequence === "[") {
+      shell.goBack();
+      return;
+    }
+    if (shell && key.sequence === "]") {
+      shell.goForward();
       return;
     }
 
@@ -2046,16 +2063,19 @@ type AppMode =
   | { type: "history"; dbPath?: string; limit: number; onResolve: (selection: HistorySelection) => void; onExit: () => void }
   | { type: "findings"; options: FindingsScreenOptions; onExit: () => void }
   | { type: "replay"; dbPath?: string; scanId?: string; onExit: () => void }
-  | { type: "console"; initialRoute: ConsoleRoute; onResolve: (selection: HomeSelection) => void; onExit: () => void }
+  | { type: "console"; initialRoute: ConsoleRoute; onResolve?: (selection: HomeSelection) => void; onExit: () => void }
   | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; onExit: () => void };
 
-function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: ConsoleRoute; onResolve: (selection: HomeSelection) => void; onExit: () => void }) {
+function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: ConsoleRoute; onResolve?: (selection: HomeSelection) => void; onExit: () => void }) {
   const [routes, setRoutes] = useState<ConsoleRoute[]>([initialRoute]);
   const [routeIndex, setRouteIndex] = useState(0);
 
   const navigate = (route: ConsoleRoute) => {
-    setRoutes((current) => [...current.slice(0, routeIndex + 1), route]);
-    setRouteIndex((current) => current + 1);
+    setRoutes((current) => {
+      const next = [...current.slice(0, routeIndex + 1), route];
+      setRouteIndex(next.length - 1);
+      return next;
+    });
   };
 
   const currentRoute = routes[routeIndex] ?? initialRoute;
@@ -2070,6 +2090,67 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
     openHistory: () => navigate({ type: "history", limit: 12 }),
     openFindings: () => navigate({ type: "findings", options: { limit: 50 } }),
     openReplay: (scanId) => navigate({ type: "replay", scanId }),
+  };
+
+  const launchSelection = async (selection: HomeSelection) => {
+    if (!selection.target) return;
+    const mode = selection.action === "audit" ? "audit" : selection.action === "review" ? "review" : "scan";
+    const depth = selection.depth ?? "default";
+    const runtime = selection.runtime ?? "auto";
+    let state = createInitialSessionState(selection.target, depth, mode);
+    const listeners = new Set<(value: SessionState) => void>();
+    let resolveExit: (() => void) | null = null;
+    const subscribe = (listener: (value: SessionState) => void) => {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    };
+    const emit = () => {
+      for (const listener of listeners) listener(state);
+    };
+    navigate({
+      type: "session",
+      initialState: state,
+      subscribe,
+      onClose: () => {
+        resolveExit?.();
+        resolveExit = null;
+        shell.goBack();
+      },
+    });
+
+    const { runUnified } = await import("../commands/run.js");
+    await runUnified({
+      target: selection.target,
+      targetType: selection.action === "review"
+        ? "source-code"
+        : selection.action === "audit"
+          ? selection.ecosystem === "pypi"
+            ? "pypi-package"
+            : selection.ecosystem === "cargo"
+              ? "cargo-package"
+              : selection.ecosystem === "oci"
+                ? "oci-image"
+                : "npm-package"
+          : "url",
+      mode: selection.action === "scan" && selection.mode && selection.mode !== "auto" ? selection.mode : undefined,
+      depth,
+      format: "terminal",
+      runtime,
+      timeout: selection.action === "scan" ? 30000 : 600000,
+      verbose: false,
+      packageVersion: undefined,
+      sessionUiFactory: async () => ({
+        onEvent: (event) => {
+          state = applySessionEvent(state, event);
+          emit();
+        },
+        setReport: (report) => {
+          state = applySessionReport(state, report);
+          emit();
+        },
+        waitForExit: () => new Promise<void>((resolve) => { resolveExit = resolve; }),
+      }),
+    });
   };
 
   if (currentRoute.type === "launcher") {
@@ -2094,14 +2175,19 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
         shell.openReplay();
         return;
       }
-      onResolve(selection);
-      onExit();
+      if (onResolve) {
+        onResolve(selection);
+        onExit();
+        return;
+      }
+      void launchSelection(selection);
     }} onExit={onExit} />;
   }
   if (currentRoute.type === "ops") return <OpsScreen dbPath={currentRoute.dbPath} refreshMs={currentRoute.refreshMs} onExit={onExit} shell={shell} />;
   if (currentRoute.type === "doctor") return <DoctorScreen onExit={onExit} shell={shell} />;
   if (currentRoute.type === "history") return <HistoryScreen dbPath={currentRoute.dbPath} limit={currentRoute.limit} onExit={onExit} shell={shell} />;
   if (currentRoute.type === "findings") return <FindingsScreen options={currentRoute.options} onExit={onExit} shell={shell} />;
+  if (currentRoute.type === "session") return <ConsoleSessionRoute route={currentRoute} shell={shell} />;
   return <ReplayScreen dbPath={currentRoute.dbPath} scanId={currentRoute.scanId} onExit={onExit} shell={shell} />;
 }
 
@@ -2132,15 +2218,12 @@ async function mountApp(mode: AppMode): Promise<void> {
   });
 }
 
-export async function showOpenTuiHome(): Promise<HomeSelection | null> {
-  let selection: HomeSelection | null = null;
+export async function showOpenTuiHome(): Promise<void> {
   await mountApp({
     type: "console",
     initialRoute: { type: "launcher" },
-    onResolve: (next) => { selection = next; },
     onExit: () => {},
   });
-  return selection;
 }
 
 export async function showOpenTuiOps(options: { dbPath?: string; refreshMs: number }): Promise<void> {

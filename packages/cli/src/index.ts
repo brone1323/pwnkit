@@ -55,9 +55,12 @@ registerIngestCommand(program);
 // ── Interactive menu (Ink) ──
 async function showInteractiveMenu(): Promise<void> {
   const { isBunRuntime, showOpenTuiHome } = await import("./tui/run.js");
-  const selection: HomeSelection | null = isBunRuntime()
-    ? await showOpenTuiHome()
-    : await (await import("./ui/Menu.js")).showInkMenu() as HomeSelection | null;
+  if (isBunRuntime()) {
+    await showOpenTuiHome();
+    return;
+  }
+
+  const selection = await (await import("./ui/Menu.js")).showInkMenu() as HomeSelection | null;
   if (!selection) return;
   const { action, target } = selection;
 
