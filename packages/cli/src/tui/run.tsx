@@ -889,12 +889,15 @@ function HomeScreen({ onResolve, onExit }: { onResolve: (selection: HomeSelectio
   })));
 
   const composeFields = useMemo(() => {
-    const fields: Array<{ key: string; label: string; value: string; placeholder?: string; editable?: boolean }> = [
+    const fields: Array<{ key: string; label: string; value: string; editable?: boolean }> = [
       {
         key: "target",
-        label: action === "scan" ? "Target URL" : action === "audit" ? "Package name" : "Repo path or URL",
+        label: action === "scan"
+          ? "Target URL (e.g. app.example.com)"
+          : action === "audit"
+            ? "Package name (e.g. express)"
+            : "Repo path or URL (e.g. ./my-project)",
         value: inputValue,
-        placeholder: action === "scan" ? "https://app.example.com" : action === "audit" ? "express or requests" : "./my-project",
         editable: true,
       },
       { key: "runtime", label: "Runtime", value: runtime },
@@ -923,7 +926,6 @@ function HomeScreen({ onResolve, onExit }: { onResolve: (selection: HomeSelectio
       mode: scanMode,
       ecosystem,
     });
-    onExit();
   };
 
   useKeyboard((key) => {
@@ -1031,11 +1033,12 @@ function HomeScreen({ onResolve, onExit }: { onResolve: (selection: HomeSelectio
                   <box flexDirection="column" marginLeft={1} width="100%">
                     <text fg={active ? TEXT : MUTED}>{field.label}</text>
                     <box flexDirection="row" justifyContent="space-between" width="100%">
-                      <text fg={field.value ? (active ? TEXT : "#CCCCCC") : MUTED}>{field.value || ""}</text>
+                      <box flexDirection="row">
+                        <text fg={field.value ? (active ? TEXT : "#CCCCCC") : MUTED}>{field.value || ""}</text>
+                        {active && field.editable ? <text fg={INFO}>█</text> : null}
+                      </box>
                       <text fg={active ? ACCENT : MUTED}>{field.editable ? "type" : "left/right"}</text>
                     </box>
-                    {field.editable && !field.value ? <text fg={MUTED}>{field.placeholder}</text> : null}
-                    {active && field.editable ? <text fg={INFO}>█</text> : null}
                   </box>
                 </box>
               );
@@ -2119,38 +2122,45 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
     });
 
     const { runUnified } = await import("../commands/run.js");
-    await runUnified({
-      target: selection.target,
-      targetType: selection.action === "review"
-        ? "source-code"
-        : selection.action === "audit"
-          ? selection.ecosystem === "pypi"
-            ? "pypi-package"
-            : selection.ecosystem === "cargo"
-              ? "cargo-package"
-              : selection.ecosystem === "oci"
-                ? "oci-image"
-                : "npm-package"
-          : "url",
-      mode: selection.action === "scan" && selection.mode && selection.mode !== "auto" ? selection.mode : undefined,
-      depth,
-      format: "terminal",
-      runtime,
-      timeout: selection.action === "scan" ? 30000 : 600000,
-      verbose: false,
-      packageVersion: undefined,
-      sessionUiFactory: async () => ({
-        onEvent: (event) => {
-          state = applySessionEvent(state, event);
-          emit();
-        },
-        setReport: (report) => {
-          state = applySessionReport(state, report);
-          emit();
-        },
-        waitForExit: () => new Promise<void>((resolve) => { resolveExit = resolve; }),
-      }),
-    });
+    const previousStartupLogSetting = process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG;
+    process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG = "1";
+    try {
+      await runUnified({
+        target: selection.target,
+        targetType: selection.action === "review"
+          ? "source-code"
+          : selection.action === "audit"
+            ? selection.ecosystem === "pypi"
+              ? "pypi-package"
+              : selection.ecosystem === "cargo"
+                ? "cargo-package"
+                : selection.ecosystem === "oci"
+                  ? "oci-image"
+                  : "npm-package"
+            : "url",
+        mode: selection.action === "scan" && selection.mode && selection.mode !== "auto" ? selection.mode : undefined,
+        depth,
+        format: "terminal",
+        runtime,
+        timeout: selection.action === "scan" ? 30000 : 600000,
+        verbose: false,
+        packageVersion: undefined,
+        sessionUiFactory: async () => ({
+          onEvent: (event) => {
+            state = applySessionEvent(state, event);
+            emit();
+          },
+          setReport: (report) => {
+            state = applySessionReport(state, report);
+            emit();
+          },
+          waitForExit: () => new Promise<void>((resolve) => { resolveExit = resolve; }),
+        }),
+      });
+    } finally {
+      if (previousStartupLogSetting === undefined) delete process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG;
+      else process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG = previousStartupLogSetting;
+    }
   };
 
   if (currentRoute.type === "launcher") {

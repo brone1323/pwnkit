@@ -135,6 +135,10 @@ export function __resetAzureRegionCacheForTests(): void {
 /** Tracks which endpoints we've already printed a startup banner for. */
 const loggedProviderStartup = new Set<string>();
 
+function shouldLogProviderStartup(): boolean {
+  return process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG !== "1";
+}
+
 /**
  * Emit a single-line startup banner summarising the resolved provider
  * config. For Azure, also probes and logs the physical region. Runs at
@@ -157,6 +161,7 @@ export async function logProviderStartup(
   const key = `${provider}:${baseUrl}`;
   if (loggedProviderStartup.has(key)) return;
   loggedProviderStartup.add(key);
+  if (!shouldLogProviderStartup()) return;
 
   if (provider !== "azure") {
     // Non-Azure: brief banner, no region probe.
