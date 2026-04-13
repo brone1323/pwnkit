@@ -7,7 +7,7 @@ import { VERSION } from "@pwnkit/shared";
 import type { ScanDepth, OutputFormat, RuntimeMode, ScanMode, AuthConfig, ScanReport } from "@pwnkit/shared";
 import { agenticScan, runPipeline, createRuntime } from "@pwnkit/core";
 import { formatAuditReport, formatReviewReport, formatReport, generatePdfReport } from "../formatters/index.js";
-import { buildShareUrl, checkRuntimeAvailability } from "../utils.js";
+import { buildShareUrl, checkRuntimeAvailability, getRuntimeAvailability } from "../utils.js";
 
 export interface RunOptions {
   target: string;
@@ -192,7 +192,18 @@ export async function runUnified(opts: RunOptions): Promise<void> {
     } else {
       const { isBunRuntime, createOpenTuiSession } = await import("../tui/run.js");
       if (isBunRuntime()) {
-        inkUI = await createOpenTuiSession({ target, depth, mode });
+        const availability = await getRuntimeAvailability();
+        inkUI = await createOpenTuiSession({
+          target,
+          depth,
+          mode,
+          runtime,
+          apiProviderLabel: availability.apiRuntime.providerLabel,
+          apiConfigured: availability.apiRuntime.configured,
+          apiConnected: availability.hasApiKey && availability.apiRuntime.valid,
+          localRuntimes: availability.availableRuntimes,
+          model: opts.model,
+        });
       } else {
         const { renderScanUI } = await import("../ui/renderScan.js");
         inkUI = renderScanUI({ version: VERSION, target, depth, mode });

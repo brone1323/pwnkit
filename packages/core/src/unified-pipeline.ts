@@ -705,6 +705,12 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     const researchEmit: ScanListener = (event) => {
       if (event.type === "stage:start") {
         emit({ type: "stage:start", stage: "research", message: event.message });
+      } else if (event.type === "thinking") {
+        emit({ type: "thinking", stage: "research", message: event.message, data: event.data });
+      } else if (event.type === "usage") {
+        emit({ type: "usage", stage: "research", message: event.message, data: event.data });
+      } else if (event.type === "error") {
+        emit({ type: "error", stage: "research", message: event.message, data: event.data });
       } else if (event.type === "finding") {
         emit(event);
       }

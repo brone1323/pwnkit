@@ -2007,11 +2007,27 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
               <text fg={MUTED}>{state.mode} · {state.depth}</text>
             </box>
           </PanelSection>
+          <PanelSection title="Runtime" tone={state.connection.apiConnected ? SUCCESS : state.connection.apiConfigured ? WARNING : BORDER}>
+            <box flexDirection="column">
+              <text fg={TEXT}>selected {state.connection.runtime}</text>
+              <text fg={TEXT}>api {state.connection.apiConnected ? "connected" : state.connection.apiConfigured ? "configured" : "missing"} <text fg={MUTED}>· {state.connection.apiProviderLabel ?? "unknown"}</text></text>
+              <text fg={TEXT}>local <text fg={MUTED}>{state.connection.localRuntimes.length > 0 ? state.connection.localRuntimes.join(", ") : "none"}</text></text>
+              {state.usage.inputTokens > 0 || state.usage.outputTokens > 0 ? (
+                <>
+                  <text fg={TEXT}>tokens <text fg={MUTED}>{state.usage.inputTokens}/{state.usage.outputTokens}</text></text>
+                  <text fg={TEXT}>cost <text fg={MUTED}>${state.usage.estimatedCostUsd.toFixed(4)}</text></text>
+                </>
+              ) : (
+                <text fg={MUTED}>usage awaiting first model response</text>
+              )}
+              {state.connection.model ? <text fg={TEXT}>model <text fg={MUTED}>{state.connection.model}</text></text> : null}
+            </box>
+          </PanelSection>
           <PanelSection title="Session" tone={BORDER}>
             <box flexDirection="column">
-              <text fg={MUTED}>transcript {state.transcript.length} items</text>
-              <text fg={MUTED}>turns {turnItems.length}</text>
-              <text fg={MUTED}>findings {totalFindings}</text>
+              <text fg={TEXT}>transcript <text fg={MUTED}>{state.transcript.length} items</text></text>
+              <text fg={TEXT}>turns <text fg={MUTED}>{turnItems.length}</text></text>
+              <text fg={TEXT}>findings <text fg={MUTED}>{totalFindings}</text></text>
               <text fg={summary ? SUCCESS : PRIMARY}>{summary ? "completed" : "running"}</text>
               {visibleFromTurnId ? <text fg={ACCENT}>timeline focus active</text> : null}
             </box>
@@ -2023,7 +2039,7 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
                   <text fg={stage.status === "running" ? PRIMARY : stage.status === "done" ? SUCCESS : stage.status === "error" ? ERROR : MUTED}>
                     {stage.label} · {stage.status}
                   </text>
-                  {stage.detail ? <text fg={MUTED}>{stage.detail}</text> : null}
+                  {stage.detail ? <text fg={TEXT}>{stage.detail}</text> : stage.status === "pending" ? <text fg={MUTED}>waiting for stage handoff</text> : null}
                 </box>
               ))}
             </box>
@@ -2031,7 +2047,7 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
           <PanelSection title="Findings" tone={totalFindings > 0 ? WARNING : BORDER}>
             <box flexDirection="column">
               {state.stages.flatMap((stage) => stage.findings).length === 0 ? (
-                <text fg={MUTED}>No findings yet.</text>
+                <text fg={TEXT}>No findings yet.</text>
               ) : state.stages.flatMap((stage) => stage.findings).slice(0, 8).map((finding, index) => (
                 <text key={`${finding.title}-${index}`} fg={severityTone(finding.severity)}>{finding.severity} · {finding.title}</text>
               ))}
@@ -2040,12 +2056,12 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
           {summary ? (
             <PanelSection title="Report" tone={summary.critical > 0 || summary.high > 0 ? ERROR : SUCCESS}>
               <box flexDirection="column">
-                <text fg={summary.critical > 0 ? ERROR : MUTED}>critical {summary.critical}</text>
-                <text fg={summary.high > 0 ? ERROR : MUTED}>high {summary.high}</text>
-                <text fg={summary.medium > 0 ? WARNING : MUTED}>medium {summary.medium}</text>
-                <text fg={MUTED}>low {summary.low}</text>
-                <text fg={MUTED}>info {summary.info ?? 0}</text>
-                {summary.shareUrl ? <text fg={ACCENT}>{summary.shareUrl}</text> : null}
+                <text fg={summary.critical > 0 ? ERROR : TEXT}>critical <text fg={MUTED}>{summary.critical}</text></text>
+                <text fg={summary.high > 0 ? ERROR : TEXT}>high <text fg={MUTED}>{summary.high}</text></text>
+                <text fg={summary.medium > 0 ? WARNING : TEXT}>medium <text fg={MUTED}>{summary.medium}</text></text>
+                <text fg={TEXT}>low <text fg={MUTED}>{summary.low}</text></text>
+                <text fg={TEXT}>info <text fg={MUTED}>{summary.info ?? 0}</text></text>
+                {summary.shareUrl ? <text fg={ACCENT}>{summary.shareUrl.slice(0, 72)}...</text> : null}
               </box>
             </PanelSection>
           ) : null}
@@ -2100,7 +2116,14 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
     const mode = selection.action === "audit" ? "audit" : selection.action === "review" ? "review" : "scan";
     const depth = selection.depth ?? "default";
     const runtime = selection.runtime ?? "auto";
-    let state = createInitialSessionState(selection.target, depth, mode);
+    const availability = await getRuntimeAvailability();
+    let state = createInitialSessionState(selection.target, depth, mode, {
+      runtime,
+      apiProviderLabel: availability.apiRuntime.providerLabel,
+      apiConfigured: availability.apiRuntime.configured,
+      apiConnected: availability.hasApiKey && availability.apiRuntime.valid,
+      localRuntimes: availability.availableRuntimes,
+    });
     const listeners = new Set<(value: SessionState) => void>();
     let resolveExit: (() => void) | null = null;
     const subscribe = (listener: (value: SessionState) => void) => {
@@ -2260,12 +2283,25 @@ export async function createOpenTuiSession(options: {
   target: string;
   depth: string;
   mode: SessionMode;
+  runtime?: string;
+  apiProviderLabel?: string;
+  apiConfigured?: boolean;
+  apiConnected?: boolean;
+  localRuntimes?: string[];
+  model?: string;
 }): Promise<{
   onEvent: (event: SessionEvent) => void;
   setReport: (report: Record<string, unknown>) => void;
   waitForExit: () => Promise<void>;
 }> {
-  let state = createInitialSessionState(options.target, options.depth, options.mode);
+  let state = createInitialSessionState(options.target, options.depth, options.mode, {
+    runtime: options.runtime,
+    apiProviderLabel: options.apiProviderLabel,
+    apiConfigured: options.apiConfigured,
+    apiConnected: options.apiConnected,
+    localRuntimes: options.localRuntimes,
+    model: options.model,
+  });
   const listeners = new Set<(value: SessionState) => void>();
   let resolveExit: (() => void) | null = null;
   const subscribe = (listener: (value: SessionState) => void) => {

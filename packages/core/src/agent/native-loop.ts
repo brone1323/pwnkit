@@ -212,6 +212,13 @@ export async function runNativeAgentLoop(
     if (result.usage) {
       state.totalUsage.inputTokens += result.usage.inputTokens;
       state.totalUsage.outputTokens += result.usage.outputTokens;
+      state.estimatedCostUsd = estimateCost(state.totalUsage, config.costModel);
+      onEvent?.("usage", {
+        turn: state.turnCount,
+        inputTokens: state.totalUsage.inputTokens,
+        outputTokens: state.totalUsage.outputTokens,
+        estimatedCostUsd: state.estimatedCostUsd,
+      });
     }
 
     // ── Context window compaction (BoxPwnr-inspired) ──
@@ -294,6 +301,12 @@ export async function runNativeAgentLoop(
         (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
       );
       const textContent = textBlocks.map((b) => b.text).join("\n");
+      if (textContent.trim()) {
+        onEvent?.("thinking", {
+          turn: state.turnCount,
+          text: textContent,
+        });
+      }
 
       // Only allow early exit if the agent has done meaningful work:
       // - At least 4 turns (read files, ran commands, analyzed code)

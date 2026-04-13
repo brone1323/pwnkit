@@ -49,6 +49,19 @@ export interface SessionState {
   target: string;
   depth: string;
   mode: SessionMode;
+  connection: {
+    runtime: string;
+    apiProviderLabel?: string;
+    apiConfigured?: boolean;
+    apiConnected?: boolean;
+    localRuntimes: string[];
+    model?: string;
+  };
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    estimatedCostUsd: number;
+  };
   stages: StageState[];
   summary: ScanSummary | null;
   thinking: string | null;
@@ -148,6 +161,28 @@ function cleanDisplayText(text: string, maxChars = 240): string {
   return `${compact.slice(0, maxChars)}...`;
 }
 
+function summarizeErrorText(text: string): string {
+  const cleaned = cleanDisplayText(text, 1200);
+  const objectMatch = cleaned.match(/\{.*\}/);
+  if (!objectMatch) return cleanDisplayText(cleaned, 220);
+
+  try {
+    const parsed = JSON.parse(objectMatch[0]) as {
+      message?: string;
+      type?: string;
+      code?: string;
+      error?: { message?: string; type?: string; code?: string };
+    };
+    const source = parsed.error ?? parsed;
+    const parts = [source.message, source.type, source.code].filter(Boolean);
+    if (parts.length > 0) return cleanDisplayText(parts.join(" · "), 220);
+  } catch {
+    // Fall back to compact plain text.
+  }
+
+  return cleanDisplayText(cleaned, 220);
+}
+
 function summarizeDetail(detail: string): string {
   const cleaned = cleanDisplayText(detail, 1200);
   const parts = cleaned
@@ -213,11 +248,47 @@ function appendToolAction(transcript: TranscriptItem[], stage: string, turn: num
   return next;
 }
 
-export function createInitialSessionState(target: string, depth: string, mode: SessionMode): SessionState {
+function appendStageActionGroup(transcript: TranscriptItem[], stage: string, action: string): TranscriptItem[] {
+  const next = [...transcript];
+  const { label, tone } = classifyAction(action);
+  const last = next[next.length - 1];
+  if (last && last.kind === "tool-group" && last.stage === stage && last.turn === undefined && last.label === label) {
+    const actions = [...(last.actions ?? []), action];
+    next[next.length - 1] = {
+      ...last,
+      actions,
+      text: `${label} · ${actions.length} ${actions.length === 1 ? "step" : "steps"}`,
+      tone,
+    };
+    return next;
+  }
+  next.push(transcriptItem("tool-group", `${label} · 1 step`, { stage, label, actions: [action], tone }));
+  return next;
+}
+
+export function createInitialSessionState(
+  target: string,
+  depth: string,
+  mode: SessionMode,
+  connection: Partial<SessionState["connection"]> = {},
+): SessionState {
   return {
     target,
     depth,
     mode,
+    connection: {
+      runtime: connection.runtime ?? "auto",
+      apiProviderLabel: connection.apiProviderLabel,
+      apiConfigured: connection.apiConfigured,
+      apiConnected: connection.apiConnected,
+      localRuntimes: connection.localRuntimes ?? [],
+      model: connection.model,
+    },
+    usage: {
+      inputTokens: 0,
+      outputTokens: 0,
+      estimatedCostUsd: 0,
+    },
     stages: getStages(),
     summary: null,
     thinking: null,
@@ -257,7 +328,7 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
       } else if (turnAction) {
         next.transcript = appendToolAction(next.transcript, stageId, turnAction.turn, turnAction.body);
       } else {
-        next.transcript.push(transcriptItem("action", cleanedAction, { stage: stageId, tone: "info" }));
+        next.transcript = appendStageActionGroup(next.transcript, stageId, cleanedAction);
       }
       return next;
     }
@@ -322,14 +393,15 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
 
   if (event.type === "error") {
     const running = next.stages.find((stage) => stage.status === "running");
+    const errorText = summarizeErrorText(msg);
     if (running) {
       next.stages = updateStage(next.stages, running.id, (stage) => ({
         ...stage,
         status: "error",
-        error: msg,
+        error: errorText,
       }));
     }
-    next.transcript.push(transcriptItem("error", cleanDisplayText(msg, 240), { stage: running?.id, tone: "error" }));
+    next.transcript.push(transcriptItem("error", errorText, { stage: running?.id, tone: "error" }));
     return next;
   }
 
@@ -337,6 +409,16 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
     const thinking = cleanDisplayText(msg, 180);
     next.thinking = thinking;
     next.transcript = upsertThinkingItem(next.transcript, stageId, thinking);
+    return next;
+  }
+
+  if (event.type === "usage") {
+    const usage = event.data as { inputTokens?: number; outputTokens?: number; estimatedCostUsd?: number } | undefined;
+    next.usage = {
+      inputTokens: usage?.inputTokens ?? next.usage.inputTokens,
+      outputTokens: usage?.outputTokens ?? next.usage.outputTokens,
+      estimatedCostUsd: usage?.estimatedCostUsd ?? next.usage.estimatedCostUsd,
+    };
     return next;
   }
 
