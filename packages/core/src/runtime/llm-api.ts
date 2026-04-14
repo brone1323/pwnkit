@@ -1,6 +1,7 @@
 import type {
   Runtime,
   NativeRuntime,
+  NativeStreamCallbacks,
   RuntimeConfig,
   RuntimeContext,
   RuntimeResult,
@@ -147,6 +148,12 @@ function appendNativeTrace(record: Record<string, unknown>): void {
 
 function shouldLogProviderStartup(): boolean {
   return process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG !== "1";
+}
+
+function defaultReasoningEffort(model: string): string | undefined {
+  const lower = model.toLowerCase();
+  if (lower.includes("gpt-5") || /^o[134]/.test(lower)) return "medium";
+  return undefined;
 }
 
 /**
@@ -690,6 +697,7 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
     system: string,
     messages: NativeMessage[],
     tools: NativeToolDef[],
+    callbacks?: NativeStreamCallbacks,
   ): Promise<NativeRuntimeResult> {
     const start = Date.now();
 
@@ -825,11 +833,20 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
           }
         }
 
+        const reasoningEffort = this.reasoningEffort ?? defaultReasoningEffort(this.model);
         const body: Record<string, unknown> = {
           model: this.model,
           input,
           max_output_tokens: 8192,
-          ...(this.reasoningEffort ? { reasoning: { effort: this.reasoningEffort } } : {}),
+          ...(reasoningEffort
+            ? {
+                reasoning: {
+                  effort: reasoningEffort,
+                  summary: "auto",
+                },
+                include: ["reasoning.encrypted_content"],
+              }
+            : {}),
         };
 
         if (tools.length > 0) {
@@ -844,9 +861,24 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
         res = await fetch(this.buildUrl(), {
           method: "POST",
           headers: this.buildHeaders(),
-          body: JSON.stringify(body),
+          body: JSON.stringify({ ...body, stream: true }),
           signal: controller.signal,
         });
+
+        clearTimeout(timer);
+
+        if (!res.ok) {
+          const responseText = await res.text();
+          return {
+            content: [{ type: "text", text: "" }],
+            stopReason: "error",
+            durationMs: Date.now() - start,
+            error: `${this.providerLabel} API error ${res.status}: ${responseText.slice(0, 500)}`,
+          };
+        }
+
+        const streamed = await this.consumeResponsesStream(res, start, callbacks);
+        return streamed;
       } else {
         // Anthropic Messages API format
         const apiMessages = messages.map((m) => ({
@@ -1051,6 +1083,178 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
           : `${this.providerLabel} API error: ${msg}`,
       };
     }
+  }
+
+  private async consumeResponsesStream(
+    res: Response,
+    start: number,
+    callbacks?: NativeStreamCallbacks,
+  ): Promise<NativeRuntimeResult> {
+    const reader = res.body?.getReader();
+    if (!reader) {
+      return {
+        content: [{ type: "text", text: "" }],
+        stopReason: "error",
+        durationMs: Date.now() - start,
+        error: `${this.providerLabel} API error: missing response body`,
+      };
+    }
+
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let completedResponse: Record<string, unknown> | null = null;
+    let thinkingText = "";
+    let lastThinkingEmit = 0;
+    let lastThinkingLength = 0;
+
+    const emitThinking = (force = false) => {
+      if (!callbacks?.onThinking || !thinkingText.trim()) return;
+      if (force && lastThinkingEmit > 0 && lastThinkingLength === thinkingText.length) return;
+      const now = Date.now();
+      const nextChars = thinkingText.length - lastThinkingLength;
+      const firstEmit = lastThinkingLength === 0;
+      if (!force) {
+        if (firstEmit && thinkingText.length < 96) return;
+        if (nextChars < 96 && now - lastThinkingEmit < 250) return;
+      }
+      lastThinkingEmit = now;
+      lastThinkingLength = thinkingText.length;
+      callbacks.onThinking(thinkingText);
+    };
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let boundary = buffer.indexOf("\n\n");
+      while (boundary >= 0) {
+        const rawChunk = buffer.slice(0, boundary);
+        buffer = buffer.slice(boundary + 2);
+        boundary = buffer.indexOf("\n\n");
+
+        const payload = rawChunk
+          .split("\n")
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).trim())
+          .join("\n");
+        if (!payload || payload === "[DONE]") continue;
+
+        let event: Record<string, unknown>;
+        try {
+          event = JSON.parse(payload) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+
+        const type = String(event.type ?? "");
+        if (type === "response.reasoning_summary_text.delta") {
+          const delta = typeof event.delta === "string" ? event.delta : "";
+          if (delta) {
+            thinkingText += delta;
+            emitThinking(false);
+          }
+          continue;
+        }
+
+        if (type === "response.reasoning_summary_text.done") {
+          const text = typeof event.text === "string"
+            ? event.text
+            : typeof event.part === "object" && event.part && typeof (event.part as Record<string, unknown>).text === "string"
+              ? String((event.part as Record<string, unknown>).text)
+              : "";
+          if (text.trim()) {
+            thinkingText = text;
+            emitThinking(true);
+          }
+          continue;
+        }
+
+        if (type === "response.completed" || type === "response.incomplete") {
+          const response = event.response as Record<string, unknown> | undefined;
+          if (response) {
+            completedResponse = response;
+            const usage = response.usage as Record<string, unknown> | undefined;
+            if (usage) {
+              callbacks?.onUsage?.({
+                inputTokens: Number(usage.input_tokens ?? 0),
+                outputTokens: Number(usage.output_tokens ?? 0),
+              });
+            }
+          }
+        }
+      }
+    }
+
+    emitThinking(true);
+
+    if (!completedResponse) {
+      return {
+        content: thinkingText ? [{ type: "text", text: thinkingText }] : [{ type: "text", text: "" }],
+        stopReason: "error",
+        durationMs: Date.now() - start,
+        error: `${this.providerLabel} API error: stream completed without final response`,
+      };
+    }
+
+    appendNativeTrace({
+      kind: "native-response-stream",
+      provider: this.providerLabel,
+      wireApi: this.wireApi,
+      usage: completedResponse.usage ?? null,
+      outputPreview: Array.isArray(completedResponse.output)
+        ? (completedResponse.output as Array<Record<string, unknown>>).slice(0, 10).map((item) => ({
+            type: item.type,
+            summary: item.summary,
+            content: item.content,
+            name: item.name,
+          }))
+        : null,
+      topLevelKeys: Object.keys(completedResponse),
+    });
+
+    const content: NativeContentBlock[] = [];
+    for (const item of (completedResponse.output as Array<Record<string, unknown>> | undefined) ?? []) {
+      if (item.type === "function_call") {
+        content.push({
+          type: "tool_use",
+          id: String(item.call_id),
+          name: String(item.name),
+          input: safeParseJson(String(item.arguments ?? "{}")),
+        });
+        continue;
+      }
+      if (item.type === "reasoning") {
+        const summaryParts = Array.isArray(item.summary)
+          ? item.summary
+              .map((block: Record<string, unknown>) => typeof block.text === "string" ? block.text : "")
+              .filter((text: string) => text.trim().length > 0)
+          : [];
+        const reasoningText = summaryParts.join("\n").trim();
+        if (reasoningText) content.push({ type: "text", text: reasoningText });
+        continue;
+      }
+      for (const block of (item.content as Array<Record<string, unknown>> | undefined) ?? []) {
+        if (block.type === "output_text") {
+          content.push({ type: "text", text: String(block.text ?? "") });
+        }
+      }
+    }
+
+    const usageRecord = completedResponse.usage as Record<string, unknown> | undefined;
+    const usage = usageRecord
+      ? {
+          inputTokens: Number(usageRecord.input_tokens ?? 0),
+          outputTokens: Number(usageRecord.output_tokens ?? 0),
+        }
+      : undefined;
+
+    return {
+      content,
+      stopReason: content.some((item) => item.type === "tool_use") ? "tool_use" : "end_turn",
+      usage,
+      durationMs: Date.now() - start,
+    };
   }
 
   async isAvailable(): Promise<boolean> {

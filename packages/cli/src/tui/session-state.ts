@@ -95,17 +95,22 @@ function upsertThinkingItem(
   transcript: TranscriptItem[],
   stage: string | undefined,
   text: string,
+  turn?: number,
 ): TranscriptItem[] {
   const next = [...transcript];
-  const last = next[next.length - 1];
-  if (last && last.kind === "thinking" && last.stage === stage) {
-    next[next.length - 1] = {
-      ...last,
+  for (let index = next.length - 1; index >= 0; index -= 1) {
+    const item = next[index];
+    if (item.kind !== "thinking" || item.stage !== stage) continue;
+    if (turn !== undefined && item.turn !== turn) continue;
+    if (turn === undefined && item.turn !== undefined) continue;
+    next[index] = {
+      ...item,
       text,
+      turn,
     };
     return next;
   }
-  next.push(transcriptItem("thinking", text, { stage, tone: "muted" }));
+  next.push(transcriptItem("thinking", text, { stage, turn, tone: "muted" }));
   return next;
 }
 
@@ -152,9 +157,15 @@ function replaceLargeEncodedChunks(text: string): string {
   return text.replace(/[A-Za-z0-9+/_=-]{140,}/g, "[encoded payload omitted]");
 }
 
+function stripTerminalControl(text: string): string {
+  return text
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, "")
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, "")
+    .replace(/[\x00-\x08\x0b-\x1f\x7f]/g, "");
+}
+
 function cleanDisplayText(text: string, maxChars = 240): string {
-  const compact = replaceLargeEncodedChunks(text)
-    .replace(/\x1b\[[0-9;]*m/g, "")
+  const compact = stripTerminalControl(replaceLargeEncodedChunks(text))
     .replace(/\s+/g, " ")
     .trim();
   if (compact.length <= maxChars) return compact;
@@ -415,9 +426,10 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
   }
 
   if (event.type === "thinking") {
+    const turn = (event.data as { turn?: number } | undefined)?.turn;
     const thinking = cleanDisplayText(msg, 180);
     next.thinking = thinking;
-    next.transcript = upsertThinkingItem(next.transcript, stageId, thinking);
+    next.transcript = upsertThinkingItem(next.transcript, stageId, thinking, turn);
     return next;
   }
 

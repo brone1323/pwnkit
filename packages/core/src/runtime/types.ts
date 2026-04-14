@@ -72,12 +72,18 @@ export interface NativeRuntimeResult {
   error?: string;
 }
 
+export interface NativeStreamCallbacks {
+  onThinking?: (text: string) => void;
+  onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+}
+
 export interface NativeRuntime {
   readonly type: RuntimeType;
   executeNative(
     system: string,
     messages: NativeMessage[],
     tools: NativeToolDef[],
+    callbacks?: NativeStreamCallbacks,
   ): Promise<NativeRuntimeResult>;
   isAvailable(): Promise<boolean>;
 }

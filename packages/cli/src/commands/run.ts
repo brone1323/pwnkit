@@ -389,6 +389,15 @@ export async function runUnified(opts: RunOptions): Promise<void> {
     if (exitCode !== 0) process.exit(exitCode);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (inkUI) {
+      eventHandler({
+        type: "error",
+        stage: "report",
+        message,
+      });
+      await inkUI.waitForExit();
+      return;
+    }
     console.error(chalk.red(message));
     emitResultLine({
       ok: false,

@@ -200,12 +200,40 @@ export async function runNativeAgentLoop(
 
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+    let streamedThinkingText = "";
+    let streamedUsageInputTokens: number | undefined;
+    let streamedUsageOutputTokens: number | undefined;
 
     // Call Claude API with native messages + tools
     const result = await runtime.executeNative(
       config.systemPrompt,
       state.messages,
       nativeTools,
+      {
+        onThinking: (text) => {
+          streamedThinkingText = text;
+          if (text.trim()) {
+            onEvent?.("thinking", {
+              turn: state.turnCount,
+              text,
+            });
+          }
+        },
+        onUsage: (usage) => {
+          streamedUsageInputTokens = usage.inputTokens;
+          streamedUsageOutputTokens = usage.outputTokens;
+          const cumulativeUsage = {
+            inputTokens: state.totalUsage.inputTokens + usage.inputTokens,
+            outputTokens: state.totalUsage.outputTokens + usage.outputTokens,
+          };
+          onEvent?.("usage", {
+            turn: state.turnCount,
+            inputTokens: cumulativeUsage.inputTokens,
+            outputTokens: cumulativeUsage.outputTokens,
+            estimatedCostUsd: estimateCost(cumulativeUsage, config.costModel),
+          });
+        },
+      },
     );
 
     // Track usage
@@ -213,12 +241,17 @@ export async function runNativeAgentLoop(
       state.totalUsage.inputTokens += result.usage.inputTokens;
       state.totalUsage.outputTokens += result.usage.outputTokens;
       state.estimatedCostUsd = estimateCost(state.totalUsage, config.costModel);
-      onEvent?.("usage", {
-        turn: state.turnCount,
-        inputTokens: state.totalUsage.inputTokens,
-        outputTokens: state.totalUsage.outputTokens,
-        estimatedCostUsd: state.estimatedCostUsd,
-      });
+      if (
+        streamedUsageInputTokens !== result.usage.inputTokens
+        || streamedUsageOutputTokens !== result.usage.outputTokens
+      ) {
+        onEvent?.("usage", {
+          turn: state.turnCount,
+          inputTokens: state.totalUsage.inputTokens,
+          outputTokens: state.totalUsage.outputTokens,
+          estimatedCostUsd: state.estimatedCostUsd,
+        });
+      }
     }
 
     // ── Context window compaction (BoxPwnr-inspired) ──
@@ -294,7 +327,7 @@ export async function runNativeAgentLoop(
       (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
     );
     const textContent = textBlocks.map((b) => b.text).join("\n");
-    if (textContent.trim()) {
+    if (textContent.trim() && textContent.trim() !== streamedThinkingText.trim()) {
       onEvent?.("thinking", {
         turn: state.turnCount,
         text: textContent,

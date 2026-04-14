@@ -283,9 +283,9 @@ export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<Anal
         },
         onEvent: (eventType, payload) => {
           if (eventType === "thinking") {
-            const data = payload as { text?: string };
+            const data = payload as { text?: string; turn?: number };
             if (data.text) {
-              emit({ type: "thinking", stage: "attack", message: data.text });
+              emit({ type: "thinking", stage: "attack", message: data.text, data });
             }
             return;
           }

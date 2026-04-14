@@ -104,6 +104,83 @@ function appendTuiTrace(record: Record<string, unknown>): void {
   }
 }
 
+function serializeError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      stack: error.stack,
+    };
+  }
+  return { value: String(error) };
+}
+
+function appendTuiCrash(record: Record<string, unknown>): void {
+  const file = process.env.PWNKIT_TRACE_TUI_EVENTS ?? "/tmp/pwnkit-tui-crashes.ndjson";
+  try {
+    appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), kind: "tui-crash", ...record })}\n`, "utf8");
+  } catch {
+    // best-effort only
+  }
+}
+
+let crashHandlersInstalled = false;
+
+function installTuiCrashHandlers(): void {
+  if (crashHandlersInstalled) return;
+  crashHandlersInstalled = true;
+
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    appendTuiCrash({
+      source: "uncaughtExceptionMonitor",
+      origin,
+      error: serializeError(error),
+    });
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    appendTuiCrash({
+      source: "unhandledRejection",
+      error: serializeError(reason),
+    });
+  });
+}
+
+class TuiErrorBoundary extends React.Component<{ children: React.ReactNode }, { error: string | null }> {
+  constructor(props: { children: React.ReactNode }) {
+    super(props);
+    this.state = { error: null };
+  }
+
+  static getDerivedStateFromError(error: Error): { error: string } {
+    return { error: error.message || "unknown TUI error" };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo): void {
+    appendTuiCrash({
+      source: "react-error-boundary",
+      error: serializeError(error),
+      componentStack: info.componentStack,
+    });
+  }
+
+  render() {
+    if (this.state.error) {
+      return (
+        <ShellFrame view="crash">
+          <box flexDirection="column">
+            <text fg={ERROR}>TUI crashed while rendering the current screen.</text>
+            <text fg={MUTED}>{this.state.error}</text>
+            <text fg={MUTED}>Trace file: {process.env.PWNKIT_TRACE_TUI_EVENTS ?? "/tmp/pwnkit-tui-crashes.ndjson"}</text>
+          </box>
+        </ShellFrame>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 interface OpsSnapshot {
   scans: Array<{ id: string; target: string; status: string; mode: string; depth: string; runtime: string; durationMs?: number | null; summary?: string | null }>;
   findings: Array<{ id: string; title: string; severity: string; category: string; scanId: string }>;
@@ -722,8 +799,6 @@ function LiveBadge({ label, active = true }: { label: string; active?: boolean }
   );
 }
 
-const LOADER_FRAMES = ["𓃉𓃉𓃉", "𓃉𓃉∘", "𓃉∘°", "∘°∘", "°∘𓃉", "∘𓃉𓃉"];
-
 function ShimmerLabel({ text }: { text: string }) {
   const [frame, setFrame] = useState(0);
   const chars = useMemo(() => Array.from(text), [text]);
@@ -753,17 +828,19 @@ function WorkingPulse({ label, detail }: { label: string; detail?: string }) {
 
   useEffect(() => {
     const timer = setInterval(() => {
-      setFrame((current) => (current + 1) % LOADER_FRAMES.length);
+      setFrame((current) => (current + 1) % 6);
     }, 120);
     return () => clearInterval(timer);
   }, []);
+
+  const loader = ["[   ]", "[=  ]", "[== ]", "[===]", "[ ==]", "[  =]"][frame] ?? "[   ]";
 
   return (
     <box flexDirection="row" marginTop={1}>
       <RailBar tone={PRIMARY} />
       <box flexDirection="column" marginLeft={1} backgroundColor={PANEL_ALT} paddingX={1} width="100%">
         <box flexDirection="row">
-          <text fg={ACCENT}>{LOADER_FRAMES[frame]}</text>
+          <text fg={ACCENT}>{loader}</text>
           <box marginLeft={1}>
             <ShimmerLabel text={label} />
           </box>
@@ -2317,18 +2394,45 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
         sessionUiFactory: async () => ({
           onEvent: (event) => {
             appendTuiTrace({ kind: "session-event", event });
-            state = applySessionEvent(state, event);
-            appendTuiTrace({
-              kind: "session-state",
-              usage: state.usage,
-              thinking: state.thinking,
-              lastTranscript: state.transcript.at(-1)?.text,
-            });
-            emit();
+            try {
+              state = applySessionEvent(state, event);
+              appendTuiTrace({
+                kind: "session-state",
+                usage: state.usage,
+                thinking: state.thinking,
+                lastTranscript: state.transcript.at(-1)?.text,
+                transcriptCount: state.transcript.length,
+              });
+              emit();
+              appendTuiTrace({ kind: "session-emit-complete", transcriptCount: state.transcript.length });
+            } catch (error) {
+              appendTuiCrash({
+                source: "session-onEvent",
+                event,
+                state: {
+                  thinking: state.thinking,
+                  usage: state.usage,
+                  transcriptCount: state.transcript.length,
+                  lastTranscript: state.transcript.at(-1)?.text,
+                },
+                error: serializeError(error),
+              });
+              throw error;
+            }
           },
           setReport: (report) => {
-            state = applySessionReport(state, report);
-            emit();
+            try {
+              state = applySessionReport(state, report);
+              appendTuiTrace({ kind: "session-report", summary: state.summary, transcriptCount: state.transcript.length });
+              emit();
+            } catch (error) {
+              appendTuiCrash({
+                source: "session-setReport",
+                report,
+                error: serializeError(error),
+              });
+              throw error;
+            }
           },
           waitForExit: () => new Promise<void>((resolve) => { resolveExit = resolve; }),
         }),
@@ -2396,6 +2500,7 @@ function UnifiedApp({ mode }: { mode: AppMode }) {
 }
 
 async function mountApp(mode: AppMode): Promise<void> {
+  installTuiCrashHandlers();
   const renderer = await createCliRenderer({ exitOnCtrlC: false });
   const root = createRoot(renderer);
   await new Promise<void>((resolve) => {
@@ -2404,7 +2509,19 @@ async function mountApp(mode: AppMode): Promise<void> {
       renderer.destroy();
       resolve();
     };
-    root.render(<UnifiedApp mode={{ ...mode, onExit: close } as AppMode} />);
+    try {
+      root.render(
+        <TuiErrorBoundary>
+          <UnifiedApp mode={{ ...mode, onExit: close } as AppMode} />
+        </TuiErrorBoundary>,
+      );
+    } catch (error) {
+      appendTuiCrash({
+        source: "mountApp.render",
+        error: serializeError(error),
+      });
+      throw error;
+    }
   });
 }
 
