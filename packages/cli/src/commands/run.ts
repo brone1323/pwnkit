@@ -5,9 +5,21 @@ import { execFile } from "node:child_process";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
 import type { ScanDepth, OutputFormat, RuntimeMode, ScanMode, AuthConfig, ScanReport } from "@pwnkit/shared";
-import { agenticScan, runPipeline, createRuntime } from "@pwnkit/core";
 import { formatAuditReport, formatReviewReport, formatReport, generatePdfReport } from "../formatters/index.js";
 import { buildShareUrl, checkRuntimeAvailability, getRuntimeAvailability } from "../utils.js";
+
+type CoreModule = typeof import("@pwnkit/core");
+
+let coreModulePromise: Promise<CoreModule> | null = null;
+
+async function loadCoreModule(): Promise<CoreModule> {
+  if (!coreModulePromise) {
+    coreModulePromise = process.versions.bun
+      ? import(new URL("../../../core/src/index.ts", import.meta.url).href) as Promise<CoreModule>
+      : import("@pwnkit/core");
+  }
+  return coreModulePromise;
+}
 
 export interface RunOptions {
   target: string;
@@ -160,6 +172,7 @@ async function postFinalResultToCloud(report: unknown): Promise<void> {
 
 export async function runUnified(opts: RunOptions): Promise<void> {
   const { target, depth, format, runtime, timeout } = opts;
+  const core = await loadCoreModule();
 
   const validRuntimes = ["api", "claude", "codex", "gemini", "auto"];
   if (!validRuntimes.includes(runtime)) {
@@ -169,7 +182,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
 
   // Check non-auto runtime availability
   if (runtime !== "api" && runtime !== "auto") {
-    const rt = createRuntime({ type: runtime, timeout });
+    const rt = core.createRuntime({ type: runtime, timeout });
     const available = await rt.isAvailable();
     if (!available) {
       console.error(chalk.red(`Runtime '${runtime}' not available. Is ${runtime} installed?`));
@@ -214,7 +227,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
 
   try {
     const report = opts.targetType === "url" || opts.targetType === "web-app"
-      ? await agenticScan({
+      ? await core.agenticScan({
           config: {
             target,
             depth,
@@ -236,7 +249,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
           onEvent: eventHandler,
           resumeScanId: opts.resumeScanId,
         })
-      : await runPipeline({
+      : await core.runPipeline({
           target,
           targetType: opts.targetType,
           resumeScanId: opts.resumeScanId,

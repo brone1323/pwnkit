@@ -10,7 +10,7 @@ import type {
   NativeContentBlock,
 } from "./types.js";
 
-import { existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
 /** Safely parse JSON tool arguments; returns empty object on malformed input. */
 function safeParseJson(raw: string | null | undefined): Record<string, unknown> {
@@ -134,6 +134,16 @@ export function __resetAzureRegionCacheForTests(): void {
 
 /** Tracks which endpoints we've already printed a startup banner for. */
 const loggedProviderStartup = new Set<string>();
+
+function appendNativeTrace(record: Record<string, unknown>): void {
+  const file = process.env.PWNKIT_TRACE_NATIVE_RESPONSES;
+  if (!file) return;
+  try {
+    appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`, "utf8");
+  } catch {
+    // best-effort only
+  }
+}
 
 function shouldLogProviderStartup(): boolean {
   return process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG !== "1";
@@ -610,6 +620,12 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
       const body = await res.text();
 
       if (!res.ok) {
+        appendNativeTrace({
+          kind: "error-response",
+          provider: this.providerLabel,
+          status: res.status,
+          body: body.slice(0, 2000),
+        });
         return {
           output: "",
           exitCode: 1,
@@ -885,6 +901,21 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
       }
 
       const json = JSON.parse(responseText);
+      appendNativeTrace({
+        kind: "native-response",
+        provider: this.providerLabel,
+        wireApi: this.wireApi,
+        usage: json.usage ?? null,
+        outputPreview: Array.isArray(json.output)
+          ? json.output.slice(0, 10).map((item: Record<string, unknown>) => ({
+              type: item.type,
+              summary: item.summary,
+              content: item.content,
+              name: item.name,
+            }))
+          : null,
+        topLevelKeys: Object.keys(json),
+      });
 
       // Parse response into unified content blocks
       let content: NativeContentBlock[];

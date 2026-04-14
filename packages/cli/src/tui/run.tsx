@@ -1,4 +1,5 @@
 /** @jsxImportSource @opentui/react */
+import { appendFileSync } from "node:fs";
 import React, { useEffect, useMemo, useState } from "react";
 import { createCliRenderer } from "@opentui/core";
 import { createRoot, useKeyboard } from "@opentui/react";
@@ -92,6 +93,16 @@ const RUNTIME_OPTIONS: LaunchRuntime[] = ["auto", "api", "claude", "codex", "gem
 const DEPTH_OPTIONS: LaunchDepth[] = ["quick", "default", "deep"];
 const SCAN_MODE_OPTIONS: LaunchScanMode[] = ["auto", "web", "probe", "deep", "mcp"];
 const ECOSYSTEM_OPTIONS: LaunchEcosystem[] = ["npm", "pypi", "cargo", "oci"];
+
+function appendTuiTrace(record: Record<string, unknown>): void {
+  const file = process.env.PWNKIT_TRACE_TUI_EVENTS;
+  if (!file) return;
+  try {
+    appendFileSync(file, `${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`, "utf8");
+  } catch {
+    // best-effort only
+  }
+}
 
 interface OpsSnapshot {
   scans: Array<{ id: string; target: string; status: string; mode: string; depth: string; runtime: string; durationMs?: number | null; summary?: string | null }>;
@@ -713,6 +724,30 @@ function LiveBadge({ label, active = true }: { label: string; active?: boolean }
 
 const LOADER_FRAMES = ["𓃉𓃉𓃉", "𓃉𓃉∘", "𓃉∘°", "∘°∘", "°∘𓃉", "∘𓃉𓃉"];
 
+function ShimmerLabel({ text }: { text: string }) {
+  const [frame, setFrame] = useState(0);
+  const chars = useMemo(() => Array.from(text), [text]);
+  const padding = 10;
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setFrame((current) => (current + 1) % Math.max(chars.length + padding * 2, 1));
+    }, 90);
+    return () => clearInterval(timer);
+  }, [chars.length]);
+
+  return (
+    <box flexDirection="row">
+      {chars.map((char, index) => {
+        const center = frame - padding;
+        const distance = Math.abs(index - center);
+        const fg = distance < 1.5 ? ACCENT : distance < 3.5 ? TEXT : MUTED;
+        return <text key={`${index}-${char}`} fg={fg}>{char}</text>;
+      })}
+    </box>
+  );
+}
+
 function WorkingPulse({ label, detail }: { label: string; detail?: string }) {
   const [frame, setFrame] = useState(0);
 
@@ -729,7 +764,9 @@ function WorkingPulse({ label, detail }: { label: string; detail?: string }) {
       <box flexDirection="column" marginLeft={1} backgroundColor={PANEL_ALT} paddingX={1} width="100%">
         <box flexDirection="row">
           <text fg={ACCENT}>{LOADER_FRAMES[frame]}</text>
-          <text fg={TEXT}>{` ${label}`}</text>
+          <box marginLeft={1}>
+            <ShimmerLabel text={label} />
+          </box>
         </box>
         {detail ? <text fg={MUTED}>{detail}</text> : null}
       </box>
@@ -2243,7 +2280,19 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
 
     const { runUnified } = await import("../commands/run.js");
     const previousStartupLogSetting = process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG;
+    const previousNativeTracePath = process.env.PWNKIT_TRACE_NATIVE_RESPONSES;
+    const previousTuiTracePath = process.env.PWNKIT_TRACE_TUI_EVENTS;
     process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG = "1";
+    process.env.PWNKIT_TRACE_NATIVE_RESPONSES = `/tmp/pwnkit-native-responses-${Date.now()}.ndjson`;
+    process.env.PWNKIT_TRACE_TUI_EVENTS = `/tmp/pwnkit-tui-events-${Date.now()}.ndjson`;
+    appendTuiTrace({
+      kind: "session-start",
+      target: selection.target,
+      mode,
+      runtime,
+      depth,
+      nativeTrace: process.env.PWNKIT_TRACE_NATIVE_RESPONSES,
+    });
     try {
       await runUnified({
         target: selection.target,
@@ -2267,7 +2316,14 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
         packageVersion: undefined,
         sessionUiFactory: async () => ({
           onEvent: (event) => {
+            appendTuiTrace({ kind: "session-event", event });
             state = applySessionEvent(state, event);
+            appendTuiTrace({
+              kind: "session-state",
+              usage: state.usage,
+              thinking: state.thinking,
+              lastTranscript: state.transcript.at(-1)?.text,
+            });
             emit();
           },
           setReport: (report) => {
@@ -2280,6 +2336,10 @@ function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: Console
     } finally {
       if (previousStartupLogSetting === undefined) delete process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG;
       else process.env.PWNKIT_SUPPRESS_PROVIDER_STARTUP_LOG = previousStartupLogSetting;
+      if (previousNativeTracePath === undefined) delete process.env.PWNKIT_TRACE_NATIVE_RESPONSES;
+      else process.env.PWNKIT_TRACE_NATIVE_RESPONSES = previousNativeTracePath;
+      if (previousTuiTracePath === undefined) delete process.env.PWNKIT_TRACE_TUI_EVENTS;
+      else process.env.PWNKIT_TRACE_TUI_EVENTS = previousTuiTracePath;
     }
   };
 
