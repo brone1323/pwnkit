@@ -939,9 +939,25 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
             continue;
           }
 
+          if (item.type === "reasoning") {
+            const summaryParts = Array.isArray(item.summary)
+              ? item.summary
+                  .map((block: Record<string, unknown>) => typeof block.text === "string" ? block.text : "")
+                  .filter((text: string) => text.trim().length > 0)
+              : [];
+            const reasoningText = summaryParts.join("\n").trim();
+            if (reasoningText) {
+              content.push({ type: "text", text: reasoningText });
+            }
+            continue;
+          }
+
           for (const block of item.content ?? []) {
             if (block.type === "output_text") {
               content.push({ type: "text", text: block.text as string });
+            } else if (block.type === "summary_text" || block.type === "reasoning_text") {
+              const text = typeof block.text === "string" ? block.text : "";
+              if (text.trim()) content.push({ type: "text", text });
             }
           }
         }

@@ -290,6 +290,17 @@ export async function runNativeAgentLoop(
     state.messages.push({ role: "assistant", content: result.content });
 
     // Extract tool_use blocks
+    const textBlocks = result.content.filter(
+      (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
+    );
+    const textContent = textBlocks.map((b) => b.text).join("\n");
+    if (textContent.trim()) {
+      onEvent?.("thinking", {
+        turn: state.turnCount,
+        text: textContent,
+      });
+    }
+
     const toolUseBlocks = result.content.filter(
       (b): b is Extract<NativeContentBlock, { type: "tool_use" }> =>
         b.type === "tool_use",
@@ -297,17 +308,6 @@ export async function runNativeAgentLoop(
 
     // If no tool calls, the model responded with text only
     if (toolUseBlocks.length === 0) {
-      const textBlocks = result.content.filter(
-        (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
-      );
-      const textContent = textBlocks.map((b) => b.text).join("\n");
-      if (textContent.trim()) {
-        onEvent?.("thinking", {
-          turn: state.turnCount,
-          text: textContent,
-        });
-      }
-
       // Only allow early exit if the agent has done meaningful work:
       // - At least 4 turns (read files, ran commands, analyzed code)
       // - OR explicitly called the done tool (handled below in tool execution)

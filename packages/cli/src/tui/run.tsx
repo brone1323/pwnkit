@@ -460,7 +460,7 @@ function PaletteOverlay({
 }
 
 function parseToolAction(action: string): {
-  kind: "http" | "crawl" | "bash" | "save" | "generic";
+  kind: "http" | "crawl" | "bash" | "save" | "read" | "run" | "install" | "summary" | "generic";
   title: string;
   meta?: string;
   tone: string;
@@ -501,12 +501,60 @@ function parseToolAction(action: string): {
       tone: SUCCESS,
     };
   }
+  if (action.startsWith("read_file:")) {
+    return {
+      kind: "read",
+      title: action.slice("read_file:".length).trim() || "source file",
+      meta: "reading source",
+      tone: INFO,
+    };
+  }
+  if (action.startsWith("run_command:")) {
+    return {
+      kind: "run",
+      title: action.slice("run_command:".length).trim() || "command",
+      meta: "running command",
+      tone: PRIMARY,
+    };
+  }
+  if (action.startsWith("Reading ")) {
+    return {
+      kind: "read",
+      title: action.slice("Reading ".length).trim() || "source file",
+      meta: "reading source",
+      tone: INFO,
+    };
+  }
+  if (action.startsWith("Running: ")) {
+    return {
+      kind: "run",
+      title: action.slice("Running: ".length).trim() || "command",
+      meta: "running command",
+      tone: PRIMARY,
+    };
+  }
+  if (action.startsWith("Installing ") || action.startsWith("Installed ")) {
+    return {
+      kind: "install",
+      title: action,
+      meta: "preparing package",
+      tone: ACCENT,
+    };
+  }
+  if (action.startsWith("Target ready:") || action.startsWith("Analysis complete:") || action.startsWith("done:")) {
+    return {
+      kind: "summary",
+      title: action,
+      meta: "stage summary",
+      tone: MUTED,
+    };
+  }
   return {
-    kind: "generic",
-    title: action,
-    meta: "action",
-    tone: TEXT,
-  };
+      kind: "generic",
+      title: action,
+      meta: undefined,
+      tone: TEXT,
+    };
 }
 
 function renderToolActionLine(action: string, key: string) {
@@ -720,6 +768,14 @@ function formatActiveToolLabel(action?: string): { label: string; detail?: strin
       return { label: "shell tool running", detail: parsed.title };
     case "save":
       return { label: "saving finding", detail: parsed.title };
+    case "read":
+      return { label: "reading source", detail: parsed.title };
+    case "run":
+      return { label: "running command", detail: parsed.title };
+    case "install":
+      return { label: "preparing target", detail: parsed.title };
+    case "summary":
+      return { label: "stage update", detail: parsed.title };
     default:
       return { label: "tool call in progress", detail: parsed.title };
   }
@@ -2010,24 +2066,50 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
           <PanelSection title="Runtime" tone={state.connection.apiConnected ? SUCCESS : state.connection.apiConfigured ? WARNING : BORDER}>
             <box flexDirection="column">
               <text fg={TEXT}>selected {state.connection.runtime}</text>
-              <text fg={TEXT}>api {state.connection.apiConnected ? "connected" : state.connection.apiConfigured ? "configured" : "missing"} <text fg={MUTED}>· {state.connection.apiProviderLabel ?? "unknown"}</text></text>
-              <text fg={TEXT}>local <text fg={MUTED}>{state.connection.localRuntimes.length > 0 ? state.connection.localRuntimes.join(", ") : "none"}</text></text>
+              <box flexDirection="row">
+                <text fg={TEXT}>api {state.connection.apiConnected ? "connected" : state.connection.apiConfigured ? "configured" : "missing"} </text>
+                <text fg={MUTED}>· {state.connection.apiProviderLabel ?? "unknown"}</text>
+              </box>
+              <box flexDirection="row">
+                <text fg={TEXT}>local </text>
+                <text fg={MUTED}>{state.connection.localRuntimes.length > 0 ? state.connection.localRuntimes.join(", ") : "none"}</text>
+              </box>
               {state.usage.inputTokens > 0 || state.usage.outputTokens > 0 ? (
                 <>
-                  <text fg={TEXT}>tokens <text fg={MUTED}>{state.usage.inputTokens}/{state.usage.outputTokens}</text></text>
-                  <text fg={TEXT}>cost <text fg={MUTED}>${state.usage.estimatedCostUsd.toFixed(4)}</text></text>
+                  <box flexDirection="row">
+                    <text fg={TEXT}>tokens </text>
+                    <text fg={MUTED}>{state.usage.inputTokens}/{state.usage.outputTokens}</text>
+                  </box>
+                  <box flexDirection="row">
+                    <text fg={TEXT}>cost </text>
+                    <text fg={MUTED}>${state.usage.estimatedCostUsd.toFixed(4)}</text>
+                  </box>
                 </>
               ) : (
                 <text fg={MUTED}>usage awaiting first model response</text>
               )}
-              {state.connection.model ? <text fg={TEXT}>model <text fg={MUTED}>{state.connection.model}</text></text> : null}
+              {state.connection.model ? (
+                <box flexDirection="row">
+                  <text fg={TEXT}>model </text>
+                  <text fg={MUTED}>{state.connection.model}</text>
+                </box>
+              ) : null}
             </box>
           </PanelSection>
           <PanelSection title="Session" tone={BORDER}>
             <box flexDirection="column">
-              <text fg={TEXT}>transcript <text fg={MUTED}>{state.transcript.length} items</text></text>
-              <text fg={TEXT}>turns <text fg={MUTED}>{turnItems.length}</text></text>
-              <text fg={TEXT}>findings <text fg={MUTED}>{totalFindings}</text></text>
+              <box flexDirection="row">
+                <text fg={TEXT}>transcript </text>
+                <text fg={MUTED}>{state.transcript.length} items</text>
+              </box>
+              <box flexDirection="row">
+                <text fg={TEXT}>turns </text>
+                <text fg={MUTED}>{turnItems.length}</text>
+              </box>
+              <box flexDirection="row">
+                <text fg={TEXT}>findings </text>
+                <text fg={MUTED}>{totalFindings}</text>
+              </box>
               <text fg={summary ? SUCCESS : PRIMARY}>{summary ? "completed" : "running"}</text>
               {visibleFromTurnId ? <text fg={ACCENT}>timeline focus active</text> : null}
             </box>
@@ -2056,11 +2138,26 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
           {summary ? (
             <PanelSection title="Report" tone={summary.critical > 0 || summary.high > 0 ? ERROR : SUCCESS}>
               <box flexDirection="column">
-                <text fg={summary.critical > 0 ? ERROR : TEXT}>critical <text fg={MUTED}>{summary.critical}</text></text>
-                <text fg={summary.high > 0 ? ERROR : TEXT}>high <text fg={MUTED}>{summary.high}</text></text>
-                <text fg={summary.medium > 0 ? WARNING : TEXT}>medium <text fg={MUTED}>{summary.medium}</text></text>
-                <text fg={TEXT}>low <text fg={MUTED}>{summary.low}</text></text>
-                <text fg={TEXT}>info <text fg={MUTED}>{summary.info ?? 0}</text></text>
+                <box flexDirection="row">
+                  <text fg={summary.critical > 0 ? ERROR : TEXT}>critical </text>
+                  <text fg={MUTED}>{summary.critical}</text>
+                </box>
+                <box flexDirection="row">
+                  <text fg={summary.high > 0 ? ERROR : TEXT}>high </text>
+                  <text fg={MUTED}>{summary.high}</text>
+                </box>
+                <box flexDirection="row">
+                  <text fg={summary.medium > 0 ? WARNING : TEXT}>medium </text>
+                  <text fg={MUTED}>{summary.medium}</text>
+                </box>
+                <box flexDirection="row">
+                  <text fg={TEXT}>low </text>
+                  <text fg={MUTED}>{summary.low}</text>
+                </box>
+                <box flexDirection="row">
+                  <text fg={TEXT}>info </text>
+                  <text fg={MUTED}>{summary.info ?? 0}</text>
+                </box>
                 {summary.shareUrl ? <text fg={ACCENT}>{summary.shareUrl.slice(0, 72)}...</text> : null}
               </box>
             </PanelSection>

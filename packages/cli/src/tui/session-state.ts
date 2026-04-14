@@ -207,6 +207,15 @@ function parseTurnAction(action: string): { turn: number; body: string } | null 
 function classifyAction(action: string): { label: string; tone: TranscriptItem["tone"] } {
   const lower = action.toLowerCase();
   if (lower === "thinking") return { label: "Thinking", tone: "muted" };
+  if (lower.startsWith("installing ") || lower.startsWith("installed ") || lower.startsWith("target ready:")) {
+    return { label: "Preparation", tone: "primary" };
+  }
+  if (lower.includes("semgrep") || lower.includes("npm audit") || lower.includes("dependency audit") || lower.startsWith("analysis complete:")) {
+    return { label: "Static analysis", tone: "info" };
+  }
+  if (lower.startsWith("read_file:") || lower.startsWith("reading ") || lower.startsWith("run_command:") || lower.startsWith("running:") || lower.includes("source code")) {
+    return { label: "Source review", tone: "primary" };
+  }
   if (lower.startsWith("crawl:") || lower.startsWith("http_request: get") || lower.startsWith("browser.navigate") || lower.startsWith("browser.screenshot") || lower.startsWith("read:") || lower.startsWith("grep:") || lower.startsWith("glob:") || lower.startsWith("save_target_info:")) {
     return { label: "Reconnaissance", tone: "info" };
   }
