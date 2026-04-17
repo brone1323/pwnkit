@@ -229,7 +229,32 @@ jobs:
             exit 0
           fi
           git commit -m "research(paperclip): variant-hunt run ${{ github.run_id }} (${{ inputs.paperclip_ref || 'v2026.416.0' }})"
-          git push
+
+          # Concurrent-push race: other matrix jobs may be pushing to the
+          # same branch. Retry with pull --rebase up to 6 times with
+          # exponential backoff before giving up.
+          for attempt in 1 2 3 4 5 6; do
+            if git push 2>&1 | tee /tmp/push.log; then
+              echo "[push] succeeded on attempt $attempt"
+              break
+            fi
+            if grep -q "rejected" /tmp/push.log; then
+              echo "[push] rejected on attempt $attempt — rebasing"
+              git pull --rebase origin main || {
+                echo "[push] rebase failed, aborting"
+                git rebase --abort || true
+                exit 1
+              }
+              sleep $((attempt * 5))
+            else
+              echo "[push] non-rejection error, bailing"
+              exit 1
+            fi
+            if [ "$attempt" = "6" ]; then
+              echo "[push] giving up after 6 attempts"
+              exit 1
+            fi
+          done
 
       - name: Upload artifacts (short retention fallback)
         if: always()
