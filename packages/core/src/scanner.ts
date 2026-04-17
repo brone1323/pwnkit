@@ -16,7 +16,9 @@ async function getDB(dbPath?: string) {
     try {
       const { pwnkitDB } = await import("@pwnkit/db");
       _db = new pwnkitDB(dbPath);
-    } catch {
+    } catch (e) {
+      console.error('Warning: database unavailable — scan results will not be persisted');
+      console.error('Cause:', e);
       // DB unavailable (native module issue) — continue without persistence
       _db = null;
     }
@@ -55,6 +57,7 @@ export async function scan(
   const scanId = db?.createScan(config) ?? "no-db";
   ctx.scanId = scanId;
 
+  try {
   // For --runtime auto, detect available runtimes and pick per-stage
   const isAuto = config.runtime === "auto";
   let availableRuntimes: Set<RuntimeType> | undefined;
@@ -188,10 +191,14 @@ export async function scan(
   // Mark scan complete in DB (if available)
   if (db) {
     db.completeScan(scanId, reportResult.data.summary as unknown as Record<string, unknown>);
-    db.close();
-    // Reset the singleton so subsequent scans open a fresh connection
-    _db = null;
   }
 
   return reportResult.data;
+  } finally {
+    if (db) {
+      db.close();
+      // Reset the singleton so subsequent scans open a fresh connection
+      _db = null;
+    }
+  }
 }
