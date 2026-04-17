@@ -26,6 +26,25 @@ import {
   JSFUCK_XSS_PAYLOAD,
 } from "./payloads.js";
 
+// ── Sensitive env filtering ──
+
+const SENSITIVE_ENV_PATTERNS = [
+  "OPENROUTER_API",
+  "ANTHROPIC_API",
+  "OPENAI_API",
+  "AZURE_OPENAI_API",
+  "PWNKIT_CLOUD_TOKEN",
+  "GEMINI_API",
+];
+
+function sanitizedEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter(
+      ([key]) => !SENSITIVE_ENV_PATTERNS.some((p) => key.includes(p)),
+    ),
+  ) as Record<string, string>;
+}
+
 // ── Tool Registry ──
 
 export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
@@ -1048,7 +1067,7 @@ export class ToolExecutor {
         maxBuffer: 1024 * 1024, // 1MB
         encoding: "utf-8",
         shell: "/bin/bash",
-        env: { ...process.env, TARGET: this.ctx.target, ...this.buildAuthEnvVars() },
+        env: { ...sanitizedEnv(), TARGET: this.ctx.target, ...this.buildAuthEnvVars() },
         stdio: ["pipe", "pipe", "pipe"],
       });
 
