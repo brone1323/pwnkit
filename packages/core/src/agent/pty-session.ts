@@ -29,6 +29,10 @@ export class PtySessionManager {
    * Create a new interactive session backed by a shell process.
    */
   createSession(name: string, opts?: { cwd?: string; env?: Record<string, string> }): PtySession {
+    // Reap any idle sessions first so we don't reject a new session when
+    // the cap is held by long-forgotten ones.
+    this.reapIdleSessions();
+
     // Enforce concurrent session limit
     const aliveSessions = Array.from(this.sessions.values()).filter((s) => s.alive);
     if (aliveSessions.length >= MAX_CONCURRENT_SESSIONS) {

@@ -35,6 +35,17 @@ const SENSITIVE_ENV_PATTERNS = [
   "AZURE_OPENAI_API",
   "PWNKIT_CLOUD_TOKEN",
   "GEMINI_API",
+  "MISTRAL_API",
+  "XAI_API",
+  "COHERE_API",
+  "GROQ_API",
+  "TOGETHER_API",
+  "PERPLEXITY_API",
+  "FIREWORKS_API",
+  "AI21_API",
+  "DEEPSEEK_API",
+  "HUGGING_FACE_",
+  "HF_TOKEN",
 ];
 
 function sanitizedEnv(): Record<string, string> {
