@@ -116,8 +116,17 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
     });
   }
 
+  // ── Graceful cleanup on signals ──
+  const signalCleanup = () => {
+    executor.cleanup();
+    process.exit(1);
+  };
+  process.on("SIGINT", signalCleanup);
+  process.on("SIGTERM", signalCleanup);
+
   // ── Main loop ──
 
+  try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
 
@@ -295,6 +304,11 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
   }
 
   return state;
+  } finally {
+    executor.cleanup();
+    process.removeListener("SIGINT", signalCleanup);
+    process.removeListener("SIGTERM", signalCleanup);
+  }
 }
 
 // ── Parse tool calls from assistant response ──

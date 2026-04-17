@@ -19,6 +19,9 @@ export interface PtySession {
   alive: boolean;
 }
 
+export const MAX_CONCURRENT_SESSIONS = 10;
+export const IDLE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 export class PtySessionManager {
   private sessions = new Map<string, PtySession>();
 
@@ -26,6 +29,12 @@ export class PtySessionManager {
    * Create a new interactive session backed by a shell process.
    */
   createSession(name: string, opts?: { cwd?: string; env?: Record<string, string> }): PtySession {
+    // Enforce concurrent session limit
+    const aliveSessions = Array.from(this.sessions.values()).filter((s) => s.alive);
+    if (aliveSessions.length >= MAX_CONCURRENT_SESSIONS) {
+      throw new Error(`Maximum concurrent sessions (${MAX_CONCURRENT_SESSIONS}) reached. Close an existing session first.`);
+    }
+
     // Prevent duplicate session names
     for (const s of this.sessions.values()) {
       if (s.name === name && s.alive) {
@@ -189,6 +198,25 @@ export class PtySessionManager {
       if (s.name === name) return s;
     }
     return undefined;
+  }
+
+  /**
+   * Close sessions that have been idle (no output) longer than IDLE_TIMEOUT_MS.
+   */
+  reapIdleSessions(): number {
+    const now = Date.now();
+    let reaped = 0;
+    for (const [id, session] of this.sessions) {
+      if (session.alive && now - session.createdAt >= IDLE_TIMEOUT_MS) {
+        try {
+          this.close(id);
+          reaped++;
+        } catch {
+          // Best-effort
+        }
+      }
+    }
+    return reaped;
   }
 
   private getSession(sessionId: string): PtySession {

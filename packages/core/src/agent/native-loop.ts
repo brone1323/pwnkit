@@ -196,8 +196,17 @@ export async function runNativeAgentLoop(
     });
   }
 
+  // ── Graceful cleanup on signals ──
+  const signalCleanup = () => {
+    executor.cleanup();
+    process.exit(1);
+  };
+  process.on("SIGINT", signalCleanup);
+  process.on("SIGTERM", signalCleanup);
+
   // ── Main loop ──
 
+  try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
 
@@ -583,6 +592,11 @@ export async function runNativeAgentLoop(
   }
 
   return state;
+  } finally {
+    executor.cleanup();
+    process.removeListener("SIGINT", signalCleanup);
+    process.removeListener("SIGTERM", signalCleanup);
+  }
 }
 
 // ── Context Window Compaction (BoxPwnr-style) ──
