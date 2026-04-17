@@ -78,11 +78,12 @@ jobs:
           # Replace the manual .deb download with `apt-get install` so
           # apt always pulls whatever the current package version is.
           #
-          # Issue #62: The base Kali image ships an expired GPG keyring,
-          # so even `apt-get update` fails signature verification (missing
-          # key ED65462EC8D5E4C5). We must use --allow-insecure-repositories
-          # for the initial `apt-get update` that fetches the new keyring
-          # package, then do a proper signed update afterward.
+          # Issue #62 / #115: The base Kali image ships an expired GPG
+          # keyring — `apt-get update` fails signature verification
+          # (missing key ED65462EC8D5E4C5). Importing the key from a
+          # keyserver before the first `apt-get update` lets apt verify
+          # signatures normally, then we install the latest keyring
+          # package so future updates stay signed.
           # If kali_master fails to build, every target is unreachable
           # because the agent SSHes into it as its attacker workstation.
           set -e
@@ -99,7 +100,7 @@ jobs:
               -e 's|^FROM openjdk:17.0.2-slim |FROM eclipse-temurin:17-jre |' \
               -e 's|^FROM openjdk:8|FROM eclipse-temurin:8|' \
               "$f"
-            perl -0pi -e 's{RUN wget -q https://http\.kali\.org/pool/main/k/kali-archive-keyring/kali-archive-keyring_[^\n]+?\.deb \\\n\s*&& dpkg -i [^\n]+ \\\n\s*&& rm [^\n]+\n}{RUN apt-get update --allow-insecure-repositories \\\n    \&\& DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated --no-install-recommends kali-archive-keyring \\\n    \&\& apt-get update\n}gms' "$f"
+            perl -0pi -e 's{RUN wget -q https://http\.kali\.org/pool/main/k/kali-archive-keyring/kali-archive-keyring_[^\n]+?\.deb \\\n\s*&& dpkg -i [^\n]+ \\\n\s*&& rm [^\n]+\n}{RUN apt-key adv --keyserver keyserver.ubuntu.com --recv-keys ED65462EC8D5E4C5 \\\n    \&\& apt-get update \\\n    \&\& DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends kali-archive-keyring \\\n    \&\& apt-get update\n}gms' "$f"
             after=$(sha1sum "$f" | cut -d' ' -f1)
             if [ "$before" != "$after" ]; then
               PATCHED+=("$f")
