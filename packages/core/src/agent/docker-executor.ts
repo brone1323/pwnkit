@@ -116,16 +116,19 @@ export class DockerExecutor {
 
     // Start the container with:
     //  - shared /tmp/pwnkit-shared volume for file exchange
-    //  - host networking so it can reach targets
+    //  - bridge networking by default (override via PWNKIT_DOCKER_NETWORK)
+    //  - --rm for automatic cleanup on stop
     //  - long-running sleep to keep it alive
+    const network = process.env.PWNKIT_DOCKER_NETWORK || "bridge";
     const runCmd = [
       "docker",
       "run",
       "-d",
+      "--rm",
       "--name",
       this.containerName,
       "--network",
-      "host",
+      network,
       "-v",
       "/tmp/pwnkit-shared:/shared",
       "-e",
@@ -143,6 +146,7 @@ export class DockerExecutor {
     }).trim();
 
     this.containerId = id;
+    this.registerExitHandlers();
 
     // The GHCR image is pre-baked with the standard toolchain.
     // Keep the legacy Kali bootstrap path for raw-image fallback.
@@ -259,6 +263,28 @@ export class DockerExecutor {
         "Docker is not available. Install Docker and ensure the daemon is running to use --docker mode.",
       );
     }
+  }
+
+  /** Register process exit handlers to stop the container on termination. */
+  private registerExitHandlers(): void {
+    const cleanup = () => {
+      if (this.containerId) {
+        try {
+          execSync(`docker stop ${this.containerId}`, {
+            timeout: 10_000,
+            stdio: "pipe",
+          });
+        } catch {
+          // Best-effort — container may already be gone (--rm)
+        }
+        this.containerId = null;
+        this.ready = false;
+      }
+    };
+
+    process.once("exit", cleanup);
+    process.once("SIGINT", () => { cleanup(); process.exit(130); });
+    process.once("SIGTERM", () => { cleanup(); process.exit(143); });
   }
 
   private shouldBootstrapTools(): boolean {
