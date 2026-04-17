@@ -3,6 +3,7 @@ import { join, extname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse as parseYaml } from "yaml";
 import type { AttackTemplate, ScanDepth } from "@pwnkit/shared";
+import { EMBEDDED_TEMPLATES } from "./embedded.js";
 
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
 const TEMPLATES_DIR_CANDIDATES = [
@@ -26,11 +27,7 @@ function resolveTemplatesDir(): string {
   return TEMPLATES_DIR_CANDIDATES[0];
 }
 
-export function loadTemplates(depth?: ScanDepth): AttackTemplate[] {
-  if (_cache) {
-    return depth ? _cache.filter((t) => t.depth.includes(depth)) : _cache;
-  }
-
+function loadFromFilesystem(): AttackTemplate[] {
   const templates: AttackTemplate[] = [];
   const dir = resolveTemplatesDir();
 
@@ -45,6 +42,23 @@ export function loadTemplates(depth?: ScanDepth): AttackTemplate[] {
       templates.push(parsed);
     }
   }
+
+  return templates;
+}
+
+export function loadTemplates(depth?: ScanDepth): AttackTemplate[] {
+  if (_cache) {
+    return depth ? _cache.filter((t) => t.depth.includes(depth)) : _cache;
+  }
+
+  // Prefer the codegenned inlined templates — they're required for binary
+  // distribution (bun build --compile can't read the YAMLs at runtime) and
+  // also avoid fs calls in the hot path of normal runs. Fall back to
+  // filesystem scanning when the embedded list is empty (dev checkouts
+  // that haven't regenerated after touching a YAML).
+  const templates = EMBEDDED_TEMPLATES.length > 0
+    ? EMBEDDED_TEMPLATES
+    : loadFromFilesystem();
 
   _cache = templates;
   return depth ? _cache.filter((t) => t.depth.includes(depth)) : _cache;

@@ -9,6 +9,8 @@
     "dist"
   ],
   "scripts": {
+    "gen": "node scripts/generate-embedded.mjs",
+    "prebuild": "node scripts/generate-embedded.mjs",
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist"
