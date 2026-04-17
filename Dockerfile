@@ -60,9 +60,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         python3 python3-requests python3-bs4 \
         sqlmap nmap nikto gobuster hydra john ffuf wfuzz \
         whatweb wafw00f dirb \
-    && curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
     && rm -rf /var/lib/apt/lists/*
+
+# Node.js from builder stage (no remote script execution)
+COPY --from=builder /usr/local/bin/node /usr/local/bin/node
+COPY --from=builder /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx
 
 # Optional: SecLists wordlists (large)
 RUN if [ "$INSTALL_SECLISTS" = "1" ]; then \
