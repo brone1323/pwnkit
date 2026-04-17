@@ -283,11 +283,37 @@ The comparative caveat is central: cross-project benchmark numbers are only
 loosely comparable unless protocol and substrate are aligned.
 
 Representative systems in the current pwnkit docs include BoxPwnr, Shannon,
-KinoSec, deadend-cli, and MAPTA\citep{boxpwnr,shannon,kinosec,deadend,mapta}.
+KinoSec, Cyber-AutoAgent, deadend-cli, and
+MAPTA\citep{boxpwnr,shannon,kinosec,cyberautoagent,deadend,mapta}.
 For FP-triage architecture context, pwnkit docs reference Endor Labs and
 Semgrep Assistant disclosures\citep{endor,semgrep}. For hybrid feature+model
 signals, pwnkit docs use VulnBERT-style framing as design inspiration rather
 than a direct task-equivalent claim\citep{vulnbert}.
+
+Table~\ref{tab:competitors} collects the self-reported XBOW aggregates for
+these systems. The numbers come from each project's own public disclosures,
+not from a common evaluation run on matched hardware, model, or harness; they
+are included for rough positioning, not as a leaderboard claim.
+
+\begin{table}[ht]
+\centering
+\small
+\begin{tabular}{llll}
+\toprule
+System & Aggregate & Model / Approach & Notes \\
+\midrule
+BoxPwnr\citep{boxpwnr}             & 97.1\% (101/104) & Best-of-N, 10 configs  & Context compaction, loop detection \\
+Shannon\citep{shannon}              & 96.2\% (100/104) & White-box, multi-agent & Source-to-sink taint \\
+\textbf{pwnkit (this work)}         & \textbf{95.2\% (99/104)} & Shell-first, gpt-5.4   & Retained artifact-backed; see Table~\ref{tab:ledger} \\
+KinoSec\citep{kinosec}              & 92.3\% (96/104)  & Black-box HTTP only    & 50-turn hard cap \\
+Cyber-AutoAgent\citep{cyberautoagent} & 84.6\% (88/104)  & Meta-agent             & Self-rewriting prompts \\
+deadend-cli\citep{deadend}          & 77.6\% ($\sim$76/98) & Single-agent CLI     & ADaPT decomposition \\
+MAPTA\citep{mapta}                  & 76.9\% (80/104)  & 3-role multi-agent     & Evidence-gated branching \\
+\bottomrule
+\end{tabular}
+\caption{Self-reported XBOW aggregates across representative autonomous pentesting systems. Cross-project numbers are protocol-sensitive (differing model, harness, retry policy, challenge subset) and should be interpreted as rough positioning rather than a matched-conditions leaderboard.}
+\label{tab:competitors}
+\end{table}
 
 \section{Limitations and Threats to Validity}
 

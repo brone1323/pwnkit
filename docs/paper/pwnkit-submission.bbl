@@ -1,4 +1,4 @@
-\begin{thebibliography}{8}
+\begin{thebibliography}{9}
 \providecommand{\natexlab}[1]{#1}
 \providecommand{\url}[1]{\texttt{#1}}
 \expandafter\ifx\csname urlstyle\endcsname\relax
@@ -10,6 +10,15 @@ MAPTA Authors.
 \newblock Mapta.
 \newblock arXiv preprint arXiv:2508.20816, 2025.
 \newblock URL \url{https://arxiv.org/abs/2508.20816}.
+
+\bibitem[{Cyber-AutoAgent Authors}(2026)]{cyberautoagent}
+{Cyber-AutoAgent Authors}.
+\newblock Cyber-autoagent: From single-agent to meta-agent, building the
+  leading open-source autonomous cyber agent.
+\newblock Data Science Collective (Medium), 2026.
+\newblock URL
+  \url{https://medium.com/data-science-collective/from-single-agent-to-meta-agent-building-the-leading-open-source-autonomous-cyber-agent-e1b704f81707}.
+\newblock Accessed 2026-04-17.
 
 \bibitem[Keygraph(2026)]{shannon}
 Keygraph.
