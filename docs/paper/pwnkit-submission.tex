@@ -78,7 +78,10 @@ changes. We frame pwnkit as both:
   pipeline, with per-layer verdict telemetry.
   \item A mode-dependent ablation narrative reporting both positive and negative
   outcomes, avoiding single-line ``moat works'' claims.
-  \item A learned-routing foundation for per-finding policy selection.
+  \item A learned-routing foundation for per-finding policy selection,
+  reported here as an offline modeling snapshot rather than a deployment
+  claim: the 99/104 aggregate in Table~\ref{tab:ledger} is produced
+  without the router active.
 \end{enumerate}
 
 \section{System Overview}
@@ -208,6 +211,9 @@ Current intermediate artifacts include:
 \end{itemize}
 
 These are treated as offline modeling artifacts, not final deployment claims.
+The 99/104 retained artifact-backed aggregate reported in Table~\ref{tab:ledger}
+is produced by the static-profile triage stack described above, with the
+router v2 inactive at runtime.
 
 \section{Evaluation Details and Interpretation}
 
