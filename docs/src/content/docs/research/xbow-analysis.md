@@ -1,7 +1,9 @@
 ---
 title: XBOW Analysis
-description: Shannon gap analysis, competitor verification, what moves the score, and white-box vs black-box results.
+description: Where pwnkit's XBOW score comes from, where the remaining gap is, and how the score compares to other agents.
 ---
+
+Where pwnkit's XBOW score comes from, where the remaining gap lives, and how the score stacks up against other autonomous pentesting agents. Scores reported below are each project's public self-reports; see [Competitive Landscape](/research/competitive-landscape/) for the full side-by-side with methodology caveats.
 
 ## Leaderboard context
 

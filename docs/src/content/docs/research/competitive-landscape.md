@@ -1,13 +1,13 @@
 ---
 title: Competitive Landscape
-description: Competitor analysis, evidence-based improvement techniques, and research papers driving pwnkit's roadmap.
+description: Side-by-side comparison of pwnkit against other autonomous pentesting agents on the XBOW benchmark, with methodology caveats.
 ---
 
-Synthesis of competitive intelligence and published research on autonomous pentesting agents, benchmarked against the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Data current as of April 2026.
+How pwnkit compares against other autonomous pentesting agents on the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Numbers are each project's public self-reports — cross-project scores are protocol-sensitive and shouldn't be treated as a matched-conditions leaderboard. Current as of April 2026.
 
-> **pwnkit status (April 2026):** the current retained artifact-backed XBOW tally is **99/104 aggregate**, with **74/104 black-box** and **79/104 white-box** recoverable from GitHub artifacts alone. Older public docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Benchmark](/benchmark/) for the exact distinction and challenge-set mismatch.
+> **pwnkit status (April 2026):** the current retained artifact-backed XBOW tally is **99/104 aggregate**, with **74/104 black-box** and **79/104 white-box** recoverable from GitHub artifacts alone. Older public docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Results](/benchmark/) for the exact distinction and challenge-set mismatch.
 
-For pwnkit's own benchmark scores, see the [Benchmark](/benchmark/) page. For the Shannon-specific gap analysis, see [XBOW Analysis](/research/xbow-analysis/).
+For pwnkit's own score breakdown see [Results](/benchmark/); for the Shannon-specific gap analysis see [XBOW Analysis](/research/xbow-analysis/).
 
 ## Competitor breakdown
 
