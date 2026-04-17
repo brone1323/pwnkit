@@ -158,11 +158,12 @@ pwnkit ships a set of agent-improvement features behind environment-variable fla
 ### Docker executor overrides
 
 When `PWNKIT_FEATURE_DOCKER_EXECUTOR=1` is enabled, these extra env vars
-control the container image and bootstrap behavior:
+control the container image, networking, and bootstrap behavior:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
 | `PWNKIT_DOCKER_IMAGE` | `ghcr.io/PwnKit-Labs/pwnkit:latest` | Override the executor image |
+| `PWNKIT_DOCKER_NETWORK` | `bridge` | Docker network mode for the executor container |
 | `PWNKIT_DOCKER_BOOTSTRAP_TOOLS` | auto | Force or disable apt-based tool bootstrap inside the container |
 
 Bootstrap rules:
@@ -171,6 +172,19 @@ Bootstrap rules:
 - `kalilinux/kali-rolling` -> bootstrap tools on first start
 - `PWNKIT_DOCKER_BOOTSTRAP_TOOLS=1` -> always bootstrap
 - `PWNKIT_DOCKER_BOOTSTRAP_TOOLS=0` -> never bootstrap
+
+Networking rules:
+
+- default is `bridge` — the executor container gets its own network stack.
+  This is the safe default (no exposure of the host's localhost services
+  to the container) and is fine for public targets.
+- set `PWNKIT_DOCKER_NETWORK=host` when the scan target is served from
+  the same host, e.g. local XBOW challenges on `localhost:<port>` or a
+  `docker-compose` target on the default bridge. The container needs to
+  reach `host.docker.internal` / `localhost` to hit the service.
+- any valid `docker run --network <name>` value works — pass a custom
+  compose network name to land the executor on the same network as the
+  target stack.
 
 ### Cost ceiling
 
