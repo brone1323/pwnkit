@@ -1,4 +1,4 @@
-export { pwnkitDB, resetPwnkitDatabase, resolvePwnkitDbPath } from "./database.js";
+export { pwnkitDB, repairPwnkitDatabase, resetPwnkitDatabase, resolvePwnkitDbPath } from "./database.js";
 export {
   scans,
   targets,

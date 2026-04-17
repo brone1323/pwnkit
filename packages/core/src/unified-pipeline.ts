@@ -447,6 +447,11 @@ function assertApiRuntimeSelection(
   }
 }
 
+function isRepairableDbError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /database disk image is malformed|file is not a database|malformed|invalid page number|database main|btree|b-tree|database corrupt/i.test(message);
+}
+
 // ── Main entry point ──
 
 /**
@@ -467,10 +472,22 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   const warnings: Array<{ stage: string; message: string }> = [];
 
   // Initialize DB (optional, best-effort)
-  const db = await (async () => {
+  let db = await (async () => {
     try {
-      const { pwnkitDB } = await import("@pwnkit/db");
-      return new pwnkitDB(opts.dbPath);
+      const { pwnkitDB, repairPwnkitDatabase } = await import("@pwnkit/db");
+      try {
+        return new pwnkitDB(opts.dbPath);
+      } catch (error) {
+        if (!isRepairableDbError(error)) throw error;
+        const repaired = repairPwnkitDatabase(opts.dbPath);
+        warnings.push({
+          stage: "prepare",
+          message: repaired.backupPath
+            ? `Recovered local scan database. Backup saved to ${repaired.backupPath}`
+            : `Recovered local scan database at ${repaired.path}`,
+        });
+        return new pwnkitDB(opts.dbPath);
+      }
     } catch {
       return null as any;
     }
@@ -520,15 +537,24 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
   };
 
   if (db) {
-    if (opts.resumeScanId) {
-      persistedScanId = opts.resumeScanId;
-      db.reopenScan(persistedScanId);
-      logPipelineEvent("prepare", "scan_resumed", {
-        originalStatus: existingScan?.status ?? null,
-        resumedAt: new Date().toISOString(),
+    try {
+      if (opts.resumeScanId) {
+        persistedScanId = opts.resumeScanId;
+        db.reopenScan(persistedScanId);
+        logPipelineEvent("prepare", "scan_resumed", {
+          originalStatus: existingScan?.status ?? null,
+          resumedAt: new Date().toISOString(),
+        });
+      } else {
+        persistedScanId = db.createScan(scanConfig);
+      }
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      warnings.push({
+        stage: "prepare",
+        message: `Local scan database unavailable; continuing without persistence: ${msg}`,
       });
-    } else {
-      persistedScanId = db.createScan(scanConfig);
+      db = null as any;
     }
   }
   if (!persistedScanId) {
@@ -705,6 +731,12 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
     const researchEmit: ScanListener = (event) => {
       if (event.type === "stage:start") {
         emit({ type: "stage:start", stage: "research", message: event.message });
+      } else if (event.type === "thinking") {
+        emit({ type: "thinking", stage: "research", message: event.message, data: event.data });
+      } else if (event.type === "usage") {
+        emit({ type: "usage", stage: "research", message: event.message, data: event.data });
+      } else if (event.type === "error") {
+        emit({ type: "error", stage: "research", message: event.message, data: event.data });
       } else if (event.type === "finding") {
         emit(event);
       }

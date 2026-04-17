@@ -2,12 +2,32 @@ import { writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { execFile } from "node:child_process";
+import { existsSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
 import type { ScanDepth, OutputFormat, RuntimeMode, ScanMode, AuthConfig, ScanReport } from "@pwnkit/shared";
-import { agenticScan, runPipeline, createRuntime } from "@pwnkit/core";
 import { formatAuditReport, formatReviewReport, formatReport, generatePdfReport } from "../formatters/index.js";
-import { buildShareUrl, checkRuntimeAvailability } from "../utils.js";
+import { buildShareUrl, checkRuntimeAvailability, getRuntimeAvailability } from "../utils.js";
+
+type CoreModule = typeof import("@pwnkit/core");
+
+let coreModulePromise: Promise<CoreModule> | null = null;
+
+async function loadCoreModule(): Promise<CoreModule> {
+  if (!coreModulePromise) {
+    // Under Bun in a dev workspace checkout we can import the TypeScript
+    // source directly, skipping the compile step. In the packaged tarball
+    // that path doesn't exist, so fall back to the bundled module. The
+    // presence-check keeps both Bun-dev and Bun-prod users happy.
+    const srcUrl = new URL("../../../core/src/index.ts", import.meta.url);
+    const srcExists = process.versions.bun && existsSync(fileURLToPath(srcUrl));
+    coreModulePromise = srcExists
+      ? import(srcUrl.href) as Promise<CoreModule>
+      : import("@pwnkit/core");
+  }
+  return coreModulePromise;
+}
 
 export interface RunOptions {
   target: string;
@@ -36,6 +56,15 @@ export interface RunOptions {
   costCeilingUsd?: number;
   /** Open the operator TUI after the run completes. */
   tui?: boolean;
+  sessionUiFactory?: (options: {
+    target: string;
+    depth: string;
+    mode: "scan" | "audit" | "review";
+  }) => Promise<{
+    onEvent: (event: any) => void;
+    setReport: (report: any) => void;
+    waitForExit: () => Promise<void>;
+  }>;
 }
 
 interface ResultLinePayload {
@@ -151,6 +180,7 @@ async function postFinalResultToCloud(report: unknown): Promise<void> {
 
 export async function runUnified(opts: RunOptions): Promise<void> {
   const { target, depth, format, runtime, timeout } = opts;
+  const core = await loadCoreModule();
 
   const validRuntimes = ["api", "claude", "codex", "gemini", "auto"];
   if (!validRuntimes.includes(runtime)) {
@@ -160,7 +190,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
 
   // Check non-auto runtime availability
   if (runtime !== "api" && runtime !== "auto") {
-    const rt = createRuntime({ type: runtime, timeout });
+    const rt = core.createRuntime({ type: runtime, timeout });
     const available = await rt.isAvailable();
     if (!available) {
       console.error(chalk.red(`Runtime '${runtime}' not available. Is ${runtime} installed?`));
@@ -175,17 +205,38 @@ export async function runUnified(opts: RunOptions): Promise<void> {
   let eventHandler: (event: any) => void = () => {};
 
   if (format === "terminal" && process.stdout.isTTY && process.stdin.isTTY) {
-    const { renderScanUI } = await import("../ui/renderScan.js");
     const mode = opts.targetType === "npm-package" || opts.targetType === "pypi-package" || opts.targetType === "cargo-package" || opts.targetType === "oci-image" ? "audit"
       : opts.targetType === "source-code" ? "review"
       : "scan";
-    inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+    if (opts.sessionUiFactory) {
+      inkUI = await opts.sessionUiFactory({ target, depth, mode });
+    } else {
+      const { isBunRuntime } = await import("../tui/runtime.js");
+      if (isBunRuntime()) {
+        const { createOpenTuiSession } = await import("../tui/run.js");
+        const availability = await getRuntimeAvailability();
+        inkUI = await createOpenTuiSession({
+          target,
+          depth,
+          mode,
+          runtime,
+          apiProviderLabel: availability.apiRuntime.providerLabel,
+          apiConfigured: availability.apiRuntime.configured,
+          apiConnected: availability.hasApiKey && availability.apiRuntime.valid,
+          localRuntimes: availability.availableRuntimes,
+          model: opts.model,
+        });
+      } else {
+        const { renderScanUI } = await import("../ui/renderScan.js");
+        inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+      }
+    }
     eventHandler = inkUI.onEvent;
   }
 
   try {
     const report = opts.targetType === "url" || opts.targetType === "web-app"
-      ? await agenticScan({
+      ? await core.agenticScan({
           config: {
             target,
             depth,
@@ -207,7 +258,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
           onEvent: eventHandler,
           resumeScanId: opts.resumeScanId,
         })
-      : await runPipeline({
+      : await core.runPipeline({
           target,
           targetType: opts.targetType,
           resumeScanId: opts.resumeScanId,
@@ -347,6 +398,15 @@ export async function runUnified(opts: RunOptions): Promise<void> {
     if (exitCode !== 0) process.exit(exitCode);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
+    if (inkUI) {
+      eventHandler({
+        type: "error",
+        stage: "report",
+        message,
+      });
+      await inkUI.waitForExit();
+      return;
+    }
     console.error(chalk.red(message));
     emitResultLine({
       ok: false,

@@ -18,6 +18,7 @@
 import type {
   NativeRuntime,
   NativeMessage,
+  NativeStreamCallbacks,
   NativeToolDef,
   NativeRuntimeResult,
   NativeContentBlock,
@@ -148,9 +149,10 @@ export class OpenRouterRuntime implements NativeRuntime {
     system: string,
     messages: NativeMessage[],
     tools: NativeToolDef[],
+    callbacks?: NativeStreamCallbacks,
   ): Promise<NativeRuntimeResult> {
     if (this.singleRuntime) {
-      return this.singleRuntime.executeNative(system, messages, tools);
+      return this.singleRuntime.executeNative(system, messages, tools, callbacks);
     }
 
     // Ensemble mode: run models in parallel with concurrency limit
@@ -163,7 +165,7 @@ export class OpenRouterRuntime implements NativeRuntime {
       const batch = pending.splice(0, maxConcurrency);
       const batchResults = await Promise.allSettled(
         batch.map(async ({ model, runtime }) => {
-          const result = await runtime.executeNative(system, messages, tools);
+          const result = await runtime.executeNative(system, messages, tools, callbacks);
           return { model, result };
         }),
       );

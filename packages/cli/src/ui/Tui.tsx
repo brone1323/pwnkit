@@ -2,6 +2,19 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Box, Text, useApp, useInput, render, type Key } from "ink";
 import type { FindingTriageStatus } from "@pwnkit/shared";
 import { printBanner } from "./banner.js";
+import {
+  BORDER,
+  ERROR,
+  INFO,
+  MUTED,
+  PRIMARY,
+  RAIL,
+  SECONDARY,
+  SUCCESS,
+  TEXT,
+  WARNING,
+  severityTone,
+} from "./theme.js";
 
 type TuiOptions = {
   dbPath?: string;
@@ -133,34 +146,24 @@ function formatStarted(iso: string): string {
 }
 
 function severityColor(severity: string): string {
-  switch (severity.toLowerCase()) {
-    case "critical":
-    case "high":
-      return "#DC2626";
-    case "medium":
-      return "#EAB308";
-    case "low":
-      return "#06B6D4";
-    default:
-      return "#6B7280";
-  }
+  return severityTone(severity);
 }
 
 function statusColor(status: string): string {
-  if (status === "completed" || status === "reported") return "#22C55E";
-  if (status === "failed" || status === "false-positive") return "#DC2626";
-  if (status === "running" || status === "verified") return "#EAB308";
-  return "#9CA3AF";
+  if (status === "completed" || status === "reported") return SUCCESS;
+  if (status === "failed" || status === "false-positive") return ERROR;
+  if (status === "running" || status === "verified") return WARNING;
+  return MUTED;
 }
 
 function triageColor(status?: string | null): string {
   switch ((status ?? "new") as FindingTriageStatus | "new") {
     case "accepted":
-      return "#22C55E";
+      return SUCCESS;
     case "suppressed":
-      return "#6B7280";
+      return MUTED;
     default:
-      return "#06B6D4";
+      return INFO;
   }
 }
 
@@ -333,14 +336,14 @@ function originTags(finding: FindingRow): string[] {
 }
 
 function badgeColor(tag: string): string {
-  if (tag === "accepted") return "#22C55E";
-  if (tag === "suppressed") return "#6B7280";
-  if (tag === "downgraded") return "#EAB308";
-  if (tag === "deterministic advisory") return "#06B6D4";
-  if (tag === "historical compromise") return "#DC2626";
-  if (tag === "typosquat oracle" || tag === "install-hook oracle") return "#F97316";
-  if (tag === "suppressor") return "#A855F7";
-  return "#9CA3AF";
+  if (tag === "accepted") return SUCCESS;
+  if (tag === "suppressed") return MUTED;
+  if (tag === "downgraded") return WARNING;
+  if (tag === "deterministic advisory") return INFO;
+  if (tag === "historical compromise") return ERROR;
+  if (tag === "typosquat oracle" || tag === "install-hook oracle") return PRIMARY;
+  if (tag === "suppressor") return SECONDARY;
+  return MUTED;
 }
 
 async function loadState(dbPath?: string): Promise<{
@@ -391,10 +394,40 @@ function PaneTitle({
 }) {
   return (
     <Box justifyContent="space-between">
-      <Text color={active ? "#DC2626" : "#9CA3AF"} bold={active}>
+      <Text color={active ? PRIMARY : TEXT} bold>
         {label}
       </Text>
-      {meta ? <Text color="#6B7280">{meta}</Text> : null}
+      {meta ? <Text color={MUTED}>{meta}</Text> : null}
+    </Box>
+  );
+}
+
+function PanelFrame({
+  label,
+  active,
+  meta,
+  tone,
+  width,
+  flexGrow,
+  children,
+}: {
+  label: string;
+  active?: boolean;
+  meta?: string;
+  tone?: string;
+  width?: number;
+  flexGrow?: number;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <Box width={width} flexGrow={flexGrow}>
+      <Text color={tone ?? (active ? PRIMARY : BORDER)}>{RAIL}</Text>
+      <Box flexDirection="column" marginLeft={1} flexGrow={1}>
+        <PaneTitle label={label} active={Boolean(active)} meta={meta} />
+        <Box flexDirection="column" marginTop={1}>
+          {children}
+        </Box>
+      </Box>
     </Box>
   );
 }
@@ -414,15 +447,15 @@ function previousPane(current: Pane): Pane {
 function Stat({
   label,
   value,
-  color = "#FFFFFF",
+  color = TEXT,
 }: {
   label: string;
   value: string;
   color?: string;
 }) {
   return (
-    <Box marginRight={3}>
-      <Text color="#6B7280">{label}: </Text>
+    <Box marginRight={2}>
+      <Text color={MUTED}>{label} </Text>
       <Text color={color} bold>{value}</Text>
     </Box>
   );
@@ -851,123 +884,131 @@ function OperatorTui({ dbPath, refreshMs = 4000 }: TuiOptions): React.ReactEleme
   });
 
   return (
-    <Box flexDirection="column" paddingLeft={1}>
-      <Box marginBottom={1} flexDirection="row">
-        <Stat label="runs" value={String(scans.length)} />
-        <Stat label="findings" value={String(state.findings.length)} />
-        <Stat
-          label="critical"
-          value={String(state.findings.filter((finding: FindingRow) => finding.severity === "critical").length)}
-          color="#DC2626"
-        />
-        <Stat
-          label="high"
-          value={String(state.findings.filter((finding: FindingRow) => finding.severity === "high").length)}
-          color="#EAB308"
-        />
-        <Stat label="pane" value={pane} color="#06B6D4" />
-        <Stat label="refresh" value={`${refreshMs}ms`} color="#9CA3AF" />
-        <Stat label="family" value={familyFocus ? "on" : "off"} color={familyFocus ? "#F97316" : "#9CA3AF"} />
-        <Stat label="runnable" value={String(queueSummary.runnable)} color="#22C55E" />
-        <Stat label="workers" value={String(activeWorkers.length)} color={activeWorkers.length > 0 ? "#06B6D4" : "#9CA3AF"} />
-        <Stat label="incidents" value={String(recentIncidents.length)} color={recentIncidents.length > 0 ? "#DC2626" : "#9CA3AF"} />
+    <Box flexDirection="column" paddingLeft={2} paddingRight={2}>
+      <PanelFrame label="Mission control" meta="operator shell" tone={PRIMARY}>
+        <Box flexDirection="row" flexWrap="wrap">
+          <Stat label="runs" value={String(scans.length)} />
+          <Stat label="findings" value={String(state.findings.length)} />
+          <Stat
+            label="critical"
+            value={String(state.findings.filter((finding: FindingRow) => finding.severity === "critical").length)}
+            color={ERROR}
+          />
+          <Stat
+            label="high"
+            value={String(state.findings.filter((finding: FindingRow) => finding.severity === "high").length)}
+            color={WARNING}
+          />
+          <Stat label="pane" value={pane} color={SECONDARY} />
+          <Stat label="refresh" value={`${refreshMs}ms`} color={MUTED} />
+          <Stat label="family" value={familyFocus ? "on" : "off"} color={familyFocus ? PRIMARY : MUTED} />
+          <Stat label="runnable" value={String(queueSummary.runnable)} color={SUCCESS} />
+          <Stat label="workers" value={String(activeWorkers.length)} color={activeWorkers.length > 0 ? INFO : MUTED} />
+          <Stat label="incidents" value={String(recentIncidents.length)} color={recentIncidents.length > 0 ? ERROR : MUTED} />
+        </Box>
+      </PanelFrame>
+      <Box marginTop={1} marginLeft={2} gap={2}>
+        <Text color={MUTED}>tab / arrows switch</Text>
+        <Text color={MUTED}>/ filter</Text>
+        <Text color={MUTED}>f family</Text>
+        <Text color={MUTED}>n note</Text>
+        <Text color={MUTED}>a s triage</Text>
+        <Text color={MUTED}>r refresh</Text>
+        <Text color={MUTED}>q quit</Text>
       </Box>
-      <Text color="#9CA3AF">
-        {"  "}tab/←/→ switch pane · ↑/↓ navigate · / filter · f family · n note · a/s triage · A/S triage+note · r refresh · q quit
-      </Text>
       {mode === "filter" ? (
-        <Box>
-          <Text color="#6B7280">  filter: </Text>
-          <Text color="#FFFFFF">{filter}</Text>
-          <Text color="#DC2626">█</Text>
-        </Box>
+        <PanelFrame label="Filter" meta="query" tone={SECONDARY}>
+          <Box>
+            <Text color={TEXT}>{filter}</Text>
+            <Text color={INFO}>█</Text>
+          </Box>
+        </PanelFrame>
       ) : mode === "note" ? (
-        <Box>
-          <Text color="#6B7280">  triage note: </Text>
-          <Text color="#FFFFFF">{pendingTriageNote}</Text>
-          <Text color="#DC2626">█</Text>
-          <Text color="#6B7280">  enter/esc done · A accept · S suppress</Text>
-        </Box>
+        <PanelFrame label="Triage note" meta="enter or esc to finish" tone={PRIMARY}>
+          <Box>
+            <Text color={TEXT}>{pendingTriageNote}</Text>
+            <Text color={INFO}>█</Text>
+          </Box>
+          <Text color={MUTED}>A accept with note · S suppress with note</Text>
+        </PanelFrame>
       ) : pendingTriage ? (
-        <Text color="#EAB308">
-          {"  "}Confirm mark {selectedFinding?.id.slice(0, 8) ?? "finding"} as {pendingTriage}
-          {pendingTriageNote.trim() ? " with note" : ""}? enter/y confirm · esc/n cancel
-        </Text>
+        <PanelFrame label="Confirmation" meta="pending action" tone={WARNING}>
+          <Text color={WARNING}>
+            Mark {selectedFinding?.id.slice(0, 8) ?? "finding"} as {pendingTriage}
+            {pendingTriageNote.trim() ? " with note" : ""}? enter or y confirm, esc or n cancel
+          </Text>
+        </PanelFrame>
       ) : flashMessage ? (
-        <Text color="#22C55E">  {flashMessage}</Text>
+        <PanelFrame label="Update" meta="applied" tone={SUCCESS}>
+          <Text color={SUCCESS}>{flashMessage}</Text>
+        </PanelFrame>
       ) : filter ? (
-        <Text color="#6B7280">  filter active: {filter}</Text>
+        <PanelFrame label="Filter" meta="active" tone={SECONDARY}>
+          <Text color={MUTED}>{filter}</Text>
+        </PanelFrame>
       ) : pendingTriageNote ? (
-        <Text color="#6B7280">  note ready: {truncate(pendingTriageNote, 80)}</Text>
+        <PanelFrame label="Note" meta="ready" tone={PRIMARY}>
+          <Text color={MUTED}>{truncate(pendingTriageNote, 80)}</Text>
+        </PanelFrame>
       ) : null}
-      <Text> </Text>
-      {loading ? <Text color="#9CA3AF">  Loading local pwnkit state…</Text> : null}
-      {error ? <Text color="#DC2626">  {error}</Text> : null}
+      {loading ? <Text color={MUTED}>  Loading local pwnkit state…</Text> : null}
+      {error ? <Text color={ERROR}>  {error}</Text> : null}
       {!loading && !error && scans.length === 0 ? (
-        <Text color="#9CA3AF">  No local scans found. Run a scan, audit, or review first.</Text>
+        <Text color={MUTED}>  No local scans found. Run a scan, audit, or review first.</Text>
       ) : null}
 
       {!loading && !error && scans.length > 0 ? (
-        <Box flexDirection="row" gap={2} marginTop={1} marginBottom={1}>
-          <Box
-            flexDirection="column"
+        <Box flexDirection="row" gap={3} marginTop={1} marginBottom={1}>
+          <PanelFrame
+            label="Queue"
+            meta="scheduler"
+            tone={queueSummary.runnable > 0 ? SUCCESS : BORDER}
             width={36}
-            borderStyle="round"
-            borderColor="#444"
-            paddingX={1}
-            paddingY={0}
           >
-            <PaneTitle label="Queue" active={false} />
-            <Text color="#D1D5DB">runnable: <Text color="#22C55E">{String(queueSummary.runnable)}</Text></Text>
-            <Text color="#D1D5DB">active claims: <Text color="#EAB308">{String(queueSummary.active)}</Text></Text>
-            <Text color="#D1D5DB">blocked deps: <Text color="#9CA3AF">{String(queueSummary.blockedByDependency)}</Text></Text>
-            <Text color="#D1D5DB">manual review: <Text color="#F97316">{String(queueSummary.manualReview)}</Text></Text>
-            <Text color="#D1D5DB">stale workers: <Text color={queueSummary.staleWorkers > 0 ? "#DC2626" : "#9CA3AF"}>{String(queueSummary.staleWorkers)}</Text></Text>
-            <Text color="#D1D5DB">recovered: <Text color="#06B6D4">{String(queueSummary.recoveredClaims)}</Text></Text>
-          </Box>
+            <Text color={TEXT}>runnable <Text color={SUCCESS}>{String(queueSummary.runnable)}</Text></Text>
+            <Text color={TEXT}>active claims <Text color={WARNING}>{String(queueSummary.active)}</Text></Text>
+            <Text color={TEXT}>blocked deps <Text color={MUTED}>{String(queueSummary.blockedByDependency)}</Text></Text>
+            <Text color={TEXT}>manual review <Text color={PRIMARY}>{String(queueSummary.manualReview)}</Text></Text>
+            <Text color={TEXT}>stale workers <Text color={queueSummary.staleWorkers > 0 ? ERROR : MUTED}>{String(queueSummary.staleWorkers)}</Text></Text>
+            <Text color={TEXT}>recovered <Text color={INFO}>{String(queueSummary.recoveredClaims)}</Text></Text>
+          </PanelFrame>
 
-          <Box
-            flexDirection="column"
+          <PanelFrame
+            label="Workers"
+            meta={`${activeWorkers.length} active`}
+            tone={activeWorkers.length > 0 ? INFO : BORDER}
             width={52}
-            borderStyle="round"
-            borderColor="#444"
-            paddingX={1}
-            paddingY={0}
           >
-            <PaneTitle label="Workers" active={false} meta={`${activeWorkers.length} active`} />
             {activeWorkers.length === 0 ? (
-              <Text color="#9CA3AF">No active orchestration daemons.</Text>
+              <Text color={MUTED}>No active orchestration daemons.</Text>
             ) : (
               activeWorkers.slice(0, 3).map((worker: ActiveWorkerSummary) => (
                 <Box key={worker.id} flexDirection="column" marginBottom={1}>
-                  <Text color="#FFFFFF">
+                  <Text color={TEXT}>
                     {worker.label} · <Text color={statusColor(worker.status)}>{worker.status}</Text>
                   </Text>
-                  <Text color="#6B7280">{truncate(worker.currentTitle, 46)}</Text>
-                  <Text color="#6B7280">heartbeat {worker.heartbeatLabel}</Text>
-                  {worker.lastError ? <Text color="#DC2626">{truncate(worker.lastError, 52)}</Text> : null}
+                  <Text color={MUTED}>{truncate(worker.currentTitle, 46)}</Text>
+                  <Text color={MUTED}>heartbeat {worker.heartbeatLabel}</Text>
+                  {worker.lastError ? <Text color={ERROR}>{truncate(worker.lastError, 52)}</Text> : null}
                 </Box>
               ))
             )}
-          </Box>
+          </PanelFrame>
 
-          <Box
-            flexDirection="column"
+          <PanelFrame
+            label="Incidents"
+            meta={recentIncidents.length > 0 ? "attention" : "clear"}
+            tone={recentIncidents.length > 0 ? ERROR : BORDER}
             flexGrow={1}
-            borderStyle="round"
-            borderColor={recentIncidents.length > 0 ? "#DC2626" : "#444"}
-            paddingX={1}
-            paddingY={0}
           >
-            <PaneTitle label="Incidents" active={false} meta={recentIncidents.length > 0 ? "attention" : "clear"} />
             {recentIncidents.length === 0 ? (
-              <Text color="#22C55E">No recent runtime incidents.</Text>
+              <Text color={SUCCESS}>No recent runtime incidents.</Text>
             ) : (
               recentIncidents.slice(0, 3).map((incident: IncidentSummary) => (
                 <Box key={`${incident.scanId}:${incident.timestamp}`} flexDirection="column" marginBottom={1}>
-                  <Text color="#FFFFFF">{truncate(incident.scanTarget, 54)}</Text>
-                  <Text color="#DC2626">{truncate(incident.headline, 72)}</Text>
-                  <Text color="#6B7280">
+                  <Text color={TEXT}>{truncate(incident.scanTarget, 54)}</Text>
+                  <Text color={ERROR}>{truncate(incident.headline, 72)}</Text>
+                  <Text color={MUTED}>
                     {incident.stage}
                     {incident.actor ? ` · ${incident.actor}` : ""}
                     {` · ${formatStarted(new Date(incident.timestamp).toISOString())}`}
@@ -975,142 +1016,109 @@ function OperatorTui({ dbPath, refreshMs = 4000 }: TuiOptions): React.ReactEleme
                 </Box>
               ))
             )}
-          </Box>
+          </PanelFrame>
         </Box>
       ) : null}
 
       {!loading && !error && scans.length > 0 ? (
-        <Box flexDirection="row" gap={2}>
-          <Box
-            flexDirection="column"
+        <Box flexDirection="row" gap={3}>
+          <PanelFrame
+            label="Runs"
+            active={pane === "scans"}
+            meta={`${scans.length} total`}
+            tone={pane === "scans" ? PRIMARY : BORDER}
             width={40}
-            borderStyle="round"
-            borderColor={pane === "scans" ? "#DC2626" : "#444"}
-            paddingX={1}
-            paddingY={0}
           >
-            <PaneTitle
-              label="Runs"
-              active={pane === "scans"}
-              meta={`${scans.length} total`}
-            />
-            <Box flexDirection="column" marginTop={1}>
-              {scans.slice(0, 14).map((scan: ScanRow, index: number) => {
-                const selected = index === scanIndex;
-                const summary = parseSummary(scan.summary);
-                return (
-                  <Box key={scan.id} marginBottom={1}>
-                    <Text color={selected ? "#DC2626" : "#6B7280"}>
-                      {selected ? "❯ " : "  "}
+            {scans.slice(0, 14).map((scan: ScanRow, index: number) => {
+              const selected = index === scanIndex;
+              const summary = parseSummary(scan.summary);
+              return (
+                <Box key={scan.id} marginBottom={1}>
+                  <Text color={selected ? PRIMARY : BORDER}>{selected ? RAIL : "│"}</Text>
+                  <Box flexDirection="column" marginLeft={1}>
+                    <Text color={selected ? TEXT : "#CFCFCF"} bold={selected}>
+                      {truncate(scan.target, 28)}
                     </Text>
-                    <Box flexDirection="column">
-                      <Text color={selected ? "#FFFFFF" : "#D1D5DB"} bold={selected}>
-                        {truncate(scan.target, 28)}
+                    <Text color={MUTED}>
+                      {scan.mode}/{scan.depth} · {scan.runtime} · <Text color={statusColor(scan.status)}>{scan.status}</Text>
+                    </Text>
+                    <Text color={MUTED}>
+                      {summary.totalFindings ?? 0} findings · {formatDuration(scan.durationMs)}
+                    </Text>
+                  </Box>
+                </Box>
+              );
+            })}
+          </PanelFrame>
+
+          <PanelFrame
+            label="Findings"
+            active={pane === "findings"}
+            meta={
+              selectedScan
+                ? familyFocus
+                  ? `${findingsForScan.length} in family`
+                  : `${findingsForScan.length} in run`
+                : ""
+            }
+            tone={pane === "findings" ? PRIMARY : BORDER}
+            width={48}
+          >
+            {findingsForScan.length === 0 ? (
+              <Text color={MUTED}>No findings for this run.</Text>
+            ) : (
+              findingsForScan.slice(0, 14).map((finding: FindingRow, index: number) => {
+                const selected = index === findingIndex;
+                return (
+                  <Box key={finding.id} marginBottom={1}>
+                    <Text color={selected ? PRIMARY : BORDER}>{selected ? RAIL : "│"}</Text>
+                    <Box flexDirection="column" marginLeft={1}>
+                      <Text color={severityColor(finding.severity)} bold={selected}>
+                        [{finding.severity}] {truncate(finding.title, 34)}
                       </Text>
-                      <Text color="#6B7280">
-                        {scan.mode}/{scan.depth} · {scan.runtime} ·{" "}
-                        <Text color={statusColor(scan.status)}>{scan.status}</Text>
+                      <Text color={MUTED}>
+                        {finding.category} · <Text color={triageColor(finding.triageStatus)}>{finding.triageStatus ?? "new"}</Text>
                       </Text>
-                      <Text color="#6B7280">
-                        {summary.totalFindings ?? 0} findings · {formatDuration(scan.durationMs)}
-                      </Text>
+                      <Box flexDirection="row" flexWrap="wrap">
+                        {originTags(finding).slice(0, 3).map((tag) => (
+                          <Box key={tag} marginRight={1}>
+                            <Text color={badgeColor(tag)}>{tag}</Text>
+                          </Box>
+                        ))}
+                      </Box>
+                      {finding.triageNote ? (
+                        <Text color={MUTED}>{truncate(finding.triageNote, 40)}</Text>
+                      ) : null}
                     </Box>
                   </Box>
                 );
-              })}
-            </Box>
-          </Box>
+              })
+            )}
+          </PanelFrame>
 
-          <Box
-            flexDirection="column"
-            width={48}
-            borderStyle="round"
-            borderColor={pane === "findings" ? "#DC2626" : "#444"}
-            paddingX={1}
-            paddingY={0}
-          >
-            <PaneTitle
-              label="Findings"
-              active={pane === "findings"}
-              meta={
-                selectedScan
-                  ? familyFocus
-                    ? `${findingsForScan.length} in family`
-                    : `${findingsForScan.length} in run`
-                  : ""
-              }
-            />
-            <Box flexDirection="column" marginTop={1}>
-              {findingsForScan.length === 0 ? (
-                <Text color="#9CA3AF">  No findings for this run.</Text>
-              ) : (
-                findingsForScan.slice(0, 14).map((finding: FindingRow, index: number) => {
-                  const selected = index === findingIndex;
-                  return (
-                    <Box key={finding.id} marginBottom={1}>
-                      <Text color={selected ? "#DC2626" : "#6B7280"}>
-                        {selected ? "❯ " : "  "}
-                      </Text>
-                      <Box flexDirection="column">
-                        <Text color={severityColor(finding.severity)} bold={selected}>
-                          [{finding.severity}] {truncate(finding.title, 34)}
-                        </Text>
-                        <Text color="#6B7280">
-                          {finding.category} ·{" "}
-                          <Text color={triageColor(finding.triageStatus)}>
-                            {finding.triageStatus ?? "new"}
-                          </Text>
-                        </Text>
-                        <Box flexDirection="row" flexWrap="wrap">
-                          {originTags(finding).slice(0, 3).map((tag) => (
-                            <Box key={tag} marginRight={1}>
-                              <Text color={badgeColor(tag)}>[{tag}]</Text>
-                            </Box>
-                          ))}
-                        </Box>
-                        {finding.triageNote ? (
-                          <Text color="#6B7280">{truncate(finding.triageNote, 40)}</Text>
-                        ) : null}
-                      </Box>
-                    </Box>
-                  );
-                })
-              )}
-            </Box>
-          </Box>
-
-          <Box
-            flexDirection="column"
+          <PanelFrame
+            label="Details"
+            active={pane === "details"}
+            meta={`${detailOffset + 1}-${Math.min(detailOffset + detailPageSize, detailLines.length)}/${detailLines.length || 0}`}
+            tone={pane === "details" ? PRIMARY : BORDER}
             flexGrow={1}
-            borderStyle="round"
-            borderColor="#444"
-            paddingX={1}
-            paddingY={0}
           >
-            <PaneTitle
-              label="Details"
-              active={pane === "details"}
-              meta={`${detailOffset + 1}-${Math.min(detailOffset + detailPageSize, detailLines.length)}/${detailLines.length || 0}`}
-            />
-            <Box flexDirection="column" marginTop={1}>
-              {visibleDetailLines.map((line: { color: string; text: string; bold?: boolean }, index: number) => (
-                <Text
-                  key={`${detailOffset}-${index}-${line.text.slice(0, 16)}`}
-                  color={line.color}
-                  bold={line.bold}
-                  wrap="truncate-end"
-                >
-                  {truncate(line.text, 300)}
-                </Text>
-              ))}
-            </Box>
-          </Box>
+            {visibleDetailLines.map((line: { color: string; text: string; bold?: boolean }, index: number) => (
+              <Text
+                key={`${detailOffset}-${index}-${line.text.slice(0, 16)}`}
+                color={line.color}
+                bold={line.bold}
+                wrap="truncate-end"
+              >
+                {truncate(line.text, 300)}
+              </Text>
+            ))}
+          </PanelFrame>
         </Box>
       ) : null}
       {!loading && !error && scans.length > 0 ? (
-        <Box marginTop={1}>
-          <Text color="#6B7280">
-            {"  "}
+        <Box marginTop={1} marginLeft={2}>
+          <Text color={MUTED}>
             {pane === "scans"
               ? `runs ${scanIndex + 1}/${Math.max(scans.length, 1)} · ${selectedScan?.id.slice(0, 8) ?? "none"}`
               : pane === "findings"

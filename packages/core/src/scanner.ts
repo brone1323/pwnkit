@@ -11,11 +11,26 @@ import { runVerification } from "./stages/verify.js";
 import { generateReport } from "./stages/report.js";
 // Lazy-load DB to avoid native module issues when DB isn't needed
 let _db: any = null;
+
+function isRepairableDbError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /database disk image is malformed|file is not a database|malformed|invalid page number|database main|btree|b-tree|database corrupt/i.test(message);
+}
+
 async function getDB(dbPath?: string) {
   if (!_db) {
     try {
-      const { pwnkitDB } = await import("@pwnkit/db");
-      _db = new pwnkitDB(dbPath);
+      const { pwnkitDB, repairPwnkitDatabase } = await import("@pwnkit/db");
+      try {
+        _db = new pwnkitDB(dbPath);
+      } catch (error) {
+        if (!isRepairableDbError(error)) throw error;
+        const repaired = repairPwnkitDatabase(dbPath);
+        process.stderr.write(
+          `[pwnkit] Recovered local scan database${repaired.backupPath ? ` (backup: ${repaired.backupPath})` : ""}.\n`,
+        );
+        _db = new pwnkitDB(dbPath);
+      }
     } catch (e) {
       console.error('Warning: database unavailable — scan results will not be persisted');
       console.error('Cause:', e);
@@ -33,6 +48,8 @@ export type ScanEventType =
   | "attack:end"
   | "finding"
   | "verify:result"
+  | "thinking"
+  | "usage"
   | "error";
 
 export interface ScanEvent {

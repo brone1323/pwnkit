@@ -1,12 +1,16 @@
 import { randomUUID } from "node:crypto";
 import type { Command } from "commander";
 import chalk from "chalk";
-import { pwnkitDB, resetPwnkitDatabase } from "@pwnkit/db";
+import { pwnkitDB, repairPwnkitDatabase, resetPwnkitDatabase } from "@pwnkit/db";
 import type { AgentVerdict, Finding, ScanConfig, WorkItemKind, WorkItemStatus } from "@pwnkit/shared";
 
 type DbResetOptions = {
   dbPath?: string;
   seed?: string;
+};
+
+type DbRepairOptions = {
+  dbPath?: string;
 };
 
 type SeedFamily = {
@@ -609,6 +613,19 @@ export function registerDbCommand(program: Command): void {
   const db = program
     .command("db")
     .description("Manage the local pwnkit database");
+
+  db
+    .command("repair")
+    .description("Back up a malformed local SQLite database and recreate a clean one")
+    .option("--db-path <path>", "Path to SQLite database")
+    .action((opts: DbRepairOptions) => {
+      const repaired = repairPwnkitDatabase(opts.dbPath);
+      console.log(chalk.green.bold("  ◆ pwnkit") + chalk.gray(" db repair"));
+      console.log(chalk.gray(`  ${repaired.path}`));
+      if (repaired.backupPath) {
+        console.log(chalk.gray(`  backup: ${repaired.backupPath}`));
+      }
+    });
 
   db
     .command("reset")

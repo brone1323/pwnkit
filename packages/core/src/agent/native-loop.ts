@@ -218,18 +218,58 @@ export async function runNativeAgentLoop(
   try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+    let streamedThinkingText = "";
+    let streamedUsageInputTokens: number | undefined;
+    let streamedUsageOutputTokens: number | undefined;
 
     // Call Claude API with native messages + tools
     const result = await runtime.executeNative(
       config.systemPrompt,
       state.messages,
       nativeTools,
+      {
+        onThinking: (text) => {
+          streamedThinkingText = text;
+          if (text.trim()) {
+            onEvent?.("thinking", {
+              turn: state.turnCount,
+              text,
+            });
+          }
+        },
+        onUsage: (usage) => {
+          streamedUsageInputTokens = usage.inputTokens;
+          streamedUsageOutputTokens = usage.outputTokens;
+          const cumulativeUsage = {
+            inputTokens: state.totalUsage.inputTokens + usage.inputTokens,
+            outputTokens: state.totalUsage.outputTokens + usage.outputTokens,
+          };
+          onEvent?.("usage", {
+            turn: state.turnCount,
+            inputTokens: cumulativeUsage.inputTokens,
+            outputTokens: cumulativeUsage.outputTokens,
+            estimatedCostUsd: estimateCost(cumulativeUsage, config.costModel),
+          });
+        },
+      },
     );
 
     // Track usage
     if (result.usage) {
       state.totalUsage.inputTokens += result.usage.inputTokens;
       state.totalUsage.outputTokens += result.usage.outputTokens;
+      state.estimatedCostUsd = estimateCost(state.totalUsage, config.costModel);
+      if (
+        streamedUsageInputTokens !== result.usage.inputTokens
+        || streamedUsageOutputTokens !== result.usage.outputTokens
+      ) {
+        onEvent?.("usage", {
+          turn: state.turnCount,
+          inputTokens: state.totalUsage.inputTokens,
+          outputTokens: state.totalUsage.outputTokens,
+          estimatedCostUsd: state.estimatedCostUsd,
+        });
+      }
     }
 
     // ── Context window compaction (BoxPwnr-inspired) ──
@@ -301,6 +341,17 @@ export async function runNativeAgentLoop(
     state.messages.push({ role: "assistant", content: result.content });
 
     // Extract tool_use blocks
+    const textBlocks = result.content.filter(
+      (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
+    );
+    const textContent = textBlocks.map((b) => b.text).join("\n");
+    if (textContent.trim() && textContent.trim() !== streamedThinkingText.trim()) {
+      onEvent?.("thinking", {
+        turn: state.turnCount,
+        text: textContent,
+      });
+    }
+
     const toolUseBlocks = result.content.filter(
       (b): b is Extract<NativeContentBlock, { type: "tool_use" }> =>
         b.type === "tool_use",
@@ -308,11 +359,6 @@ export async function runNativeAgentLoop(
 
     // If no tool calls, the model responded with text only
     if (toolUseBlocks.length === 0) {
-      const textBlocks = result.content.filter(
-        (b): b is Extract<NativeContentBlock, { type: "text" }> => b.type === "text",
-      );
-      const textContent = textBlocks.map((b) => b.text).join("\n");
-
       // Only allow early exit if the agent has done meaningful work:
       // - At least 4 turns (read files, ran commands, analyzed code)
       // - OR explicitly called the done tool (handled below in tool execution)

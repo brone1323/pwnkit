@@ -32,11 +32,18 @@ const stubPlugin = {
 
 await build({
   entryPoints: ["packages/cli/src/index.ts"],
-  outfile: `${outdir}/pwnkit.js`,
+  outdir,
+  outExtension: { ".js": ".js" },
+  entryNames: "pwnkit",
+  chunkNames: "chunks/[name]-[hash]",
   bundle: true,
   format: "esm",
   platform: "node",
   target: "node18",
+  // Split dynamic imports (await import(...)) into separate chunks so
+  // the opentui-based TUI loader stays unloaded on Node runtimes that
+  // never call it.
+  splitting: true,
   banner: {
     js: '#!/usr/bin/env node\nimport { createRequire as __pwnkitCreateRequire } from "node:module";\nconst require = __pwnkitCreateRequire(import.meta.url);',
   },
@@ -51,6 +58,13 @@ await build({
     "cfonts",
     "playwright",
     "playwright-core",
+    // opentui ships .wasm / tree-sitter query asset imports using the
+    // `with { type: "file" }` attribute and conditionally imports `bun:ffi`.
+    // esbuild can't inline either, so keep them external and ship them as
+    // real runtime dependencies of the published tarball.
+    "@opentui/core",
+    "@opentui/react",
+    "bun:ffi",
   ],
   define: {
     // Inject the root package.json version as a string literal so the
@@ -82,7 +96,7 @@ const publishPkg = {
   type: "module",
   description: rootPkg.description,
   bin: { "pwnkit-cli": "./pwnkit.js" },
-  files: ["pwnkit.js", "attacks", "dashboard"],
+  files: ["pwnkit.js", "chunks", "attacks", "dashboard"],
   keywords: rootPkg.keywords,
   author: rootPkg.author,
   homepage: rootPkg.homepage,
@@ -94,6 +108,8 @@ const publishPkg = {
     "cfonts": "^3.3.1",
     "drizzle-orm": rootPkg.dependencies["drizzle-orm"],
     "node-sqlite3-wasm": rootPkg.dependencies["node-sqlite3-wasm"],
+    "@opentui/core": "0.1.99",
+    "@opentui/react": "0.1.99",
   },
 };
 writeFileSync(`${outdir}/package.json`, JSON.stringify(publishPkg, null, 2) + "\n");

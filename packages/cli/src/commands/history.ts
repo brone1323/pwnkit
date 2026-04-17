@@ -1,16 +1,29 @@
 import type { Command } from "commander";
 import chalk from "chalk";
 
+type HistoryOptions = {
+  dbPath?: string;
+  limit?: string;
+};
+
 export function registerHistoryCommand(program: Command): void {
   program
     .command("history")
     .description("Show past scan history from the SQLite database")
     .option("--db-path <path>", "Path to SQLite database")
     .option("--limit <n>", "Number of scans to show", "10")
-    .action(async (opts) => {
+    .action(async (opts: HistoryOptions) => {
+      const limit = Number.parseInt(opts.limit ?? "10", 10);
+      const { isBunRuntime, canUseOpenTui } = await import("../tui/runtime.js");
+      if (isBunRuntime() && canUseOpenTui()) {
+        const { showOpenTuiHistory } = await import("../tui/run.js");
+        await showOpenTuiHistory({ dbPath: opts.dbPath, limit });
+        return;
+      }
+
       const { pwnkitDB } = await import("@pwnkit/db");
       const db = new pwnkitDB(opts.dbPath);
-      const scans = db.listScans(parseInt(opts.limit, 10));
+      const scans = db.listScans(limit);
       db.close();
 
       if (scans.length === 0) {

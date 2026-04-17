@@ -3,7 +3,7 @@ import {
   createDrizzleFromShim,
   type ShimmedDatabase,
 } from "./wasm-shim.js";
-import { eq, desc, and, sql } from "drizzle-orm";
+import { eq, desc, and, inArray } from "drizzle-orm";
 import { createHash, randomUUID } from "node:crypto";
 import { join } from "node:path";
 import { homedir } from "node:os";
@@ -13,6 +13,7 @@ import {
   mkdirSync,
   openSync,
   readSync,
+  renameSync,
   rmSync,
   statSync,
   writeSync,
@@ -60,6 +61,61 @@ export function resetPwnkitDatabase(dbPath?: string): string {
   }
 
   return path;
+}
+
+export function repairPwnkitDatabase(dbPath?: string): { path: string; backupPath?: string } {
+  const path = resolvePwnkitDbPath(dbPath);
+
+  if (!dbPath) {
+    mkdirSync(DEFAULT_DB_DIR, { recursive: true });
+  }
+
+  clearStaleLockIfAny(path);
+  const backupPath = backupCorruptDatabase(path) ?? undefined;
+  resetPwnkitDatabase(path);
+
+  const db = new pwnkitDB(path);
+  db.close();
+
+  return { path, backupPath };
+}
+
+function isRecoverableDatabaseError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /database disk image is malformed|file is not a database|malformed|invalid page number|database main|btree|b-tree|database corrupt/i.test(message);
+}
+
+function timestampTag(): string {
+  return new Date().toISOString().replace(/[:.]/g, "-");
+}
+
+function backupCorruptDatabase(path: string): string | null {
+  if (!existsSync(path)) return null;
+
+  const backupPath = `${path}.corrupt-${timestampTag()}`;
+  renameSync(path, backupPath);
+
+  for (const suffix of ["-wal", "-shm", ".lock"]) {
+    const candidate = `${path}${suffix}`;
+    if (!existsSync(candidate)) continue;
+    try {
+      renameSync(candidate, `${backupPath}${suffix}`);
+    } catch {
+      if (suffix === ".lock") {
+        rmSync(candidate, { recursive: true, force: true });
+      }
+    }
+  }
+
+  return backupPath;
+}
+
+function ensureDatabaseHealthy(sqlite: ShimmedDatabase): void {
+  const rows = sqlite.prepare("PRAGMA quick_check(1)").all() as Array<Record<string, unknown>>;
+  const first = rows[0] ? Object.values(rows[0])[0] : "ok";
+  if (typeof first === "string" && first.toLowerCase() !== "ok") {
+    throw new Error(first);
+  }
 }
 
 /**
@@ -210,24 +266,52 @@ function clearStaleLockIfAny(path: string): void {
 }
 
 export class pwnkitDB {
-  private sqlite: ShimmedDatabase;
-  private db: ReturnType<typeof createDrizzleFromShim<typeof schema>>;
+  private sqlite!: ShimmedDatabase;
+  private db!: ReturnType<typeof createDrizzleFromShim<typeof schema>>;
 
   constructor(dbPath?: string) {
     const path = resolvePwnkitDbPath(dbPath);
     if (!dbPath) {
       mkdirSync(DEFAULT_DB_DIR, { recursive: true });
     }
+    this.openWithRecovery(path);
+  }
+
+  private openWithRecovery(path: string): void {
     // Auto-migrate pre-0.7.1 WAL-mode files that node-sqlite3-wasm can't read.
     migrateWalHeaderIfNeeded(path);
     // Clear a stale advisory lock left behind by a crashed/killed writer,
     // if and only if it's old enough that it can't plausibly be held by a
     // live concurrent process.
     clearStaleLockIfAny(path);
+    try {
+      this.initializeDatabase(path);
+    } catch (error) {
+      try {
+        this.sqlite?.close();
+      } catch {
+        // best-effort only
+      }
+
+      if (!isRecoverableDatabaseError(error)) throw error;
+
+      const backupPath = backupCorruptDatabase(path);
+      this.initializeDatabase(path);
+      // eslint-disable-next-line no-console -- user-facing repair notice
+      console.warn(
+        backupPath
+          ? `[pwnkit] Recovered malformed database at ${path}. Backup saved to ${backupPath}.`
+          : `[pwnkit] Recovered malformed database state at ${path} by recreating a fresh database.`,
+      );
+    }
+  }
+
+  private initializeDatabase(path: string): void {
     this.sqlite = createShimmedDatabase(path);
     // WAL is intentionally omitted: node-sqlite3-wasm's VFS does not support
     // it, and pwnkit's single-writer CLI workload does not benefit from it.
     this.sqlite.pragma("foreign_keys = ON");
+    ensureDatabaseHealthy(this.sqlite);
     this.db = createDrizzleFromShim(this.sqlite, { schema });
 
     // Create base tables first, then migrate older schemas before adding indexes.
@@ -882,6 +966,53 @@ export class pwnkitDB {
     }).run();
     this.syncCaseForScan(id);
     return id;
+  }
+
+  deleteScan(scanId: string): boolean {
+    const scan = this.getScan(scanId);
+    if (!scan) return false;
+
+    const findingIds = this.db
+      .select({ id: schema.findings.id, fingerprint: schema.findings.fingerprint })
+      .from(schema.findings)
+      .where(eq(schema.findings.scanId, scanId))
+      .all();
+
+    this.transaction(() => {
+      if (findingIds.length > 0) {
+        const ids = findingIds.map((finding) => finding.id);
+        this.db.delete(schema.verdicts).where(inArray(schema.verdicts.findingId, ids)).run();
+      }
+
+      this.db.delete(schema.agentSessions).where(eq(schema.agentSessions.scanId, scanId)).run();
+      this.db.delete(schema.pipelineEvents).where(eq(schema.pipelineEvents.scanId, scanId)).run();
+      this.db.delete(schema.attackResults).where(eq(schema.attackResults.scanId, scanId)).run();
+      this.db.delete(schema.findings).where(eq(schema.findings.scanId, scanId)).run();
+      this.db.delete(schema.scans).where(eq(schema.scans.id, scanId)).run();
+
+      const remainingTargetScans = this.db
+        .select({ id: schema.scans.id, startedAt: schema.scans.startedAt })
+        .from(schema.scans)
+        .where(eq(schema.scans.target, scan.target))
+        .orderBy(desc(schema.scans.startedAt))
+        .all();
+
+      const caseId = this.buildCaseId(scan.target);
+      if (remainingTargetScans.length === 0) {
+        this.db.delete(schema.cases).where(eq(schema.cases.id, caseId)).run();
+      } else {
+        this.db
+          .update(schema.cases)
+          .set({
+            latestScanId: remainingTargetScans[0]!.id,
+            updatedAt: new Date().toISOString(),
+          })
+          .where(eq(schema.cases.id, caseId))
+          .run();
+      }
+    });
+
+    return true;
   }
 
   completeScan(scanId: string, summary: Record<string, unknown>): void {

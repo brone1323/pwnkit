@@ -1,24 +1,53 @@
 import React, { useState } from "react";
 import { render, Box, Text, useInput, useApp } from "ink";
 import { printBanner } from "./banner.js";
+import { BORDER, INFO, MUTED, PRIMARY, RAIL, SECONDARY, TEXT } from "./theme.js";
 
 interface MenuOption {
   label: string;
   value: string;
+  hint: string;
 }
 
 const options: MenuOption[] = [
-  { value: "scan",    label: "Scan a target" },
-  { value: "audit",   label: "Audit a package" },
-  { value: "review",  label: "Review a codebase" },
-  { value: "tui",     label: "Open terminal mission control" },
-  { value: "dashboard", label: "Open local mission control" },
-  { value: "doctor",  label: "Check runtimes and setup" },
-  { value: "replay",  label: "Replay the last scan" },
-  { value: "history", label: "View past results" },
+  { value: "scan", label: "Scan a target", hint: "Web, API, or MCP target" },
+  { value: "audit", label: "Audit a package", hint: "Registry package triage" },
+  { value: "review", label: "Review a codebase", hint: "Source review and agent analysis" },
+  { value: "tui", label: "Open terminal mission control", hint: "Runs, findings, workers, queue" },
+  { value: "dashboard", label: "Open local mission control", hint: "Browser dashboard" },
+  { value: "doctor", label: "Check runtimes and setup", hint: "Verify CLI and model access" },
+  { value: "replay", label: "Replay the last scan", hint: "Animated terminal playback" },
+  { value: "history", label: "View past results", hint: "Recent reports and artifacts" },
 ];
 
 type Phase = "menu" | "input";
+
+function Shortcut({ children }: { children: React.ReactNode }): React.ReactElement {
+  return <Text color={MUTED}>{children}</Text>;
+}
+
+function PromptRail({
+  title,
+  meta,
+  children,
+}: {
+  title: string;
+  meta?: string;
+  children: React.ReactNode;
+}): React.ReactElement {
+  return (
+    <Box>
+      <Text color={PRIMARY}>{RAIL}</Text>
+      <Box flexDirection="column" marginLeft={1}>
+        <Box justifyContent="space-between">
+          <Text color={TEXT} bold>{title}</Text>
+          {meta ? <Text color={MUTED}>{meta}</Text> : null}
+        </Box>
+        {children}
+      </Box>
+    </Box>
+  );
+}
 
 function Menu({ onSelect }: { onSelect: (action: string, target?: string) => void }): React.ReactElement {
   const { exit } = useApp();
@@ -75,36 +104,56 @@ function Menu({ onSelect }: { onSelect: (action: string, target?: string) => voi
   });
 
   return (
-    <Box flexDirection="column" paddingLeft={1}>
+    <Box flexDirection="column" paddingLeft={2} paddingRight={2}>
       {phase === "menu" && (
-        <Box flexDirection="column">
-          <Text color="gray" dimColor>  What would you like to do?</Text>
-          <Text> </Text>
-          {options.map((opt, i) => (
-            <Box key={opt.value}>
-              <Text color={i === selected ? "red" : "gray"}>
-                {i === selected ? " ❯ " : "   "}
-              </Text>
-              <Text color={i === selected ? "white" : "gray"} bold={i === selected}>
-                {opt.label}
-              </Text>
+        <Box flexDirection="column" gap={1}>
+          <PromptRail title="Launcher" meta="command palette">
+            <Text color={MUTED}>Select the next workflow. The launcher stays quiet; the scan shell carries the detail.</Text>
+          </PromptRail>
+          <PromptRail title="Actions" meta={`${selected + 1}/${options.length}`}>
+            <Box flexDirection="column" marginTop={1}>
+              {options.map((opt, i) => {
+                const isSelected = i === selected;
+                return (
+                  <Box key={opt.value} marginBottom={1}>
+                    <Text color={isSelected ? PRIMARY : BORDER}>{isSelected ? RAIL : "│"}</Text>
+                    <Box flexDirection="column" marginLeft={1}>
+                      <Text color={isSelected ? TEXT : "#C8C8C8"} bold={isSelected}>
+                        {opt.label}
+                      </Text>
+                      <Text color={isSelected ? SECONDARY : MUTED}>{opt.hint}</Text>
+                    </Box>
+                  </Box>
+                );
+              })}
             </Box>
-          ))}
-          <Text> </Text>
-          <Text color="gray" dimColor>  ↑↓ navigate  ⏎ select  esc quit</Text>
+          </PromptRail>
+          <Box marginLeft={2} gap={2}>
+            <Shortcut>↑↓ move</Shortcut>
+            <Shortcut>enter open</Shortcut>
+            <Shortcut>esc quit</Shortcut>
+          </Box>
         </Box>
       )}
 
       {phase === "input" && (
-        <Box flexDirection="column">
-          <Box>
-            <Text color="gray">{inputLabel}: </Text>
-            <Text color="white" bold>{inputValue}</Text>
-            <Text color="gray" dimColor>{inputValue.length === 0 ? placeholder : ""}</Text>
-            <Text color="red">█</Text>
+        <Box flexDirection="column" gap={1}>
+          <PromptRail title={action} meta="target input">
+            <Text color={MUTED}>{inputLabel}</Text>
+            <Box marginTop={1}>
+              <Text color={PRIMARY}>{RAIL}</Text>
+              <Box marginLeft={1}>
+                <Text color={inputValue ? TEXT : MUTED} bold={Boolean(inputValue)}>
+                  {inputValue || placeholder}
+                </Text>
+                <Text color={INFO}>█</Text>
+              </Box>
+            </Box>
+          </PromptRail>
+          <Box marginLeft={2} gap={2}>
+            <Shortcut>enter launch</Shortcut>
+            <Shortcut>esc cancel</Shortcut>
           </Box>
-          <Text> </Text>
-          <Text color="gray" dimColor>  ⏎ confirm  esc quit</Text>
         </Box>
       )}
     </Box>

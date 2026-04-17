@@ -6,6 +6,7 @@ import { LlmApiRuntime } from "./runtime/llm-api.js";
 import { detectAvailableRuntimes, pickRuntimeForStage } from "./runtime/registry.js";
 import { runAgentLoop } from "./agent/loop.js";
 import { runNativeAgentLoop } from "./agent/native-loop.js";
+import { toolCallPreview } from "./agent/tool-preview.js";
 import { getToolsForRole } from "./agent/tools.js";
 import type { NativeRuntime } from "./runtime/types.js";
 import { CLI_RUNTIME_TYPES } from "./shared-analysis.js";
@@ -255,8 +256,15 @@ export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<Anal
         },
         runtime: apiRuntime as NativeRuntime,
         db,
-        onTurn: (_turn, toolCalls, _results) => {
+        onTurn: (turn, toolCalls, _results) => {
           const cloudSinkCfg = getCloudSinkConfig();
+          if (toolCalls.length === 0) {
+            emit({
+              type: "stage:start",
+              stage: "attack",
+              message: `turn ${turn}: thinking`,
+            });
+          }
           for (const call of toolCalls) {
             if (call.name === "save_finding") {
               emit({
@@ -265,19 +273,24 @@ export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<Anal
                 data: call.arguments,
               });
               void postFinding(call.arguments, cloudSinkCfg);
-            } else if (call.name === "read_file") {
-              emit({
-                type: "stage:start",
-                stage: "attack",
-                message: `Reading ${call.arguments.path}`,
-              });
-            } else if (call.name === "run_command") {
-              emit({
-                type: "stage:start",
-                stage: "attack",
-                message: `Running: ${call.arguments.command}`,
-              });
             }
+            emit({
+              type: "stage:start",
+              stage: "attack",
+              message: `turn ${turn}: ${toolCallPreview(call)}`,
+            });
+          }
+        },
+        onEvent: (eventType, payload) => {
+          if (eventType === "thinking") {
+            const data = payload as { text?: string; turn?: number };
+            if (data.text) {
+              emit({ type: "thinking", stage: "attack", message: data.text, data });
+            }
+            return;
+          }
+          if (eventType === "usage") {
+            emit({ type: "usage", stage: "attack", message: "usage", data: payload });
           }
         },
       });
