@@ -20,7 +20,9 @@ import type { Finding, AttackResult, TargetInfo } from "@pwnkit/shared";
 // The agent can persist working state (creds, endpoints, attack plans) to this
 // file via bash. At reflection checkpoints the contents are injected back into
 // the conversation so the agent doesn't lose track of discoveries.
-const EXTERNAL_MEMORY_PATH = "/tmp/pwnkit-state.json";
+function externalMemoryPath(scanId?: string): string {
+  return `/tmp/pwnkit-state-${scanId ?? randomUUID()}.json`;
+}
 const EXTERNAL_MEMORY_MAX_CHARS = 2000;
 
 // ── Native Agent Loop Config ──
@@ -101,6 +103,13 @@ export async function runNativeAgentLoop(
 ): Promise<NativeAgentState> {
   const { config, runtime, db, onTurn, onEvent } = opts;
 
+  const memoryPath = externalMemoryPath(config.scanId);
+
+  // Substitute external memory placeholder in system prompt
+  if (config.systemPrompt.includes("{{EXTERNAL_MEMORY_PATH}}")) {
+    config.systemPrompt = config.systemPrompt.replaceAll("{{EXTERNAL_MEMORY_PATH}}", memoryPath);
+  }
+
   const toolCtx: ToolContext = {
     target: config.target,
     scanId: config.scanId,
@@ -147,7 +156,7 @@ export async function runNativeAgentLoop(
 
     // Clean up external memory file at the start of a new scan (not between retries)
     if (features.externalMemory && (config.retryCount ?? 0) === 0) {
-      try { fs.unlinkSync(EXTERNAL_MEMORY_PATH); } catch { /* file may not exist */ }
+      try { fs.unlinkSync(memoryPath); } catch { /* file may not exist */ }
     }
   }
 
@@ -324,7 +333,7 @@ export async function runNativeAgentLoop(
           content: [
             {
               type: "text",
-              text: buildContinuePrompt(config, state.turnCount),
+              text: buildContinuePrompt(config, state.turnCount, memoryPath),
             },
           ],
         });
@@ -590,6 +599,9 @@ export async function runNativeAgentLoop(
       timestamp: Date.now(),
     });
   }
+
+  // Clean up per-scan external memory file
+  try { fs.unlinkSync(memoryPath); } catch { /* file may not exist */ }
 
   return state;
   } finally {
@@ -944,9 +956,10 @@ const LOOP_WARNING =
  * to append to the reflection checkpoint prompt, or an empty string if the
  * file doesn't exist or the feature is off.
  */
-function readExternalMemory(): string {
+function readExternalMemory(path: string): string {
   try {
-    const raw = fs.readFileSync(EXTERNAL_MEMORY_PATH, "utf-8");
+    const raw = fs.readFileSync(path, "utf-8");
+    fs.chmodSync(path, 0o600);
     if (!raw.trim()) return "";
     const capped = raw.length > EXTERNAL_MEMORY_MAX_CHARS
       ? raw.slice(0, EXTERNAL_MEMORY_MAX_CHARS) + "\n...(truncated)"
@@ -967,13 +980,13 @@ function buildInitialPrompt(config: NativeAgentConfig): string {
   ].join("\n");
 }
 
-function buildContinuePrompt(config: NativeAgentConfig, turnCount: number): string {
+function buildContinuePrompt(config: NativeAgentConfig, turnCount: number, memoryPath: string): string {
   const pct = turnCount / config.maxTurns;
   const remaining = config.maxTurns - turnCount;
 
   // Read external memory at reflection checkpoints (30%/50%/70%/85%)
   const memorySuffix = (pct >= 0.3 && features.externalMemory)
-    ? readExternalMemory()
+    ? readExternalMemory(memoryPath)
     : "";
 
   // Multi-checkpoint budget awareness (inspired by Cyber-AutoAgent)
