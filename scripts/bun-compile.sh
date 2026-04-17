@@ -36,12 +36,19 @@ else
   TARGET_ARG=""
 fi
 
+# Pull the version from the root package.json so `--version` on the
+# compiled binary reports the actual release instead of constants.ts's
+# fallback ("0.0.0-dev") — the fallback reads a package.json path that
+# isn't in the /$bunfs virtual tree.
+PKG_VERSION="$(node -p "require('./package.json').version")"
+
 cd packages/cli
 
 bun build src/index.ts \
   --compile \
   ${TARGET_ARG} \
   --outfile "../../$OUTFILE" \
+  --define "__PWNKIT_VERSION__=\"$PKG_VERSION\"" \
   --external playwright \
   --external playwright-core \
   --external electron \
@@ -49,4 +56,4 @@ bun build src/index.ts \
   --external bun:ffi \
   --external sharp
 
-echo "Built $OUTFILE"
+echo "Built $OUTFILE (version $PKG_VERSION)"
