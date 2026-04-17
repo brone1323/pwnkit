@@ -12,7 +12,7 @@ spent.
 
 > **Status (2026-04-11):** The effect of this pipeline has now been
 > measured end-to-end. See the [FP Reduction Moat](/research/fp-reduction-moat/)
-> page for the numbers and [the 2026-04-11 ablation writeup](/research/2026-04-11-ablation/)
+> page for the numbers and [the 2026-04-11 ablation results log](/research/2026-04-11-ablation/)
 > for the narrative. Short version: the stack strictly dominates the
 > no-triage baseline on XBOW black-box, is a Pareto tradeoff on XBOW
 > white-box (costs 2 flags at limit=50 for 63% fewer findings), and is

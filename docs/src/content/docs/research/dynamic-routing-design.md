@@ -183,7 +183,7 @@ And a recall metric: **per-category recall breakdown**. No category should lose 
 3. **Phase 3: Option A XGBoost baseline.** Train, evaluate against the three bars above, report results publicly. Target: ~1 week.
 4. **Phase 4: decision.** If Option A clears the bar, ship it behind `PWNKIT_FEATURE_LEARNED_ROUTER=1`, A/B test in CI, promote to default when stable. If Option A plateaus, proceed to Phase 5.
 5. **Phase 5 (contingent): Option B cross-attention model.** Fine-tune CodeBERT + feature projection + routing head on v2 dataset. Target: ~3-4 weeks (requires GPU, distribution pipeline, inference integration). This is the option most aligned with the [VulnBERT](https://pebblebed.com/blog/kernel-bugs) hybrid architecture.
-6. **Phase 6: paper.** Submit to a security venue (IEEE S&P, USENIX Security, CCS). Scope: "Learned dynamic triage routing for LLM-agent vulnerability scanners." First half of the empirical section is the [2026-04-11 ablation writeup](/research/2026-04-11-ablation/); second half is the router's measured improvement over the best static profile per slice.
+6. **Phase 6: paper.** Submit to a security venue (IEEE S&P, USENIX Security, CCS). Scope: "Learned dynamic triage routing for LLM-agent vulnerability scanners." First half of the empirical section is the [2026-04-11 ablation results log](/research/2026-04-11-ablation/); second half is the router's measured improvement over the best static profile per slice.
 
 ## Open questions
 

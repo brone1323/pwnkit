@@ -31,6 +31,10 @@ What shipped in the agent loop: planning, reflection checkpoints, context compac
 
 The full false-positive reduction stack, why the layers are ordered the way they are, and how the dataset / feature foundation supports the shipped runtime layers.
 
+### [2026-04-11 Triage Ablation Results](/research/2026-04-11-ablation/)
+
+The archival experiment log for the 21-profile triage ablation, with batch-1 and batch-2 numbers, methodology notes, and links to raw run artifacts.
+
 ### [Finding Triage ML](/research/finding-triage-ml/)
 
 Implementation notes for reachability, consensus verify, PoV generation, memories, adversarial debate, and multi-modal agreement with foxguard.

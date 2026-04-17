@@ -1,11 +1,11 @@
 ---
 title: Benchmark
-description: Comprehensive benchmark results for pwnkit across five domains -- AI/LLM security, web pentesting, network/CVE pentesting, LLM safety, and npm auditing.
+description: Benchmark results for pwnkit across AI/LLM security, web pentesting, network/CVE pentesting, LLM safety, and npm auditing.
 ---
 
 pwnkit is benchmarked against five test suites: a custom AI/LLM security benchmark (10 challenges), the XBOW traditional web vulnerability benchmark (104 challenges), AutoPenBench network/CVE pentesting (33 tasks), HarmBench LLM safety (510 behaviors), and an npm audit benchmark (81 packages). This page is the canonical human-readable benchmark view, backed by [`packages/benchmark/results/benchmark-ledger.json`](https://github.com/PwnKit-Labs/pwnkit/blob/main/packages/benchmark/results/benchmark-ledger.json).
 
-> **Latest retained artifact-backed XBOW tally (April 10, 2026).** The current machine-reconstructible union across retained `xbow-results-*` GitHub Actions artifacts is **99 / 104 = 95.2% aggregate**, split as **74 / 104 = 71.2% black-box** and **79 / 104 = 76.0% white-box**. This is the strongest number we can currently prove from retained artifacts alone.
+> **Latest retained artifact-backed XBOW tally (April 10, 2026).** The current machine-reconstructible union across retained `xbow-results-*` GitHub Actions artifacts is **99 / 104 = 95.2% aggregate**, split as **74 / 104 = 71.2% black-box** and **79 / 104 = 76.0% white-box**. This is the current reproducible tally from retained artifacts alone.
 >
 > **Historical published tally.** Earlier public docs and README surfaces published a mixed historical local+CI tally that has now been tightened to **90 / 104 black-box** and **95 / 104 aggregate** after purging the unsupported XBEN-045 claim. Retained artifacts now additionally prove **XBEN-034**, **XBEN-054**, **XBEN-079**, and **XBEN-099**.
 >
@@ -240,7 +240,7 @@ pnpm --filter @pwnkit/benchmark harmbench --target <url>
 
 ## npm Audit Benchmark
 
-81 packages (27 known-malicious, 27 with real CVEs, 27 safe/benign) designed to test pwnkit's npm audit mode. **This is the first open-source AI npm-audit benchmark with public scores** — Snyk, Socket.dev, and npm audit publish marketing claims but no head-to-head ground-truth dataset, and no other open-source AI scanner has published an npm benchmark at all.
+81 packages (27 known-malicious, 27 with real CVEs, 27 safe/benign) designed to test pwnkit's npm audit mode. pwnkit publishes the dataset composition and scored results on this page for reproducibility and comparison.
 
 The benchmark measures whether the scanner correctly flags malicious and vulnerable packages while avoiding false positives on safe ones. Each malicious case is verified against npm advisories, GitHub Security Advisories (GHSA), Socket.dev, ReversingLabs, or Phylum reports. CVE cases are verified against NVD.
 
@@ -257,7 +257,7 @@ The first scored CI run on the original 30-package set produced:
 > on 2026-04-11, producing F1 = 0.973 on the `none` profile at 100%
 > TPR across every profile. See the [FP Reduction Moat](/research/fp-reduction-moat/)
 > page for the per-profile table and
-> [the 2026-04-11 ablation writeup](/research/2026-04-11-ablation/) for
+> [the 2026-04-11 ablation results log](/research/2026-04-11-ablation/) for
 > the full narrative. The "recall problem" that the 30-package baseline
 > surfaced does not exist on the live test set.
 
@@ -287,7 +287,7 @@ Historical context: the 30-package slice found 9/10 safe, 3/10 malicious (faker,
 
 The expanded set added `flatmap-stream` (the actual event-stream payload), `electron-native-notify`, `discord.dll`, `twilio-npm`, `ffmepg`, and 12 other malicious samples sourced from GHSA, Socket.dev, ReversingLabs, and Phylum 2023-2025 reports, plus CVE-2019-10744 (lodash), CVE-2021-3803 (nth-check), CVE-2022-0235 (node-fetch), CVE-2022-25881 (http-cache-semantics), and 13 more CVE cases.
 
-The headline insight from the 5-profile ablation: **`default` and `moat` are identical** (F1 0.956, FPR 0.19). The 11-layer triage moat adds zero FPR reduction on top of the default profile on supply-chain targets. The FPR increase from `none` to `default` comes from the stable features (early-stop, script templates, progress handoff), not from the moat layers. See the [ablation writeup](/research/2026-04-11-ablation/) for why.
+The headline insight from the 5-profile ablation: **`default` and `moat` are identical** (F1 0.956, FPR 0.19) on batch 1. Follow-up reruns showed higher variance, so attribution of the `none` to `default` FPR delta should be treated as provisional without repeated runs. See the [ablation results log](/research/2026-04-11-ablation/) for run-by-run analysis and caveats.
 
 ### Comparison to other npm scanners
 
@@ -299,7 +299,7 @@ The headline insight from the 5-profile ablation: **`default` and `moat` are ide
 | Socket.dev | No | No | Static + behavioral + AI |
 | Dependabot | No | No | GHSA database lookup |
 
-No npm scanner — open or commercial — publishes a head-to-head benchmark with a fixed ground-truth set. This is the first.
+At publication time, we are not aware of another npm scanner benchmark that publishes a fixed, scored, head-to-head ground-truth set in this format.
 
 ---
 
@@ -314,32 +314,30 @@ No npm scanner — open or commercial — publishes a head-to-head benchmark wit
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Claude 4.5 Sonnet | Black-box | Repo archived; v0.1.0 was 46%, iterated to 84% |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (~76/98) | Claude Sonnet 4.5 | Black-box | Only tested 98 of 104 challenges; README claims ~80% on 104 with Kimi K2.5 |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | GPT-5 | Black-box | Patched 43 Docker images; $21.38 total cost |
-| **pwnkit** (retained artifact-backed) | **74/104 black-box; 99/104 aggregate** | Azure gpt-5.4 | Black-box + white-box artifact union | Strongest current machine-backed view; see ledger |
+| **pwnkit** (retained artifact-backed) | **74/104 black-box; 99/104 aggregate** | Azure gpt-5.4 | Black-box + white-box artifact union | Current machine-reconstructible tally; see ledger |
 | **pwnkit** (historical mixed publication) | **90/104 black-box; 95/104 aggregate** | Azure gpt-5.4 | Mixed local+CI publication line | Historical scoreboard preserved separately from retained artifacts |
 
-**Important caveats:**
-- **BoxPwnr's 97.1% is best-of-N across ~10 model+solver configurations** (527 traces / 104 challenges = ~5 attempts each). Their best single model (GLM-5) scores 81.7%.
-- Shannon ran on a modified benchmark fork and reads source code — not comparable to black-box tools
-- XBOW tested their own agent on their own benchmark
-- deadend-cli's 77.55% was on 98 challenges, not 104
-- MAPTA patched 43 of the 104 Docker images before testing
-- No competitor publishes retry counts per challenge — all scores could represent best-of-N
-- pwnkit now publishes both a retained artifact-backed tally and an older historical mixed publication line; read those separately
-- pwnkit uses a single model (Azure gpt-5.4) with targeted retries rather than a large multi-model ensemble
+**Important caveats**
+
+| Caveat | Interpretation impact |
+|---|---|
+| BoxPwnr 97.1% is best-of-N across multiple model+solver configurations (527 traces / 104 challenges) | Best-of-N aggregate is not directly comparable to single-configuration scores |
+| Shannon used a modified benchmark fork with source access | Not directly comparable to black-box-only runs |
+| XBOW evaluated their own agent on their own benchmark | Potential benchmark/agent coupling |
+| deadend-cli score is reported on 98 challenges | Coverage differs from 104-challenge totals |
+| MAPTA patched 43 of 104 Docker images before testing | Environment differs from unmodified benchmark runs |
+| Retry counts are generally not published by competitors | Reported scores may include hidden best-of-N effects |
+| pwnkit publishes both retained artifact-backed and historical mixed lines | Evidence-backed and historical publication surfaces should be read separately |
+| pwnkit run profile uses a single model (Azure gpt-5.4) with targeted retries | Model/strategy setup differs from large multi-model ensembles |
 
 > **Score context.** pwnkit has now tested all 104 XBOW challenges through both historical mixed local+CI publication and retained artifact-backed reconstruction. The retained artifact-backed aggregate is currently **99/104**, while the older public publication line is now preserved as **90/104 black-box** and **95/104 aggregate**. The benchmark ledger is the only place where that distinction is tracked exactly.
 
-### vs BoxPwnr
+### Comparative notes (scope-specific)
 
-BoxPwnr (97.1%) uses 6 solver strategies across multiple LLMs (Claude, GPT-5, GLM-5, Grok-4, Gemini 3, Kimi K2.5) via OpenRouter, running in a Kali Docker container with full pentesting toolset. Their 97.1% is the best result per challenge aggregated across all configurations. Their best single model (GLM-5 + single_loop) scores 81.7%; pwnkit's retained artifact-backed and historical publication lines both still clear that single-model bar, but the benchmark page treats those two pwnkit truth surfaces separately on purpose.
-
-### vs KinoSec
-
-KinoSec (92.3% on XBOW) is a black-box autonomous pentester for traditional web applications. It excels at exploit chaining across SQLi, RCE, and auth bypass. pwnkit's additional strength is the AI/LLM attack surface that KinoSec does not test: prompt injection, system prompt leakage, PII exfiltration through chat, MCP tool abuse, and multi-turn jailbreak escalation.
-
-### vs XBOW benchmark
-
-The XBOW benchmark consists of 104 CTF challenges focused on traditional web vulnerabilities -- SQL injection, XSS, SSRF, auth bypass, RCE. pwnkit's AI/LLM benchmark covers a different domain: AI-specific attack surfaces -- prompt injection, jailbreaks, system prompt extraction, encoding bypasses, multi-turn escalation.
+| Comparison target | Key context | Why it matters for interpretation |
+|---|---|---|
+| KinoSec | Reported on XBOW black-box web targets | XBOW comparisons reflect traditional web exploitation only |
+| XBOW benchmark scope | 104 CTF-style web vulnerability challenges (SQLi, XSS, SSRF, auth bypass, RCE, etc.) | XBOW does not measure AI/LLM-specific attack surfaces tracked elsewhere in this page |
 
 ---
 

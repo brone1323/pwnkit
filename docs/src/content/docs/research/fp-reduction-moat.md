@@ -1,15 +1,15 @@
 ---
 title: FP Reduction Moat
-description: What pwnkit's 11-layer triage pipeline actually does when you measure it honestly. The story is more nuanced than "50% → under 5%" — some layers help, one regresses, and the answer depends on which benchmark slice you evaluate.
+description: Measured behavior of pwnkit's 11-layer triage pipeline across benchmark slices, plus layer-by-layer implementation notes and references.
 ---
 
-> **Update 2026-04-11:** This page was rewritten after a 21-run ablation dispatched the same day. The previous version cited *reference* numbers from VulnBERT, Endor Labs, and Semgrep papers and claimed a "50% → under 5% FPR" progression. The actual measurements show a more interesting picture: the moat works in black-box XBOW, costs 2 flags at limit=50 in white-box XBOW, and is a no-op on npm-bench. One specific layer (`egatsTreeSearch`) is responsible for the worst regression on hard challenges. See [pwnkit#72](https://github.com/PwnKit-Labs/pwnkit/issues/72#issuecomment-4229956469) for the full ablation discussion and [pwnkit#116](https://github.com/PwnKit-Labs/pwnkit/issues/116) for the egats disable.
+> **Update 2026-04-12:** This page reflects the 21-profile ablation and follow-up reruns after EGATS was removed from default moat aliases. The measured effect remains slice-dependent: strong on XBOW black-box, a precision/recall trade on XBOW white-box, and variance-sensitive on npm-bench at current sample size. See the [2026-04-11 ablation results log](/research/2026-04-11-ablation/) for full tables and caveats, [pwnkit#72](https://github.com/PwnKit-Labs/pwnkit/issues/72) for run tracking, and [pwnkit#116](https://github.com/PwnKit-Labs/pwnkit/issues/116) for the EGATS profile change.
 
-pwnkit's triage pipeline is a stack of independent filters, each tuned against a different failure mode. The stack mirrors the disclosed architectures of Endor Labs and Semgrep Assistant — except every layer is open-source, every layer is toggleable via a feature flag, and as of 2026-04-11 every layer has been measured on the `xbow-bench` and `npm-bench` benchmarks with a systematic single-feature ablation. This page documents what we shipped, what the layers actually do when measured honestly, and which knobs to turn.
+pwnkit's triage pipeline is a stack of independent filters, each tuned for a different failure mode. Every layer is open-source, every layer is toggleable via feature flags, and each layer is represented in benchmarked profiles. This page documents measured outcomes, implementation details, and configuration surfaces.
 
 > **Where to read next:** the [Finding Triage ML](/research/finding-triage-ml/) page is the design doc with the feature-list, datasets, and planned Layer-2 CodeBERT fine-tune. The [Triage Dataset](/research/triage-dataset/) and [Feature Extractor](/research/feature-extractor/) pages document the new data foundation directly. The [Architecture](/architecture/) page shows how the triage stage slots into the overall pipeline.
 
-## Research synthesis
+## External references
 
 Every disclosed production triage system converges on the same shape: **rules + reachability + neural + memory**. The numbers:
 
@@ -46,7 +46,7 @@ The headline numbers from the 21-run ablation matrix dispatched on 2026-04-11. E
 | `moat-only` (moat layers, stable features off) | 41/50 (82%) | **25** | $26.89 | $0.66 |
 | `moat` (everything on) | 41/50 (82%) | **25** | $21.82 | $0.53 |
 
-**What this actually says.** Turning on the full 11-layer moat *cuts findings by 63%* (67 → 25) *while losing only 2 flags* (44 → 41) *and costs 1.6× more per flag*. That is a legitimate Pareto tradeoff — not a win, not a regression, a tradeoff. If the downstream user cares about noise, the moat is defensible. If they care about raw flag count, it isn't.
+**Interpretation.** Turning on the full 11-layer moat *cuts findings by 63%* (67 → 25), *loses 2 flags* (44 → 41), and *costs 1.6× more per flag*. This is a Pareto tradeoff.
 
 Note that `moat` and `moat-only` produce identical flag count and finding count. The stable features (early_stop, loop_detection, context_compaction, script_templates, progress_handoff) don't change the outcome when stacked on top of the moat layers.
 
@@ -59,7 +59,7 @@ Note that `moat` and `moat-only` produce identical flag count and finding count.
 | `moat-only` | 18/25 (72%) | **13** | $11.22 | $0.62 |
 | **`moat`** | **19/25** (76%) | 14 | **$10.04** | **$0.53** |
 
-**Black-box is where the moat actually works.** The `moat` profile strictly dominates `none`: more flags, 52% fewer findings, cheaper per flag. The "FP-reduction-moat" story the v0.6.0 release notes claimed is real — it just only holds in black-box mode.
+**Interpretation.** On this black-box slice, `moat` dominates `none`: more flags, fewer findings, and lower cost per flag.
 
 ### npm-bench (5 profiles)
 
@@ -71,7 +71,7 @@ Note that `moat` and `moat-only` produce identical flag count and finding count.
 | `moat` | 0.956 | 1.00 | 0.19 | 27/27 | 27/27 | 22/27 |
 | `default` | 0.956 | 1.00 | 0.19 | 27/27 | 27/27 | 22/27 |
 
-**On npm-bench, `default` and `moat` are identical.** The moat layers add zero FPR reduction on top of the default profile. The FPR increase from `none` → `default` comes entirely from the *stable features* (early_stop, script templates, progress handoff) making the agent more productive on safe packages — which translates to more findings on safe packages, which is the exact inverse of "FP reduction." The moat layers are *not* the problem on supply-chain targets; the stable features are.
+**Interpretation (batch 1).** `default` and `moat` are identical on this run. Batch-1 attribution suggested the FPR shift from `none` to `default` came from stable features. Follow-up reruns showed meaningful variance, so this attribution should be treated as provisional until repeated runs are available.
 
 Also worth noting: **100% TPR across every profile.** Every malicious package and every vulnerable package in the 81-package set is caught regardless of which triage layers are on. The earlier `npm-bench-latest.json` snapshot showing F1=0.444 was on a different 30-package slice and no longer reflects reality — see [pwnkit#111](https://github.com/PwnKit-Labs/pwnkit/issues/111).
 
@@ -90,7 +90,7 @@ To figure out which moat layer causes the flag losses in white-box, each one was
 | **`feat-egats`** | **1/14** | **−1** | **$15.93** | **$15.93** |
 | `feat-cons` | 3/14 | +1 | $8.01 | $2.67 |
 
-**Every moat layer except `egats` is net-neutral-to-positive individually.** `egats` is the one layer that regresses: it drops a flag vs baseline AND is ~10× the cost per flag of the next-worst layer. The earlier observation that "the full moat stack catastrophically regresses on stubborn-14" was this: when `egats` runs together with the other moat layers, it prunes the right exploration branches away from every layer downstream. On easier challenges the beam has enough slack that this doesn't matter; on the stubborn-14 it's fatal.
+**Per-layer signal.** Every moat layer except `egats` is net-neutral-to-positive individually. `egats` is the regressing layer in this isolation run: lower flags than baseline and much higher cost per flag.
 
 `feat-reach` is the clear winner: +3 flags at $1.61 per flag, less than half the cost of the default baseline.
 
@@ -98,10 +98,10 @@ To figure out which moat layer causes the flag losses in white-box, each one was
 
 ### Takeaways
 
-1. **No single static policy wins on all three slices.** The moat helps on black-box XBOW, costs 2 flags on white-box XBOW, and is a no-op on npm-bench. A static feature-flag system applied at the scan level can't optimize all three simultaneously. This is the direct motivation for learned dynamic routing — see [pwnkit#113](https://github.com/PwnKit-Labs/pwnkit/issues/113).
-2. **The attack agent is stronger than the triage-informed scores suggest.** 86% on the first 50 XBOW challenges with *zero* triage filters. 100% recall on npm-bench across all profiles. The triage pipeline exists to control noise, not to improve recall.
-3. **`egats` is the one broken layer.** Disable by default, keep as opt-in for research.
-4. **The stable features are the unexpected FPR offender on npm-bench**, not the moat layers. If the goal is lowering FPR on supply-chain targets, the right knob is early_stop / script_templates / progress_handoff, not the moat.
+1. **No single static policy wins on all three slices.** The moat helps on black-box XBOW, costs 2 flags on white-box XBOW, and is a batch-1 no-op on npm-bench. A static feature-flag system applied at the scan level can't optimize all three simultaneously. This is the direct motivation for learned dynamic routing — see [pwnkit#113](https://github.com/PwnKit-Labs/pwnkit/issues/113).
+2. **The attack agent baseline is strong without triage.** 86% on the first 50 XBOW white-box challenges with triage disabled, and 100% recall on npm-bench across profiles in this run.
+3. **`egats` is the regressing layer in this isolation run.** Keep disabled by default and opt-in for research.
+4. **npm-bench FPR attribution needs repeat runs.** Batch-1 results pointed at stable features; batch-2 reruns showed high variance at this sample size.
 5. **Per-layer telemetry is now on.** Every finding produced after 2026-04-11 carries a `layerVerdicts` array that logs which layer touched it and what it did. That's the supervision signal for the learned-routing model in [pwnkit#113](https://github.com/PwnKit-Labs/pwnkit/issues/113). See [pwnkit#112](https://github.com/PwnKit-Labs/pwnkit/issues/112) for the instrumentation commit.
 
 ## Data foundation
@@ -114,7 +114,7 @@ training-data pipeline:
 - [Feature Extractor](/research/feature-extractor/) — the 45 handcrafted
   features carried in every row
 
-That gives us a 12-part story that is accurate:
+That gives a 12-part architecture summary:
 
 1. dataset pipeline
 2. 11 shipped runtime triage layers
@@ -123,11 +123,11 @@ This matters because the moat is not only the online verification stack.
 It is also the offline ability to build, label, ablate, and retrain with
 fully auditable data.
 
-## The runtime stack (11 shipped layers, 50% -> under 5%)
+## Runtime stack (11 shipped layers)
 
 ```mermaid
 flowchart TD
-    IN["Raw agent findings\n~50% FP baseline"]
+    IN["Raw agent findings"]
     IN --> L1["Layer 1 · Holding-it-wrong\nremoves library-API-as-vuln"]
     L1 --> L2["Layer 2 · 45-feature extractor\n~15.9% FPR alone - VulnBERT"]
     L2 --> L3["Layer 3 · Reachability gate\nkills dead code - Endor ~95% depends on this"]
@@ -138,7 +138,7 @@ flowchart TD
     L7 --> L8["Layer 8 · PoV gate\nno executable PoC = FP"]
     L8 --> L9["Layer 9 · Triage memories\nSemgrep ~96% with feedback"]
     L9 --> L10["Layer 10 · Adversarial debate\nAnthropic arXiv:2402.06782"]
-    L10 --> OUT["Verified findings\nunder 5% FP target · at least 95% recall"]
+    L10 --> OUT["Verified findings"]
 
     style IN fill:#ef4444,stroke:#991b1b,color:#fff
     style L1 fill:#7c2d12,stroke:#e94560,color:#fff
@@ -156,7 +156,7 @@ flowchart TD
 
 Each layer rejects or downgrades a fraction of the false positives that survived the previous layer. The numbers below are published figures for the reference technique — not a promise for any particular pwnkit scan — but they show the shape of the stack.
 
-| # | Layer | Module | Expected FP reduction (reference) | Acts on |
+| # | Layer | Module | Reference signal | Acts on |
 |---|-------|--------|-----------------------------------|---------|
 | 0 | Raw agent findings | `agentic-scanner.ts` | baseline (~50% FP on noisy targets) | — |
 | 1 | Holding-it-wrong filter | `triage/holding-it-wrong.ts` | Removes library-API-as-vuln category entirely | Sink name |
@@ -170,9 +170,9 @@ Each layer rejects or downgrades a fraction of the false positives that survived
 | 9 | Triage memories | `triage/memories.ts` | Semgrep Assistant ~96% auto-triage (with user feedback) | Historical triage |
 | 10 | Adversarial debate | `triage/adversarial.ts` | Anthropic debate reference | Finding + target |
 
-**End-to-end target (aspirational, pre-ablation):** drive the ~50% raw FP rate toward **under 5%** — matching Endor Labs' 95% and Semgrep Assistant's 96% disclosed numbers — while retaining >=95% recall.
+**Historical target statement (pre-ablation):** drive raw false positives toward single-digit FPR while retaining high recall.
 
-> **Actual measured effect (see "Measured results" section above):** the full moat stack cuts findings by ~60% on XBOW (both modes) while losing 2 flags at white-box limit=50 and zero flags at black-box limit=25. The aspirational 95% headline is not what we measured, and it was never really defensible — those reference numbers are for SAST systems evaluated on large corpora of differentially-labeled static findings, which is a fundamentally different task from "agent-generated findings on a web-app exploitation benchmark." The honest story is the measured one.
+> **Measured effect (see "Measured results" above):** the full moat stack reduces findings substantially on XBOW, with slice-dependent recall/cost tradeoffs. Public SAST reference numbers are directional context, but are not directly comparable to agent-generated web exploitation findings.
 
 ### Why the stack ordering matters
 
@@ -241,9 +241,9 @@ paper-plan that uses it.
 
 Every layer errs toward **keeping** findings when it's not confident. Reachability returns `reachable: true` with low confidence when its grep-based first pass can't reach a verdict. Memories only auto-reject on strong matches above a tunable score threshold. Consensus defaults ties to `rejected` but the caller can opt out. The stack is designed so each layer adds precision without costing recall on the next.
 
-### foxguard × pwnkit is unique
+### foxguard × pwnkit cross-validation
 
-No other open-source pentest agent runs a second, fully independent scanner for cross-validation. This is the pwnkit / foxguard / opensoar trinity — pwnkit detects, foxguard cross-checks, opensoar responds. It's the open-source analogue of Endor Labs' rules + neural agreement architecture.
+A second scanner (`foxguard`) can be used for independent cross-validation. This provides a rules-based signal alongside pwnkit's agentic signal and supports disagreement-based triage workflows.
 
 ### Zero proprietary dependencies
 
