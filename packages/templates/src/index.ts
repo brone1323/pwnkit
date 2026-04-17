@@ -1,1 +1,1 @@
-export { loadTemplates, loadTemplateById } from "./loader.js";
+export { loadTemplates, loadTemplateById, clearTemplateCache } from "./loader.js";

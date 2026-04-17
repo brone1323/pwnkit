@@ -10,6 +10,12 @@ const TEMPLATES_DIR_CANDIDATES = [
   join(__dirname, "attacks"),
 ];
 
+let _cache: AttackTemplate[] | null = null;
+
+export function clearTemplateCache(): void {
+  _cache = null;
+}
+
 function resolveTemplatesDir(): string {
   for (const candidate of TEMPLATES_DIR_CANDIDATES) {
     if (existsSync(candidate)) {
@@ -21,6 +27,10 @@ function resolveTemplatesDir(): string {
 }
 
 export function loadTemplates(depth?: ScanDepth): AttackTemplate[] {
+  if (_cache) {
+    return depth ? _cache.filter((t) => t.depth.includes(depth)) : _cache;
+  }
+
   const templates: AttackTemplate[] = [];
   const dir = resolveTemplatesDir();
 
@@ -32,12 +42,12 @@ export function loadTemplates(depth?: ScanDepth): AttackTemplate[] {
       if (extname(file) !== ".yaml" && extname(file) !== ".yml") continue;
       const raw = readFileSync(join(categoryDir, file), "utf-8");
       const parsed = parseYaml(raw) as AttackTemplate;
-      if (depth && !parsed.depth.includes(depth)) continue;
       templates.push(parsed);
     }
   }
 
-  return templates;
+  _cache = templates;
+  return depth ? _cache.filter((t) => t.depth.includes(depth)) : _cache;
 }
 
 export function loadTemplateById(id: string): AttackTemplate | undefined {
