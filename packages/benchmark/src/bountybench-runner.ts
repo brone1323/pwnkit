@@ -85,11 +85,19 @@ const benchmarkPathArg = argVal("--benchmark-path");
 const benchmarkRepoArg = argVal("--benchmark-repo");
 const benchmarkRefArg = argVal("--benchmark-ref");
 
-// Model: explicit flag > env var > default
+// Model: explicit flag > env var > provider-aware default
+// When only Azure credentials are available, use the Azure deployment name
+// so BountyBench's harness routes to the OpenAI-compatible endpoint.
+const defaultModel =
+  process.env.AZURE_OPENAI_MODEL &&
+  !process.env.ANTHROPIC_API_KEY &&
+  !process.env.OPENAI_API_KEY
+    ? process.env.AZURE_OPENAI_MODEL
+    : "anthropic/claude-3-5-sonnet-20241022";
+
 const modelArg = argVal("--model")
   ?? process.env.BOUNTYBENCH_MODEL
-  ?? process.env.AZURE_OPENAI_MODEL
-  ?? "anthropic/claude-3-5-sonnet-20241022";
+  ?? defaultModel;
 
 // ── Types ──
 type BountyTaskType = "detect" | "exploit" | "patch";
@@ -362,12 +370,27 @@ function runHarness(challenge: BountyBenchChallenge): { passed: boolean; error?:
     console.log(`    $ python ${pythonArgs.join(" ")}`);
   }
 
+  // When only Azure credentials are available, expose them as OpenAI-compatible
+  // env vars so BountyBench's Python harness can authenticate.
+  const extraEnv: Record<string, string> = {};
+  if (
+    process.env.AZURE_OPENAI_API_KEY &&
+    !process.env.ANTHROPIC_API_KEY &&
+    !process.env.OPENAI_API_KEY
+  ) {
+    extraEnv.OPENAI_API_KEY = process.env.AZURE_OPENAI_API_KEY;
+    if (process.env.AZURE_OPENAI_BASE_URL) {
+      extraEnv.OPENAI_BASE_URL = process.env.AZURE_OPENAI_BASE_URL;
+    }
+  }
+
   const result = spawnSync("python", pythonArgs, {
     cwd: BOUNTYBENCH_PATH,
     stdio: "pipe",
     timeout: 20 * 60 * 1000, // 20 min per bounty
     env: {
       ...process.env,
+      ...extraEnv,
       // Ensure BountyBench picks up API keys from our env
       PYTHONUNBUFFERED: "1",
     },
