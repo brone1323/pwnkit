@@ -576,12 +576,17 @@ const CRASH_TYPE_ORDINAL: Record<CrashType, number> = {
   "kasan-uaf": 5,
   "kasan-stack-oob": 6,
   "kasan-double-free": 7,
-  "kasan-wild": 8,
-  ubsan: 9,
-  "kernel-bug": 10,
-  "kernel-oops": 11,
-  "kernel-panic": 12,
-  "general-protection": 13,
+  "kasan-invalid-free": 8,
+  "kasan-wild": 9,
+  ubsan: 10,
+  "ubsan-shift": 11,
+  "ubsan-overflow": 12,
+  "ubsan-bounds": 13,
+  "ubsan-alignment": 14,
+  "kernel-bug": 15,
+  "kernel-oops": 16,
+  "kernel-panic": 17,
+  "general-protection": 18,
 };
 
 /** Network-facing subsystems where crashes have higher impact */

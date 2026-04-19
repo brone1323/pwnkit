@@ -363,10 +363,15 @@ export type CrashType =
   | "kasan-oob"          // KASAN: heap out-of-bounds
   | "kasan-stack-oob"    // KASAN: stack-out-of-bounds
   | "kasan-uaf"          // KASAN: use-after-free
-  | "kasan-double-free"  // KASAN: double-free or invalid-free
+  | "kasan-double-free"  // KASAN: double-free
+  | "kasan-invalid-free" // KASAN: invalid-free (freeing non-allocated memory)
   | "kasan-null"         // KASAN: null-ptr-deref
   | "kasan-wild"         // KASAN: wild-memory-access
-  | "ubsan"              // UBSAN: undefined behavior
+  | "ubsan"              // UBSAN: undefined behavior (unrecognized subtype)
+  | "ubsan-shift"        // UBSAN: shift-out-of-range
+  | "ubsan-overflow"     // UBSAN: signed/unsigned integer overflow
+  | "ubsan-bounds"       // UBSAN: array-index-out-of-bounds
+  | "ubsan-alignment"    // UBSAN: misaligned access
   | "kernel-bug"         // BUG()/BUG_ON()
   | "kernel-oops"        // Kernel oops
   | "kernel-panic"       // Kernel panic

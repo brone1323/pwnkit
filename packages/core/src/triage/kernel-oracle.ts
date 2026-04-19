@@ -116,9 +116,14 @@ const CRASH_TYPE_CONTENT: Record<string, RegExp> = {
   "kasan-oob": /slab-out-of-bounds|global-out-of-bounds|out-of-bounds/i,
   "kasan-stack-oob": /stack-out-of-bounds|stack-buffer-overflow/i,
   "kasan-uaf": /use-after-free/i,
-  "kasan-double-free": /double-free|invalid-free/i,
+  "kasan-double-free": /double-free/i,
+  "kasan-invalid-free": /invalid-free/i,
   "kasan-null": /null-ptr-deref|NULL pointer dereference|unable to handle kernel NULL/i,
   "ubsan": /UBSAN/i,
+  "ubsan-shift": /UBSAN.*shift/i,
+  "ubsan-overflow": /UBSAN.*overflow/i,
+  "ubsan-bounds": /UBSAN.*out-of-bounds|UBSAN.*index/i,
+  "ubsan-alignment": /UBSAN.*misalign|UBSAN.*member access/i,
   "general-protection": /general protection fault/i,
 };
 
@@ -241,10 +246,15 @@ export function matchCrashSignature(
   const typePatterns: Record<string, RegExp> = {
     "kasan-oob": /kasan.*out-of-bounds|slab-out-of-bounds/i,
     "kasan-uaf": /kasan.*use-after-free|slab-use-after-free/i,
-    "kasan-double-free": /kasan.*double-free|kasan.*invalid-free|invalid-free/i,
+    "kasan-double-free": /kasan.*double-free|kasan.*invalid-free/i,
+    "kasan-invalid-free": /kasan.*invalid-free|invalid-free/i,
     "null-deref": /null pointer dereference|kernel null pointer/i,
     "stack-oob": /kasan.*stack-out-of-bounds|stack-buffer-overflow/i,
     "ubsan": /ubsan/i,
+    "ubsan-shift": /ubsan.*shift/i,
+    "ubsan-overflow": /ubsan.*overflow/i,
+    "ubsan-bounds": /ubsan.*out-of-bounds|ubsan.*index/i,
+    "ubsan-alignment": /ubsan.*misalign|ubsan.*member access/i,
   };
 
   const typePattern = typePatterns[crashTypeNormalized];
@@ -606,11 +616,26 @@ function extractCrashType(output: string): string | undefined {
   if (/KASAN.*double-free/i.test(output)) {
     return "kasan-double-free";
   }
+  if (/KASAN.*invalid-free/i.test(output)) {
+    return "kasan-invalid-free";
+  }
   if (/KASAN.*stack-out-of-bounds/i.test(output)) {
     return "stack-oob";
   }
   if (/NULL pointer dereference|kernel NULL pointer/i.test(output)) {
     return "null-deref";
+  }
+  if (/UBSAN.*shift/i.test(output)) {
+    return "ubsan-shift";
+  }
+  if (/UBSAN.*overflow/i.test(output)) {
+    return "ubsan-overflow";
+  }
+  if (/UBSAN.*out-of-bounds|UBSAN.*index/i.test(output)) {
+    return "ubsan-bounds";
+  }
+  if (/UBSAN.*misalign|UBSAN.*member access/i.test(output)) {
+    return "ubsan-alignment";
   }
   if (/UBSAN/i.test(output)) {
     return "ubsan";

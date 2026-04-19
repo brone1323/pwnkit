@@ -136,6 +136,85 @@ Call Trace:
  [<ffffffff81334455>] rcu_sched_clock_irq+0x960/0xac0
 `;
 
+const KASAN_DOUBLE_FREE = `
+==================================================================
+BUG: KASAN: double-free in kfree+0x28/0x40
+Free of addr ffff888013579000 by task rmmod/2222
+
+CPU: 0 PID: 2222 Comm: rmmod Not tainted 6.6.0+ #3
+Call Trace:
+ [<ffffffff81aaa111>] dump_stack_lvl+0x34/0x44
+ [<ffffffff81bbb222>] print_report+0x171/0x4b6
+ [<ffffffff81ccc333>] kasan_report_invalid_free+0x60/0x90
+ [<ffffffff81ddd444>] kfree+0x28/0x40
+ [<ffffffff81eee555>] my_module_exit+0x18/0x30
+
+Allocated by task 2200:
+ [<ffffffff81fff666>] kmalloc+0x24/0x40
+ [<ffffffff81000777>] my_module_init+0x30/0x60
+
+Freed by task 2210:
+ [<ffffffff81111888>] kfree+0x24/0x40
+ [<ffffffff81222999>] my_cleanup+0x20/0x40
+
+The buggy address belongs to the object at ffff888013579000
+==================================================================
+`;
+
+const KASAN_INVALID_FREE = `
+==================================================================
+BUG: KASAN: invalid-free in kfree+0x28/0x40
+Free of addr ffff888024680000 by task exploit/3333
+
+CPU: 1 PID: 3333 Comm: exploit Not tainted 6.6.0+ #5
+Call Trace:
+ [<ffffffff81aaa111>] dump_stack_lvl+0x34/0x44
+ [<ffffffff81bbb222>] print_report+0x171/0x4b6
+ [<ffffffff81ccc333>] kasan_report_invalid_free+0x60/0x90
+ [<ffffffff81ddd444>] kfree+0x28/0x40
+ [<ffffffff81eee555>] usb_disconnect+0x1a0/0x2c0
+
+Allocated by task 3300:
+ [<ffffffff81fff666>] kmalloc+0x24/0x40
+ [<ffffffff81000777>] usb_alloc_dev+0x40/0x80
+
+The buggy address belongs to the object at ffff888024680000
+==================================================================
+`;
+
+const UBSAN_OVERFLOW = `
+================================================================================
+UBSAN: signed-integer-overflow in kernel/time/timer.c:1580:21
+signed integer overflow: 2147483647 + 1 cannot be represented in type 'int'
+CPU: 2 PID: 500 Comm: stress Not tainted 6.5.0 #1
+Call Trace:
+ [<ffffffff81abcdef>] dump_stack_lvl+0x34/0x44
+ [<ffffffff81fedcba>] __ubsan_handle_add_overflow+0x6a/0x80
+ [<ffffffff81112233>] timer_reduce+0x44/0x60
+`;
+
+const UBSAN_BOUNDS = `
+================================================================================
+UBSAN: array-index-out-of-bounds in net/bridge/br_mdb.c:88:2
+index 256 is out of range for type 'net_bridge_port *[256]'
+CPU: 1 PID: 600 Comm: br-test Not tainted 6.4.0 #2
+Call Trace:
+ [<ffffffff81abcdef>] dump_stack_lvl+0x34/0x44
+ [<ffffffff81fedcba>] __ubsan_handle_out_of_bounds+0x68/0x80
+ [<ffffffff81445566>] br_mdb_notify+0x88/0x100
+`;
+
+const UBSAN_ALIGNMENT = `
+================================================================================
+UBSAN: misaligned-access in drivers/scsi/sg.c:1731:28
+member access within misaligned address 0xffff888005678003 for type 'struct sg_header'
+CPU: 0 PID: 700 Comm: sg-test Not tainted 6.3.0 #1
+Call Trace:
+ [<ffffffff81abcdef>] dump_stack_lvl+0x34/0x44
+ [<ffffffff81fedcba>] __ubsan_handle_type_mismatch_v1+0x4c/0x80
+ [<ffffffff81778899>] sg_read+0x1b0/0x300
+`;
+
 const GARBAGE_INPUT = `
 This is just a random text file
 with no kernel crash report content at all.
@@ -172,12 +251,42 @@ describe("parseCrashReport", () => {
     expect(report.freeSite).toBe("sk_free");
   });
 
-  it("extracts UBSAN shift-out-of-range fields", () => {
+  it("extracts KASAN double-free fields", () => {
+    const report = parseCrashReport(KASAN_DOUBLE_FREE);
+    expect(report.crashType).toBe("kasan-double-free");
+    expect(report.faultingFunction).toBe("kfree");
+    expect(report.allocSite).toBeDefined();
+    expect(report.freeSite).toBeDefined();
+  });
+
+  it("extracts KASAN invalid-free as distinct type", () => {
+    const report = parseCrashReport(KASAN_INVALID_FREE);
+    expect(report.crashType).toBe("kasan-invalid-free");
+    expect(report.faultingFunction).toBe("kfree");
+  });
+
+  it("extracts UBSAN shift-out-of-range as ubsan-shift", () => {
     const report = parseCrashReport(UBSAN_SHIFT);
-    expect(report.crashType).toBe("ubsan");
-    // After the UBSAN fix, we extract the real function name from the call trace
-    // (first non-ubsan frame) instead of the file:line:col from the UBSAN header
+    expect(report.crashType).toBe("ubsan-shift");
     expect(report.faultingFunction).toBe("v4l2_ctrl");
+  });
+
+  it("extracts UBSAN signed-integer-overflow as ubsan-overflow", () => {
+    const report = parseCrashReport(UBSAN_OVERFLOW);
+    expect(report.crashType).toBe("ubsan-overflow");
+    expect(report.faultingFunction).toBe("timer_reduce");
+  });
+
+  it("extracts UBSAN array-index-out-of-bounds as ubsan-bounds", () => {
+    const report = parseCrashReport(UBSAN_BOUNDS);
+    expect(report.crashType).toBe("ubsan-bounds");
+    expect(report.faultingFunction).toBe("br_mdb_notify");
+  });
+
+  it("extracts UBSAN misaligned-access as ubsan-alignment", () => {
+    const report = parseCrashReport(UBSAN_ALIGNMENT);
+    expect(report.crashType).toBe("ubsan-alignment");
+    expect(report.faultingFunction).toBe("sg_read");
   });
 
   it("extracts kernel oops with IP line", () => {
@@ -259,8 +368,28 @@ describe("crashTypeToCategory", () => {
     expect(crashTypeToCategory("kasan-uaf")).toBe("use-after-free");
   });
 
+  it("maps kasan-invalid-free to double-free", () => {
+    expect(crashTypeToCategory("kasan-invalid-free")).toBe("double-free");
+  });
+
   it("maps ubsan to integer-overflow", () => {
     expect(crashTypeToCategory("ubsan")).toBe("integer-overflow");
+  });
+
+  it("maps ubsan-shift to integer-overflow", () => {
+    expect(crashTypeToCategory("ubsan-shift")).toBe("integer-overflow");
+  });
+
+  it("maps ubsan-overflow to integer-overflow", () => {
+    expect(crashTypeToCategory("ubsan-overflow")).toBe("integer-overflow");
+  });
+
+  it("maps ubsan-bounds to heap-overflow", () => {
+    expect(crashTypeToCategory("ubsan-bounds")).toBe("heap-overflow");
+  });
+
+  it("maps ubsan-alignment to type-confusion", () => {
+    expect(crashTypeToCategory("ubsan-alignment")).toBe("type-confusion");
   });
 
   it("maps rcu-stall to race-condition", () => {
@@ -385,10 +514,14 @@ describe("crashToFinding", () => {
     expect(finding.confidence).toBe(0.8);
   });
 
-  it("assigns confidence 0.7 for UBSAN reports", () => {
+  it("assigns confidence 0.7 for UBSAN reports (including subtypes)", () => {
     const report = parseCrashReport(UBSAN_SHIFT);
     const finding = crashToFinding(report);
     expect(finding.confidence).toBe(0.7);
+
+    const report2 = parseCrashReport(UBSAN_OVERFLOW);
+    const finding2 = crashToFinding(report2);
+    expect(finding2.confidence).toBe(0.7);
   });
 
   it("assigns confidence 0.6 for kernel-oops reports", () => {

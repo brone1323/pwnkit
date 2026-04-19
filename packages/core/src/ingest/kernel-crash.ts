@@ -167,8 +167,11 @@ function extractFramesFromBlock(block: string): string[] {
 function kasanSubType(bugType: string): CrashType {
   const lower = bugType.toLowerCase();
   // Order matters: more specific patterns before general ones
-  if (lower.includes("double-free") || lower.includes("invalid-free")) {
+  if (lower.includes("double-free")) {
     return "kasan-double-free";
+  }
+  if (lower.includes("invalid-free")) {
+    return "kasan-invalid-free";
   }
   if (lower.includes("stack-out-of-bounds") || lower.includes("stack-buffer-overflow")) {
     return "kasan-stack-oob";
@@ -187,6 +190,25 @@ function kasanSubType(bugType: string): CrashType {
   }
   // Default for unrecognized KASAN types
   return "kasan-oob";
+}
+
+// ── UBSAN sub-type detection ──
+
+function ubsanSubType(bugType: string): CrashType {
+  const lower = bugType.toLowerCase().trim();
+  if (lower.includes("shift-out-of-range") || lower.includes("shift")) {
+    return "ubsan-shift";
+  }
+  if (lower.includes("integer overflow") || lower.includes("signed-integer-overflow") || lower.includes("unsigned-integer-overflow") || lower.includes("negation")) {
+    return "ubsan-overflow";
+  }
+  if (lower.includes("array-index-out-of-bounds") || lower.includes("index") || lower.includes("out-of-bounds")) {
+    return "ubsan-bounds";
+  }
+  if (lower.includes("misaligned") || lower.includes("alignment") || lower.includes("member access")) {
+    return "ubsan-alignment";
+  }
+  return "ubsan";
 }
 
 // ── Main parser ──
@@ -227,8 +249,8 @@ export function parseCrashReport(text: string): CrashReport {
     report.allocSite = sites.allocSite;
     report.freeSite = sites.freeSite;
   } else if (UBSAN_HEADER.test(text)) {
-    report.crashType = "ubsan";
     const ubMatch = text.match(UBSAN_HEADER)!;
+    report.crashType = ubsanSubType(ubMatch[1]);
     const ubsanLocation = ubMatch[2];
     // UBSAN headers give file:line:col, not function names.
     // The real function is the first non-ubsan frame in the call trace,
@@ -299,9 +321,14 @@ export function crashTypeToCategory(crashType: CrashType): AttackCategory {
     case "kasan-stack-oob": return "stack-buffer-overflow";
     case "kasan-uaf": return "use-after-free";
     case "kasan-double-free": return "double-free";
+    case "kasan-invalid-free": return "double-free";
     case "kasan-null": return "null-pointer-deref";
     case "kasan-wild": return "use-after-free";
     case "ubsan": return "integer-overflow";
+    case "ubsan-shift": return "integer-overflow";
+    case "ubsan-overflow": return "integer-overflow";
+    case "ubsan-bounds": return "heap-overflow";
+    case "ubsan-alignment": return "type-confusion";
     case "kernel-bug": return "null-pointer-deref";
     case "kernel-oops": return "null-pointer-deref";
     case "kernel-panic": return "null-pointer-deref";
@@ -384,7 +411,7 @@ export function crashToFinding(report: CrashReport): Finding {
   // Confidence by crash type reliability
   let confidence = 0.4;
   if (report.crashType.startsWith("kasan")) confidence = 0.8;
-  else if (report.crashType === "ubsan") confidence = 0.7;
+  else if (report.crashType.startsWith("ubsan")) confidence = 0.7;
   else if (report.crashType === "kernel-oops" || report.crashType === "general-protection") confidence = 0.6;
 
   return {
