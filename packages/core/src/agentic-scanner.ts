@@ -55,6 +55,8 @@ export interface AgenticScanOptions {
   config: ScanConfig;
   dbPath?: string;
   onEvent?: ScanListener;
+  /** Poll for user-injected messages from the TUI at turn boundaries. */
+  getPendingUserMessages?: () => string[];
   /** Optional hint/description for benchmark challenges */
   challengeHint?: string;
   /** Resume from a previous scan (uses persisted sessions) */
@@ -201,7 +203,7 @@ async function normalizeScanConfig(config: ScanConfig): Promise<ScanConfig> {
  * Sessions are saved so interrupted scans can be resumed.
  */
 export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport> {
-  const { dbPath, onEvent, resumeScanId } = opts;
+  const { dbPath, onEvent, getPendingUserMessages, resumeScanId } = opts;
   const emit = onEvent ?? (() => {});
   const config = await normalizeScanConfig(opts.config);
 
@@ -435,7 +437,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     });
 
     const discoveryState = useNative
-      ? await runNativeDiscovery(nativeApiRuntime, db, config, scanId, emit, apiSpecPromptText)
+      ? await runNativeDiscovery(nativeApiRuntime, db, config, scanId, emit, apiSpecPromptText, getPendingUserMessages)
       : await runLegacyDiscovery(legacyRuntime, db, config, scanId, emit, dbPath, apiSpecPromptText);
 
     // Persist target profile
@@ -578,7 +580,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       }
     } else {
       attackState = useNative
-        ? await runNativeAttack(nativeApiRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, opts.challengeHint, apiSpecPromptText)
+        ? await runNativeAttack(nativeApiRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, opts.challengeHint, apiSpecPromptText, getPendingUserMessages)
         : await runLegacyAttack(legacyRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, dbPath, apiSpecPromptText);
     }
 
@@ -1508,6 +1510,7 @@ async function runNativeDiscovery(
   scanId: string,
   emit: ScanListener,
   apiSpecPromptText?: string,
+  getPendingUserMessages?: () => string[],
 ): Promise<AgentOutput> {
   const isWeb = config.mode === "web";
   const basePrompt = isWeb
@@ -1535,6 +1538,12 @@ async function runNativeDiscovery(
     },
     runtime,
     db,
+    getPendingUserMessages,
+    onEvent: (eventType, payload) => {
+      if (eventType === "user:injected") {
+        emit({ type: "user:injected", stage: "discovery", message: String(payload.text ?? ""), data: payload });
+      }
+    },
     onTurn: (turn, toolCalls) => {
       // One sub-action per tool call with a real preview of what the tool
       // was invoked with — e.g. `turn 3: bash: curl -sI https://t/admin`
@@ -1576,6 +1585,7 @@ async function runNativeAttack(
   emit: ScanListener,
   challengeHint?: string,
   apiSpecPromptText?: string,
+  getPendingUserMessages?: () => string[],
 ): Promise<AgentOutput> {
   const isWeb = config.mode === "web";
 
@@ -1746,6 +1756,12 @@ async function runNativeAttack(
     },
     runtime,
     db,
+    getPendingUserMessages,
+    onEvent: (eventType, payload) => {
+      if (eventType === "user:injected") {
+        emit({ type: "user:injected", stage: "attack", message: String(payload.text ?? ""), data: payload });
+      }
+    },
     onTurn: onTurnHandler,
   });
 
@@ -1802,6 +1818,12 @@ async function runNativeAttack(
       },
       runtime,
       db,
+      getPendingUserMessages,
+      onEvent: (eventType, payload) => {
+        if (eventType === "user:injected") {
+          emit({ type: "user:injected", stage: "attack", message: String(payload.text ?? ""), data: payload });
+        }
+      },
       onTurn: onTurnHandler,
     });
 

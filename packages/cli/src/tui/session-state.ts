@@ -36,7 +36,7 @@ export interface ScanSummary {
 
 export interface TranscriptItem {
   id: string;
-  kind: "status" | "action" | "thinking" | "finding" | "verify" | "error" | "summary" | "tool-group" | "turn";
+  kind: "status" | "action" | "thinking" | "finding" | "verify" | "error" | "summary" | "tool-group" | "turn" | "user-inject";
   stage?: string;
   text: string;
   tone?: "muted" | "primary" | "success" | "warning" | "error" | "info";
@@ -66,6 +66,8 @@ export interface SessionState {
   summary: ScanSummary | null;
   thinking: string | null;
   transcript: TranscriptItem[];
+  /** Messages queued by the user for injection at the next agent turn boundary. */
+  pendingUserMessages: string[];
 }
 
 export interface SessionEvent {
@@ -315,6 +317,7 @@ export function createInitialSessionState(
     transcript: [
       transcriptItem("status", `Session opened for ${cleanDisplayText(target, 120)}`, { tone: "primary" }),
     ],
+    pendingUserMessages: [],
   };
 }
 
@@ -430,6 +433,14 @@ export function applySessionEvent(state: SessionState, event: SessionEvent): Ses
     const thinking = cleanDisplayText(msg, 180);
     next.thinking = thinking;
     next.transcript = upsertThinkingItem(next.transcript, stageId, thinking, turn);
+    return next;
+  }
+
+  if (event.type === "user:injected") {
+    const text = (event.data as { text?: string } | undefined)?.text ?? event.message;
+    // Remove the delivered message from the pending queue
+    next.pendingUserMessages = next.pendingUserMessages.filter((m) => m !== text);
+    next.transcript.push(transcriptItem("user-inject", text, { tone: "info" }));
     return next;
   }
 

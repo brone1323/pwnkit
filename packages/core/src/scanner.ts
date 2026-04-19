@@ -50,7 +50,8 @@ export type ScanEventType =
   | "verify:result"
   | "thinking"
   | "usage"
-  | "error";
+  | "error"
+  | "user:injected";
 
 export interface ScanEvent {
   type: ScanEventType;

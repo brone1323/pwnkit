@@ -64,6 +64,7 @@ export interface RunOptions {
     onEvent: (event: any) => void;
     setReport: (report: any) => void;
     waitForExit: () => Promise<void>;
+    getPendingUserMessages?: () => string[];
   }>;
 }
 
@@ -201,8 +202,9 @@ export async function runUnified(opts: RunOptions): Promise<void> {
   if (format === "terminal") await checkRuntimeAvailability(runtime);
 
   // Ink TUI for terminal, silent for json/md
-  let inkUI: { onEvent: (event: any) => void; setReport: (report: any) => void; waitForExit: () => Promise<void> } | null = null;
+  let inkUI: { onEvent: (event: any) => void; setReport: (report: any) => void; waitForExit: () => Promise<void>; getPendingUserMessages?: () => string[] } | null = null;
   let eventHandler: (event: any) => void = () => {};
+  let getPendingUserMessages: (() => string[]) | undefined;
 
   if (format === "terminal" && process.stdout.isTTY && process.stdin.isTTY) {
     const mode = opts.targetType === "npm-package" || opts.targetType === "pypi-package" || opts.targetType === "cargo-package" || opts.targetType === "oci-image" ? "audit"
@@ -232,6 +234,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
       }
     }
     eventHandler = inkUI.onEvent;
+    getPendingUserMessages = inkUI.getPendingUserMessages;
   }
 
   try {
@@ -256,6 +259,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,
+          getPendingUserMessages,
           resumeScanId: opts.resumeScanId,
         })
       : await core.runPipeline({

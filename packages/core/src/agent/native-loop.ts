@@ -57,6 +57,8 @@ export interface NativeAgentLoopOptions {
   db: pwnkitDB | null;
   onTurn?: (turn: number, toolCalls: ToolCall[], results: ToolResult[]) => void;
   onEvent?: (eventType: string, payload: Record<string, unknown>) => void;
+  /** Poll for user-injected messages at turn boundaries. */
+  getPendingUserMessages?: () => string[];
 }
 
 export interface NativeAgentState {
@@ -101,7 +103,7 @@ export interface NativeAgentState {
 export async function runNativeAgentLoop(
   opts: NativeAgentLoopOptions,
 ): Promise<NativeAgentState> {
-  const { config, runtime, db, onTurn, onEvent } = opts;
+  const { config, runtime, db, onTurn, onEvent, getPendingUserMessages } = opts;
 
   const memoryPath = externalMemoryPath(config.scanId);
 
@@ -218,6 +220,19 @@ export async function runNativeAgentLoop(
   try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+
+    // ── Inject user messages queued from the TUI ──
+    if (getPendingUserMessages) {
+      const pending = getPendingUserMessages();
+      for (const text of pending) {
+        state.messages.push({
+          role: "user",
+          content: [{ type: "text", text: `[User interrupt]: ${text}` }],
+        });
+        onEvent?.("user:injected", { turn: state.turnCount, text });
+      }
+    }
+
     let streamedThinkingText = "";
     let streamedUsageInputTokens: number | undefined;
     let streamedUsageOutputTokens: number | undefined;

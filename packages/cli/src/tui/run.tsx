@@ -57,7 +57,7 @@ type ConsoleRoute =
   | { type: "history"; dbPath?: string; limit: number }
   | { type: "findings"; options: FindingsScreenOptions }
   | { type: "replay"; dbPath?: string; scanId?: string }
-  | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; onClose: () => void };
+  | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; queueUserMessage?: (text: string) => void; onClose: () => void };
 
 interface ShellNav {
   canGoBack: boolean;
@@ -683,6 +683,19 @@ function TimelineOverlay({
   );
 }
 
+function ComposeOverlay({ text }: { text: string }) {
+  return (
+    <OverlayFrame title="MESSAGE TO AGENT" footer="enter send · esc cancel">
+      <text fg={MUTED}>will be injected at next turn boundary</text>
+      <box flexDirection="row" marginTop={1}>
+        <text fg={PRIMARY}>&gt; </text>
+        <text fg={TEXT}>{text || " "}</text>
+        <text fg={INFO}>█</text>
+      </box>
+    </OverlayFrame>
+  );
+}
+
 const BRAND_WORD_FRAMES = [
   "pwnkit",
   "pwnkit",
@@ -970,6 +983,18 @@ function renderTranscriptItem(
           <text fg={MUTED}>{item.text}</text>
           {(isExpanded ? actions : preview).map((action, index) => renderToolActionLine(action, `${item.id}-${index}`))}
           {isExpandable && !isExpanded ? <text fg={MUTED}>{`${actions.length - preview.length} more hidden`}</text> : null}
+        </box>
+      </box>
+    );
+  }
+
+  if (item.kind === "user-inject") {
+    return (
+      <box key={item.id} flexDirection="row">
+        <RailBar tone={ACCENT} />
+        <box flexDirection="column" marginLeft={1}>
+          <text fg={ACCENT}>USER MESSAGE INJECTED</text>
+          <text fg={TEXT}>{item.text}</text>
         </box>
       </box>
     );
@@ -1926,15 +1951,17 @@ function ReplayScreen({ dbPath, scanId, onExit, shell }: { dbPath?: string; scan
 function ConsoleSessionRoute({ route, shell }: { route: Extract<ConsoleRoute, { type: "session" }>; shell: ShellNav }) {
   const [state, setState] = useState(route.initialState);
   useEffect(() => route.subscribe(setState), [route]);
-  return <SessionScreen state={state} onExit={route.onClose} shell={shell} />;
+  return <SessionScreen state={state} onExit={route.onClose} shell={shell} queueUserMessage={route.queueUserMessage} />;
 }
 
-function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: () => void; shell?: ShellNav }) {
+function SessionScreen({ state, onExit, shell, queueUserMessage }: { state: SessionState; onExit: () => void; shell?: ShellNav; queueUserMessage?: (text: string) => void }) {
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [paletteQuery, setPaletteQuery] = useState("");
   const [paletteSelected, setPaletteSelected] = useState(0);
   const [timelineOpen, setTimelineOpen] = useState(false);
   const [timelineSelected, setTimelineSelected] = useState(0);
+  const [composeOpen, setComposeOpen] = useState(false);
+  const [composeText, setComposeText] = useState("");
   const [sidebarVisible, setSidebarVisible] = useState(true);
   const [expandedToolCards, setExpandedToolCards] = useState<Set<string>>(new Set());
   const [hoveredToolId, setHoveredToolId] = useState<string | null>(null);
@@ -2011,6 +2038,15 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
       suggested: true,
       action: () => setVisibleFromTurnId(null),
     },
+    ...(!state.summary && queueUserMessage ? [{
+      id: "inject-message",
+      title: "Send message to agent",
+      category: "Session",
+      description: "Inject a message at the next turn boundary",
+      keybind: "i",
+      suggested: true,
+      action: () => { setComposeOpen(true); setComposeText(""); },
+    }] : []),
     {
       id: "close-session",
       title: "Close session",
@@ -2053,6 +2089,31 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
     }
     if (shell && key.sequence === "]") {
       shell.goForward();
+      return;
+    }
+
+    if (composeOpen) {
+      if (key.name === "escape") {
+        setComposeOpen(false);
+        setComposeText("");
+        return;
+      }
+      if (key.name === "return") {
+        const trimmed = composeText.trim();
+        if (trimmed && queueUserMessage) {
+          queueUserMessage(trimmed);
+        }
+        setComposeOpen(false);
+        setComposeText("");
+        return;
+      }
+      if (key.name === "backspace") {
+        setComposeText((current) => current.slice(0, -1));
+        return;
+      }
+      if (key.sequence && !key.ctrl && !key.meta && key.name !== "return") {
+        setComposeText((current) => current + key.sequence);
+      }
       return;
     }
 
@@ -2117,6 +2178,11 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
       setExpandedToolCards(new Set());
       return;
     }
+    if (key.sequence === "i" && !state.summary && queueUserMessage) {
+      setComposeOpen(true);
+      setComposeText("");
+      return;
+    }
     if ((key.ctrl && key.name === "c") || (state.summary && (key.name === "escape" || key.name === "q" || key.name === "return"))) {
       onExit();
     }
@@ -2132,6 +2198,7 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
     <ShellFrame view={summary ? "report" : "live session"} status={<text fg={MUTED}>{state.mode}</text>}>
       {paletteOpen ? <PaletteOverlay title="Session commands" query={paletteQuery} selected={paletteSelected} commands={filteredPalette} /> : null}
       {timelineOpen ? <TimelineOverlay selected={timelineSelected} turns={turnItems} /> : null}
+      {composeOpen ? <ComposeOverlay text={composeText} /> : null}
       <box flexDirection="row" gap={2} flexGrow={1}>
         <scrollbox
           width="68%"
@@ -2279,7 +2346,9 @@ function SessionScreen({ state, onExit, shell }: { state: SessionState; onExit: 
         </box> : null}
       </box>
       <FooterBar
-        hint="ctrl+p commands and shortcuts"
+        hint={state.pendingUserMessages.length > 0
+          ? `message queued (${state.pendingUserMessages.length}) · ctrl+p commands`
+          : "i inject message · ctrl+p commands"}
         status={summary ? <LiveBadge label={`ready · ${state.mode}`} active={false} /> : <LiveBadge label={`running · ${state.mode}`} />}
       />
     </ShellFrame>
@@ -2294,7 +2363,7 @@ type AppMode =
   | { type: "findings"; options: FindingsScreenOptions; onExit: () => void }
   | { type: "replay"; dbPath?: string; scanId?: string; onExit: () => void }
   | { type: "console"; initialRoute: ConsoleRoute; onResolve?: (selection: HomeSelection) => void; onExit: () => void }
-  | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; onExit: () => void };
+  | { type: "session"; initialState: SessionState; subscribe: (listener: (state: SessionState) => void) => () => void; queueUserMessage?: (text: string) => void; onExit: () => void };
 
 function ConsoleApp({ initialRoute, onResolve, onExit }: { initialRoute: ConsoleRoute; onResolve?: (selection: HomeSelection) => void; onExit: () => void }) {
   const [routes, setRoutes] = useState<ConsoleRoute[]>([initialRoute]);
@@ -2496,7 +2565,7 @@ function UnifiedApp({ mode }: { mode: AppMode }) {
 
   const [state, setState] = useState(mode.initialState);
   useEffect(() => mode.subscribe(setState), [mode]);
-  return <SessionScreen state={state} onExit={mode.onExit} />;
+  return <SessionScreen state={state} onExit={mode.onExit} queueUserMessage={mode.queueUserMessage} />;
 }
 
 async function mountApp(mode: AppMode): Promise<void> {
@@ -2567,6 +2636,8 @@ export async function createOpenTuiSession(options: {
   onEvent: (event: SessionEvent) => void;
   setReport: (report: Record<string, unknown>) => void;
   waitForExit: () => Promise<void>;
+  /** Drain and return all pending user messages (called by the agent loop at turn boundaries). */
+  getPendingUserMessages: () => string[];
 }> {
   let state = createInitialSessionState(options.target, options.depth, options.mode, {
     runtime: options.runtime,
@@ -2586,10 +2657,28 @@ export async function createOpenTuiSession(options: {
     for (const listener of listeners) listener(state);
   };
 
+  const queueUserMessage = (text: string) => {
+    state = { ...state, pendingUserMessages: [...state.pendingUserMessages, text] };
+    state = {
+      ...state,
+      transcript: [
+        ...state.transcript,
+        {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          kind: "status" as const,
+          text: `message queued: ${text.length > 60 ? text.slice(0, 60) + "..." : text}`,
+          tone: "info" as const,
+        },
+      ],
+    };
+    emit();
+  };
+
   void mountApp({
     type: "session",
     initialState: state,
     subscribe,
+    queueUserMessage,
     onExit: () => {
       resolveExit?.();
       resolveExit = null;
@@ -2606,6 +2695,14 @@ export async function createOpenTuiSession(options: {
       emit();
     },
     waitForExit: () => new Promise<void>((resolve) => { resolveExit = resolve; }),
+    getPendingUserMessages: () => {
+      const msgs = state.pendingUserMessages;
+      if (msgs.length > 0) {
+        state = { ...state, pendingUserMessages: [] };
+        emit();
+      }
+      return msgs;
+    },
   };
 }
 
