@@ -117,4 +117,43 @@ grep -q '"target"' "$TMP/review.out" || {
   fail "review did not emit a report-shaped JSON document"
 }
 
-say "all 5 subcommand smoke tests passed"
+# ── 6. scan --mode web (template loader + agent bootstrap) ────────────────
+# Points scan at an unreachable target with a fake API key. The assertion
+# is that the full scan pipeline bootstraps: templates load, discovery
+# runs, attack agent spawns, and a report-shaped JSON document lands.
+# Guards against regressions like the v0.7.11 `ENOENT: /$bunfs/attacks`
+# crash — that bug shipped because none of the existing smoke subtests
+# exercise the attack-template loader. The agent loop will 401 on the
+# fake key, which is fine; an empty report is still a report.
+say "scan --mode web (template loader + pipeline)"
+ANTHROPIC_API_KEY=fake $CLI scan \
+    --target http://example.invalid \
+    --mode web --depth quick \
+    --runtime api --timeout 3000 \
+    --format json \
+    --db-path "$TMP/scan.db" \
+    > "$TMP/scan.out" 2> "$TMP/scan.err" \
+  || {
+    echo "--- scan stdout ---" >&2
+    cat "$TMP/scan.out" >&2 || true
+    echo "--- scan stderr ---" >&2
+    cat "$TMP/scan.err" >&2 || true
+    fail "scan exited non-zero — pipeline bootstrap or template loader broken"
+  }
+grep -q '"target"' "$TMP/scan.out" || {
+  echo "--- scan stdout ---" >&2
+  cat "$TMP/scan.out" >&2 || true
+  echo "--- scan stderr ---" >&2
+  cat "$TMP/scan.err" >&2 || true
+  fail "scan did not emit a report-shaped JSON document"
+}
+# Extra guard: if the template loader is broken, the stderr typically
+# carries an ENOENT or 'Templates directory not found' message even
+# when exit-code fallback paths let the process succeed.
+if grep -qE "ENOENT.*attacks|Templates directory not found" "$TMP/scan.err"; then
+  echo "--- scan stderr ---" >&2
+  cat "$TMP/scan.err" >&2
+  fail "scan emitted a template-loader error to stderr"
+fi
+
+say "all 6 subcommand smoke tests passed"
