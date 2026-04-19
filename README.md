@@ -48,6 +48,16 @@ This README is the fast path. The detailed command reference, configuration, arc
 
 ## Quick Start
 
+### Standalone binary (zero deps)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/PwnKit-Labs/pwnkit/main/install.sh | bash
+```
+
+Downloads a self-contained `pwnkit` binary (~74 MB) for your platform from the latest GitHub Release — no Node, no Bun, no npm, no node_modules. Installs to `~/.pwnkit/bin/pwnkit`. Set `PWNKIT_INSTALL_DIR=/usr/local/bin` to change the location, `PWNKIT_VERSION=vX.Y.Z` to pin a version.
+
+Binaries ship for linux-x64, linux-arm64, darwin-arm64, and windows-x64. The interactive Bun-based TUI is baked into the binary — no extra install step. Intel Mac users: install Bun and compile from source.
+
 ### Docker
 
 ```bash
