@@ -1,6 +1,7 @@
 import type { Finding } from "@pwnkit/shared";
 import { suggestCwesForCategory, formatCweSection } from "./cwe.js";
 import { suggestCvss } from "./cvss.js";
+import { formatPatchStatusSection, type ReverifyResult } from "./canary.js";
 
 export interface AdvisoryScreenshot {
   alt: string;
@@ -17,6 +18,7 @@ export interface AdvisoryContext {
   pwnkitVersion?: string;
   scanId?: string;
   screenshots?: AdvisoryScreenshot[];
+  patchStatus?: ReverifyResult;
 }
 
 export interface RenderedAdvisory {
@@ -137,7 +139,11 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
   out.push(suggestedFix, "");
 
   out.push("## Patch status", "");
-  out.push("_To fill in after canary re-verification. `pwnkit-cli disclose` will auto-populate this once the canary-reverify capability lands (issue #168)._", "");
+  if (ctx.patchStatus) {
+    out.push(formatPatchStatusSection(ctx.patchStatus), "");
+  } else {
+    out.push("_Pass `--repo <path>` to `pwnkit-cli disclose` to auto-verify this against the target's current HEAD or a specific tag._", "");
+  }
 
   out.push("## Credits", "");
   out.push(

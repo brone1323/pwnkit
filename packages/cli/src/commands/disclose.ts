@@ -8,8 +8,11 @@ import {
   renderAdvisoryMarkdown,
   renderExploitScreenshot,
   isFreezeAvailable,
+  verifyAgainstRef,
   type AdvisoryContext,
   type AdvisoryScreenshot,
+  type ReverifyResult,
+  type PatchStatus,
 } from "@pwnkit/core";
 
 interface DiscloseOptions {
@@ -19,7 +22,18 @@ interface DiscloseOptions {
   severityFloor?: string;
   dryRun?: boolean;
   noScreenshots?: boolean;
+  repo?: string;
+  ref?: string;
+  dropFixed?: boolean;
 }
+
+const STATUS_COLOUR: Record<PatchStatus, (s: string) => string> = {
+  "still-vulnerable": (s) => chalk.green(s),
+  "partial-fix": (s) => chalk.yellow(s),
+  "fixed": (s) => chalk.gray(s),
+  "file-removed": (s) => chalk.gray(s),
+  "unknown": (s) => chalk.dim(s),
+};
 
 interface FindingRow {
   id: string;
@@ -110,13 +124,62 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     if (!opts.dryRun) mkdirSync(outputDir, { recursive: true });
 
     const freezeOn = !opts.noScreenshots && !opts.dryRun && isFreezeAvailable();
+    const reverifyOn = !!opts.repo;
+    const droppedDir = join(outputDir, "_dropped");
     console.log(chalk.red.bold("\n  ◆ pwnkit") + chalk.gray(` disclose — ${selected.length} finding${selected.length === 1 ? "" : "s"}`));
     console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`));
-    console.log(chalk.gray(`  screenshots: ${freezeOn ? "on (freeze)" : opts.noScreenshots ? "disabled" : opts.dryRun ? "skipped (dry-run)" : "disabled (freeze not on PATH)"}`), "\n");
+    console.log(chalk.gray(`  screenshots: ${freezeOn ? "on (freeze)" : opts.noScreenshots ? "disabled" : opts.dryRun ? "skipped (dry-run)" : "disabled (freeze not on PATH)"}`));
+    if (reverifyOn) {
+      console.log(chalk.gray(`  reverify:    ${opts.repo}${opts.ref ? ` @ ${opts.ref}` : " @ HEAD"}${opts.dropFixed ? " (fixed → _dropped/)" : ""}`));
+    } else {
+      console.log(chalk.gray(`  reverify:    disabled (pass --repo to enable)`));
+    }
+    console.log("");
 
-    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean }> = [];
+    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus }> = [];
     for (const row of selected) {
       const finding = rowToFinding(row);
+      let patchStatus: ReverifyResult | undefined;
+      if (reverifyOn) {
+        try {
+          patchStatus = verifyAgainstRef(finding, { repoPath: opts.repo!, ref: opts.ref, checkout: !!opts.ref });
+        } catch (err) {
+          console.log(chalk.red(`  reverify failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+      }
+
+      // If --drop-fixed, route "fixed" / "file-removed" findings into _dropped/
+      // with a reason file instead of into the main advisory bundle.
+      if (patchStatus && opts.dropFixed && (patchStatus.status === "fixed" || patchStatus.status === "file-removed")) {
+        if (!opts.dryRun) {
+          mkdirSync(droppedDir, { recursive: true });
+          const reasonPath = join(droppedDir, `${finding.id.slice(0, 8)}-${finding.severity}-${patchStatus.status}.md`);
+          const body = [
+            `# Dropped: ${finding.title}`,
+            "",
+            `- **Status:** ${patchStatus.status}`,
+            `- **Ref:** \`${patchStatus.ref}\``,
+            `- **Scan:** \`${scanId}\``,
+            `- **Finding id:** \`${finding.id}\``,
+            "",
+            "## Notes",
+            "",
+            ...patchStatus.notes.map((n) => `- ${n}`),
+            "",
+            "## Refs checked",
+            "",
+            ...patchStatus.refsChecked.map((r) => `- \`${r.file}${r.line ? `:${r.line}` : ""}\``),
+            "",
+          ].join("\n");
+          writeFileSync(reasonPath, body, "utf8");
+        }
+        console.log(
+          `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(`patch=${patchStatus.status}`)}`
+        );
+        results.push({ finding: row, filename: "_dropped", primaryCwe: "", cvssScore: 0, screenshot: false, patchStatus: patchStatus.status });
+        continue;
+      }
+
       const screenshots: AdvisoryScreenshot[] = [];
       let wroteShot = false;
       if (freezeOn) {
@@ -126,7 +189,7 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           wroteShot = true;
         }
       }
-      const ctx: AdvisoryContext = { scanId, screenshots };
+      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus };
       const rendered = renderAdvisoryMarkdown(finding, ctx);
       const path = join(outputDir, rendered.filename);
       if (!opts.dryRun) {
@@ -136,10 +199,11 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         }
         writeFileSync(path, rendered.markdown, "utf8");
       }
-      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot });
+      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status });
       const shotMark = wroteShot ? chalk.cyan(" +png") : chalk.gray("     ");
+      const patchMark = patchStatus ? " " + STATUS_COLOUR[patchStatus.status](`[${patchStatus.status}]`) : "";
       console.log(
-        `  ${chalk.green("wrote")}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}`
+        `  ${chalk.green("wrote")}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}`
       );
     }
 
@@ -184,6 +248,9 @@ export function registerDiscloseCommand(program: Command): void {
     .option("--output-dir <path>", "Directory to write advisories into (default ~/pwnkit/disclosures/scan-<id>)")
     .option("--severity-floor <severity>", "In batch mode, only draft findings at or above this severity", "medium")
     .option("--no-screenshots", "Skip terminal-screenshot rendering even when freeze is available")
+    .option("--repo <path>", "Local git checkout of the target repo to re-verify findings against")
+    .option("--ref <tag>", "Git ref (tag/sha/branch) to check out before verifying — defaults to the repo's current HEAD")
+    .option("--drop-fixed", "Move findings whose status is 'fixed' or 'file-removed' into _dropped/ with a reason file instead of drafting an advisory for them", false)
     .option("--dry-run", "Show what would be written without writing files", false)
     .action(async (findingId: string | undefined, opts: DiscloseOptions) => {
       await disclose(findingId, opts);

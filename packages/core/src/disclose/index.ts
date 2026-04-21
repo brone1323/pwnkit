@@ -6,3 +6,5 @@ export { renderAdvisoryMarkdown } from "./template.js";
 export type { AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory } from "./template.js";
 export { renderExploitScreenshot, isFreezeAvailable, composeExploitSession } from "./screenshots.js";
 export type { ScreenshotResult, ScreenshotOptions } from "./screenshots.js";
+export { verifyAgainstRef, extractFileRefs, formatPatchStatusSection } from "./canary.js";
+export type { PatchStatus, FileRef, ReverifyResult, ReverifyOptions } from "./canary.js";
