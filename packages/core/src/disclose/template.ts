@@ -2,12 +2,21 @@ import type { Finding } from "@pwnkit/shared";
 import { suggestCwesForCategory, formatCweSection } from "./cwe.js";
 import { suggestCvss } from "./cvss.js";
 
+export interface AdvisoryScreenshot {
+  alt: string;
+  /** Markdown-ready href (usually a path relative to the advisory file). */
+  relativePath: string;
+  caption?: string;
+  width?: number;
+}
+
 export interface AdvisoryContext {
   target?: string;
   targetRef?: string;
   commitHash?: string;
   pwnkitVersion?: string;
   scanId?: string;
+  screenshots?: AdvisoryScreenshot[];
 }
 
 export interface RenderedAdvisory {
@@ -103,6 +112,15 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
   }
 
   out.push("## PoC", "");
+  if (ctx.screenshots && ctx.screenshots.length > 0) {
+    for (const shot of ctx.screenshots) {
+      const width = shot.width ? ` width="${shot.width}"` : "";
+      out.push(`<img${width} alt="${shot.alt}" src="${shot.relativePath}" />`, "");
+      if (shot.caption) {
+        out.push(`> ${shot.caption}`, "");
+      }
+    }
+  }
   if (finding.evidence?.request?.trim()) {
     out.push("**Request:**", "");
     out.push(indentEvidenceBlock(finding.evidence.request, "http"), "");
@@ -111,7 +129,7 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
     out.push("**Response:**", "");
     out.push(indentEvidenceBlock(finding.evidence.response, "http"), "");
   }
-  if (!finding.evidence?.request?.trim() && !finding.evidence?.response?.trim()) {
+  if (!finding.evidence?.request?.trim() && !finding.evidence?.response?.trim() && (!ctx.screenshots || ctx.screenshots.length === 0)) {
     out.push("_To fill in: concrete reproduction steps. `pwnkit-cli disclose` will auto-populate this once PoC execution lands (issue #168)._", "");
   }
 

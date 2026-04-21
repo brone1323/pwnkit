@@ -4,7 +4,13 @@ import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
 import type { Finding, AttackCategory, Severity, Evidence, FindingStatus } from "@pwnkit/shared";
-import { renderAdvisoryMarkdown, type AdvisoryContext } from "@pwnkit/core";
+import {
+  renderAdvisoryMarkdown,
+  renderExploitScreenshot,
+  isFreezeAvailable,
+  type AdvisoryContext,
+  type AdvisoryScreenshot,
+} from "@pwnkit/core";
 
 interface DiscloseOptions {
   dbPath?: string;
@@ -12,6 +18,7 @@ interface DiscloseOptions {
   outputDir?: string;
   severityFloor?: string;
   dryRun?: boolean;
+  noScreenshots?: boolean;
 }
 
 interface FindingRow {
@@ -99,15 +106,27 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
 
     const scanId = selected[0].scanId;
     const outputDir = resolveOutputDir(opts, scanId);
+    const imagesDir = join(outputDir, "images");
     if (!opts.dryRun) mkdirSync(outputDir, { recursive: true });
 
+    const freezeOn = !opts.noScreenshots && !opts.dryRun && isFreezeAvailable();
     console.log(chalk.red.bold("\n  ◆ pwnkit") + chalk.gray(` disclose — ${selected.length} finding${selected.length === 1 ? "" : "s"}`));
-    console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`), "\n");
+    console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`));
+    console.log(chalk.gray(`  screenshots: ${freezeOn ? "on (freeze)" : opts.noScreenshots ? "disabled" : opts.dryRun ? "skipped (dry-run)" : "disabled (freeze not on PATH)"}`), "\n");
 
-    const ctx: AdvisoryContext = { scanId };
-    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number }> = [];
+    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean }> = [];
     for (const row of selected) {
       const finding = rowToFinding(row);
+      const screenshots: AdvisoryScreenshot[] = [];
+      let wroteShot = false;
+      if (freezeOn) {
+        const shot = renderExploitScreenshot(finding, { outputDir: imagesDir, markdownDir: outputDir });
+        if (shot) {
+          screenshots.push({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 });
+          wroteShot = true;
+        }
+      }
+      const ctx: AdvisoryContext = { scanId, screenshots };
       const rendered = renderAdvisoryMarkdown(finding, ctx);
       const path = join(outputDir, rendered.filename);
       if (!opts.dryRun) {
@@ -117,9 +136,10 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         }
         writeFileSync(path, rendered.markdown, "utf8");
       }
-      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore });
+      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot });
+      const shotMark = wroteShot ? chalk.cyan(" +png") : chalk.gray("     ");
       console.log(
-        `  ${chalk.green("wrote")}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}`
+        `  ${chalk.green("wrote")}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}`
       );
     }
 
@@ -163,6 +183,7 @@ export function registerDiscloseCommand(program: Command): void {
     .option("--scan <scanId>", "Restrict to findings from this scan")
     .option("--output-dir <path>", "Directory to write advisories into (default ~/pwnkit/disclosures/scan-<id>)")
     .option("--severity-floor <severity>", "In batch mode, only draft findings at or above this severity", "medium")
+    .option("--no-screenshots", "Skip terminal-screenshot rendering even when freeze is available")
     .option("--dry-run", "Show what would be written without writing files", false)
     .action(async (findingId: string | undefined, opts: DiscloseOptions) => {
       await disclose(findingId, opts);
