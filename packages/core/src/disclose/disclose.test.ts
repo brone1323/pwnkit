@@ -115,10 +115,17 @@ describe("renderAdvisoryMarkdown", () => {
     expect(markdown).toContain("ssrfSafeAgent");
   });
 
-  it("emits a stable filename slug derived from severity + title", () => {
+  it("emits a stable filename slug prefixed by severity rank + severity label (no doubling)", () => {
     const finding = baseFinding({ severity: "high", title: "Auth gap: non-admin can mint tokens" });
     const { filename } = renderAdvisoryMarkdown(finding);
-    expect(filename).toContain("high");
-    expect(filename).toContain("auth-gap");
+    expect(filename).toMatch(/^2-high-auth-gap/);
+    expect(filename).not.toMatch(/high-high/);
+  });
+
+  it("sorts criticals before highs in a lexicographic sort of filenames", () => {
+    const critical = renderAdvisoryMarkdown(baseFinding({ severity: "critical", title: "C" }));
+    const high = renderAdvisoryMarkdown(baseFinding({ severity: "high", title: "H" }));
+    const sorted = [high.filename, critical.filename].sort();
+    expect(sorted[0]).toBe(critical.filename);
   });
 });

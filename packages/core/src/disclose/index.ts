@@ -8,3 +8,5 @@ export { renderExploitScreenshot, isFreezeAvailable, composeExploitSession } fro
 export type { ScreenshotResult, ScreenshotOptions } from "./screenshots.js";
 export { verifyAgainstRef, extractFileRefs, formatPatchStatusSection } from "./canary.js";
 export type { PatchStatus, FileRef, ReverifyResult, ReverifyOptions } from "./canary.js";
+export { detectVersionRange, formatVersionRangeLine } from "./version-range.js";
+export type { VersionRangeResult, VersionRangeOptions } from "./version-range.js";

@@ -9,9 +9,11 @@ import {
   renderExploitScreenshot,
   isFreezeAvailable,
   verifyAgainstRef,
+  detectVersionRange,
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
+  type VersionRangeResult,
   type PatchStatus,
 } from "@pwnkit/core";
 
@@ -118,7 +120,13 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
       }
     }
 
-    const scanId = selected[0].scanId;
+    const scanIds = Array.from(new Set(selected.map((r) => r.scanId)));
+    const scanId = scanIds[0];
+    if (scanIds.length > 1 && !opts.outputDir && !opts.scan) {
+      throw new Error(
+        `Selected ${selected.length} findings span ${scanIds.length} scans. Pass --scan <id> to narrow, or --output-dir <path> to override the default scan-scoped output directory.`,
+      );
+    }
     const outputDir = resolveOutputDir(opts, scanId);
     const imagesDir = join(outputDir, "images");
     if (!opts.dryRun) mkdirSync(outputDir, { recursive: true });
@@ -136,15 +144,22 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     }
     console.log("");
 
-    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus }> = [];
+    type ResultState = "wrote" | "skipped-exists" | "dropped";
+    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus; state: ResultState }> = [];
     for (const row of selected) {
       const finding = rowToFinding(row);
       let patchStatus: ReverifyResult | undefined;
+      let versionRange: VersionRangeResult | undefined;
       if (reverifyOn) {
         try {
           patchStatus = verifyAgainstRef(finding, { repoPath: opts.repo!, ref: opts.ref, checkout: !!opts.ref });
         } catch (err) {
           console.log(chalk.red(`  reverify failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+        try {
+          versionRange = detectVersionRange(finding, { repoPath: opts.repo! });
+        } catch (err) {
+          console.log(chalk.red(`  version-range failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
         }
       }
 
@@ -176,7 +191,7 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         console.log(
           `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(`patch=${patchStatus.status}`)}`
         );
-        results.push({ finding: row, filename: "_dropped", primaryCwe: "", cvssScore: 0, screenshot: false, patchStatus: patchStatus.status });
+        results.push({ finding: row, filename: "_dropped", primaryCwe: "", cvssScore: 0, screenshot: false, patchStatus: patchStatus.status, state: "dropped" });
         continue;
       }
 
@@ -189,47 +204,64 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           wroteShot = true;
         }
       }
-      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus };
+      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange };
       const rendered = renderAdvisoryMarkdown(finding, ctx);
       const path = join(outputDir, rendered.filename);
+      let state: ResultState = "wrote";
       if (!opts.dryRun) {
         if (existsSync(path)) {
-          console.log(chalk.yellow(`  skip`) + chalk.gray(`  ${rendered.filename} (exists)`));
-          continue;
+          state = "skipped-exists";
+        } else {
+          writeFileSync(path, rendered.markdown, "utf8");
         }
-        writeFileSync(path, rendered.markdown, "utf8");
       }
-      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status });
+      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status, state });
       const shotMark = wroteShot ? chalk.cyan(" +png") : chalk.gray("     ");
       const patchMark = patchStatus ? " " + STATUS_COLOUR[patchStatus.status](`[${patchStatus.status}]`) : "";
+      const verb = state === "skipped-exists"
+        ? chalk.yellow("skip ")
+        : chalk.green("wrote");
       console.log(
-        `  ${chalk.green("wrote")}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}`
+        `  ${verb}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}`
       );
     }
 
     if (results.length > 0 && !opts.dryRun) {
       const indexPath = join(outputDir, "INDEX.md");
+      const drafts = results.filter((r) => r.state === "wrote" || r.state === "skipped-exists");
+      const dropped = results.filter((r) => r.state === "dropped");
+      const stateBadge = (s: ResultState) => s === "wrote" ? "new" : s === "skipped-exists" ? "existing" : "dropped";
+      const scanLabel = scanIds.length === 1 ? `\`${scanId}\`` : `\`${scanIds.join("`, `")}\` (${scanIds.length} scans)`;
       const indexContent = [
         "# Disclosure batch",
         "",
-        `- Scan: \`${scanId}\``,
-        `- Drafts: ${results.length}`,
+        `- Scan: ${scanLabel}`,
+        `- Drafts: ${drafts.length} (${results.filter((r) => r.state === "wrote").length} new, ${results.filter((r) => r.state === "skipped-exists").length} existing)`,
+        dropped.length > 0 ? `- Dropped: ${dropped.length} (see \`_dropped/\`)` : undefined,
         `- Generated: ${new Date().toISOString()}`,
         "",
         "## Filing order",
         "",
-        "| File | Primary CWE | CVSS |",
-        "|---|---|---|",
-        ...results.map((r) => `| \`${r.filename}\` | ${r.primaryCwe} | ${r.cvssScore.toFixed(1)} |`),
+        "| State | File | Primary CWE | CVSS | Patch status |",
+        "|---|---|---|---|---|",
+        ...drafts.map((r) => `| ${stateBadge(r.state)} | \`${r.filename}\` | ${r.primaryCwe} | ${r.cvssScore.toFixed(1)} | ${r.patchStatus ?? "—"} |`),
+        ...(dropped.length > 0 ? [
+          "",
+          "## Dropped",
+          "",
+          "| File | Reason |",
+          "|---|---|",
+          ...dropped.map((r) => `| \`_dropped/${r.finding.id.slice(0, 8)}-${r.finding.severity}-${r.patchStatus}.md\` | ${r.patchStatus} |`),
+        ] : []),
         "",
         "## Before filing each advisory",
         "",
-        "1. Re-read the draft — the PoC and Patch Status sections are placeholders until the disclose pipeline implements PoC execution and canary re-verify (see pwnkit/pwnkit#168).",
+        "1. Re-read the draft — the PoC and Patch Status sections are auto-populated from the scan but you should sanity-check against the current upstream HEAD.",
         "2. Verify the CVSS vector suggested by pwnkit is still appropriate for your deployment model.",
-        "3. Drop screenshots into the advisory body where you want them.",
+        "3. Attach or replace screenshots in the PoC section as needed.",
         "4. File at https://github.com/<owner>/<repo>/security/advisories/new",
         "",
-      ].join("\n");
+      ].filter((line) => line !== undefined).join("\n");
       writeFileSync(indexPath, indexContent, "utf8");
       console.log("\n  " + chalk.gray(`wrote ${indexPath}`));
     }

@@ -2,6 +2,7 @@ import type { Finding } from "@pwnkit/shared";
 import { suggestCwesForCategory, formatCweSection } from "./cwe.js";
 import { suggestCvss } from "./cvss.js";
 import { formatPatchStatusSection, type ReverifyResult } from "./canary.js";
+import { formatVersionRangeLine, type VersionRangeResult } from "./version-range.js";
 
 export interface AdvisoryScreenshot {
   alt: string;
@@ -19,6 +20,7 @@ export interface AdvisoryContext {
   scanId?: string;
   screenshots?: AdvisoryScreenshot[];
   patchStatus?: ReverifyResult;
+  versionRange?: VersionRangeResult;
 }
 
 export interface RenderedAdvisory {
@@ -54,12 +56,20 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
   const cvss = suggestCvss(finding);
   const severity = severityHeading(finding.severity);
 
+  // Prefix by severity rank so lexicographic sort = criticals-first.
+  // Explicit numeric map because "critical" < "high" alphabetically.
+  const rank: Record<string, string> = { critical: "1", high: "2", medium: "3", low: "4", info: "5" };
   const filenameSlug = slugifyTitle(finding.title);
-  const filename = `${String(finding.severity).padStart(1, "0")}-${finding.severity}-${filenameSlug}.md`;
+  const filename = `${rank[finding.severity] ?? "9"}-${finding.severity}-${filenameSlug}.md`;
 
-  const affectedLine = ctx.target
-    ? `\`${ctx.target}\`${ctx.targetRef ? ` at \`${ctx.targetRef}\`` : ""}${ctx.commitHash ? ` (commit \`${ctx.commitHash.slice(0, 12)}\`)` : ""}`
-    : "_To fill in: the versions/refs this is present on._";
+  let affectedLine: string;
+  if (ctx.versionRange) {
+    affectedLine = formatVersionRangeLine(ctx.versionRange);
+  } else if (ctx.target) {
+    affectedLine = `\`${ctx.target}\`${ctx.targetRef ? ` at \`${ctx.targetRef}\`` : ""}${ctx.commitHash ? ` (commit \`${ctx.commitHash.slice(0, 12)}\`)` : ""}`;
+  } else {
+    affectedLine = "_Pass `--repo <path>` to `pwnkit-cli disclose` to auto-detect the affected version range from git tags._";
+  }
 
   const cvssSource = cvss.source === "finding"
     ? "populated on the finding by pwnkit"
