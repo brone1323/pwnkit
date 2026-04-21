@@ -131,3 +131,7 @@ export { parseCrashReport, crashToFinding, ingestArtifactsFromDirectory, ingestA
 // Kernel crash verification oracle
 export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, validateCrashReportConsistency } from "./triage/kernel-oracle.js";
 export type { KernelOracleResult, ReproducerResult, CrashSignatureMatch, ConsistencyResult } from "./triage/kernel-oracle.js";
+
+// Disclosure bundle assembly (finding → GHSA-ready advisory markdown)
+export { suggestCwesForCategory, formatCweSection, suggestCvss, renderAdvisoryMarkdown, renderExploitScreenshot, isFreezeAvailable, composeExploitSession, verifyAgainstRef, extractFileRefs, formatPatchStatusSection, detectVersionRange, formatVersionRangeLine } from "./disclose/index.js";
+export type { CweEntry, CvssSuggestion, AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory, ScreenshotResult, ScreenshotOptions, PatchStatus, FileRef, ReverifyResult, ReverifyOptions, VersionRangeResult, VersionRangeOptions } from "./disclose/index.js";
