@@ -365,6 +365,10 @@ export class pwnkitDB {
     if (!colNames.has("layerVerdicts")) {
       this.sqlite.exec("ALTER TABLE findings ADD COLUMN layerVerdicts TEXT");
     }
+    // pwnkit#170 — proof-of-concept step graph. JSON-stringified PocStep[].
+    if (!colNames.has("pocSteps")) {
+      this.sqlite.exec("ALTER TABLE findings ADD COLUMN pocSteps TEXT");
+    }
     this.sqlite.exec("UPDATE findings SET fingerprint = id WHERE fingerprint IS NULL OR fingerprint = ''");
     this.sqlite.exec("UPDATE findings SET triageStatus = 'new' WHERE triageStatus IS NULL OR triageStatus = ''");
     this.sqlite.exec(`
@@ -1155,6 +1159,13 @@ export class pwnkitDB {
       finding.layerVerdicts && finding.layerVerdicts.length > 0
         ? JSON.stringify(finding.layerVerdicts)
         : null;
+    // pwnkit#170 — persist the optional PoC step graph. NULL when the agent
+    // only produced prose evidence; JSON-stringified PocStep[] otherwise. The
+    // field is additive: existing readers that ignore it keep working.
+    const pocStepsJson =
+      finding.pocSteps && finding.pocSteps.length > 0
+        ? JSON.stringify(finding.pocSteps)
+        : null;
     this.db
       .insert(schema.findings)
       .values({
@@ -1180,6 +1191,7 @@ export class pwnkitDB {
         evidenceResponse: finding.evidence.response,
         evidenceAnalysis: finding.evidence.analysis ?? null,
         layerVerdicts: layerVerdictsJson,
+        pocSteps: pocStepsJson,
         timestamp: finding.timestamp,
       })
       .onConflictDoUpdate({
@@ -1205,6 +1217,7 @@ export class pwnkitDB {
           evidenceResponse: finding.evidence.response,
           evidenceAnalysis: finding.evidence.analysis ?? null,
           layerVerdicts: layerVerdictsJson,
+          pocSteps: pocStepsJson,
           timestamp: finding.timestamp,
         },
       })
@@ -2006,6 +2019,7 @@ CREATE TABLE IF NOT EXISTS findings (
   evidenceRequest TEXT NOT NULL,
   evidenceResponse TEXT NOT NULL,
   evidenceAnalysis TEXT,
+  pocSteps TEXT,
   timestamp INTEGER NOT NULL
 );
 

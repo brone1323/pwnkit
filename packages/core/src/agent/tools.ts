@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import { isIP } from "node:net";
-import type { Finding, AttackResult, TargetInfo } from "@pwnkit/shared";
+import type { Finding, AttackResult, PocStep, TargetInfo } from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.js";
 import { sendPrompt, extractResponseText } from "../http.js";
 import { buildAuthHeaders } from "./prompts.js";
@@ -132,6 +132,17 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
       evidence_request: { type: "string", description: "The request/prompt that triggered the vuln" },
       evidence_response: { type: "string", description: "The response showing the vulnerability" },
       evidence_analysis: { type: "string", description: "Your analysis of why this is a vulnerability" },
+      // pwnkit#170 — optional structured proof-of-concept step graph. When the
+      // agent has structured execution data (e.g. it actually ran the curl /
+      // docker steps and observed predictable outputs), it can pass them as a
+      // JSON string here. Each step has { id, kind, summary, action, expect? }.
+      // See PocStep / PocStepKind in @pwnkit/shared/types.ts. Optional —
+      // findings with prose-only evidence MUST leave this unset.
+      poc_steps: {
+        type: "string",
+        description:
+          "OPTIONAL JSON-encoded PocStep[] array (pwnkit#170). Each step: { id, kind: setup|auth|prerequisite|exploit|verify, summary, action: { type: shell|http|docker|note, ... }, expect?: { type: ... } }. Leave unset when you only have prose evidence.",
+      },
     },
     required: ["title", "severity", "category", "evidence_request", "evidence_response"],
   },
@@ -592,6 +603,91 @@ function validateTargetUrl(baseUrl: string, requestedUrl: string): string {
   }
 
   return candidate.toString();
+}
+
+// ── PoC step graph helpers (pwnkit#170) ──
+
+const POC_STEP_KINDS: ReadonlySet<string> = new Set([
+  "setup",
+  "auth",
+  "prerequisite",
+  "exploit",
+  "verify",
+]);
+const POC_ACTION_TYPES: ReadonlySet<string> = new Set(["shell", "http", "docker", "note"]);
+const POC_EXPECT_TYPES: ReadonlySet<string> = new Set([
+  "exit-zero",
+  "http-status",
+  "body-contains",
+  "body-matches",
+  "file-exists",
+]);
+
+function isPlainRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function validatePocStep(raw: unknown): PocStep | null {
+  if (!isPlainRecord(raw)) return null;
+  const id = typeof raw.id === "string" && raw.id.length > 0 ? raw.id : null;
+  const summary = typeof raw.summary === "string" ? raw.summary : null;
+  const kind = typeof raw.kind === "string" && POC_STEP_KINDS.has(raw.kind) ? raw.kind : null;
+  if (!id || !summary || !kind) return null;
+  if (!isPlainRecord(raw.action)) return null;
+  const actionType = raw.action.type;
+  if (typeof actionType !== "string" || !POC_ACTION_TYPES.has(actionType)) return null;
+  // We trust the rest of the action fields to the PocStepAction discriminated
+  // union; downstream executors validate per-variant before running anything.
+  const step: PocStep = {
+    id,
+    kind: kind as PocStep["kind"],
+    summary,
+    action: raw.action as PocStep["action"],
+  };
+  if (raw.expect != null) {
+    if (
+      isPlainRecord(raw.expect) &&
+      typeof raw.expect.type === "string" &&
+      POC_EXPECT_TYPES.has(raw.expect.type)
+    ) {
+      step.expect = raw.expect as PocStep["expect"];
+    } else {
+      // Malformed expect — drop just the predicate, keep the step. The step is
+      // still useful for screenshot rendering and advisory prose even without
+      // an executable predicate.
+    }
+  }
+  return step;
+}
+
+/**
+ * Parse the `poc_steps` LLM tool argument into a PocStep[] or null.
+ *
+ * Tolerates three wire shapes seen from real models:
+ *   1. Already-parsed array (some runtimes auto-parse JSON-shaped strings).
+ *   2. JSON-encoded string of an array.
+ *   3. Anything else / malformed — returns null so the finding still saves
+ *      with prose evidence only.
+ *
+ * Exported only for unit tests; not part of the public agent surface.
+ */
+export function parsePocStepsArg(raw: unknown): PocStep[] | null {
+  if (raw == null || raw === "") return null;
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(parsed)) return null;
+  const out: PocStep[] = [];
+  for (const item of parsed) {
+    const step = validatePocStep(item);
+    if (step) out.push(step);
+  }
+  return out.length > 0 ? out : null;
 }
 
 // ── Tool Executor ──
@@ -1351,6 +1447,13 @@ export class ToolExecutor {
       },
       timestamp: Date.now(),
     };
+
+    // pwnkit#170 — optional structured PoC step graph. The agent passes
+    // `poc_steps` as a JSON-encoded string (LLM tool call wire format). We
+    // tolerate already-parsed arrays too. Anything malformed is silently
+    // dropped so a bad payload never blocks the finding from being saved.
+    const pocSteps = parsePocStepsArg(args.poc_steps);
+    if (pocSteps && pocSteps.length > 0) finding.pocSteps = pocSteps;
 
     this.ctx.findings.push(finding);
     if (this.db && this.ctx.persistFindings !== false) {

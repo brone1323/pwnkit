@@ -4,6 +4,7 @@ import type {
   Finding,
   LayerVerdict,
   LayerVerdictKind,
+  PocStep,
   Severity,
   TriageLayerName,
 } from "@pwnkit/shared";
@@ -2229,6 +2230,7 @@ function dbFindingToFinding(dbf: {
   evidenceResponse: string;
   evidenceAnalysis: string | null;
   layerVerdicts?: string | null;
+  pocSteps?: string | null;
   timestamp: number;
 }): Finding {
   let layerVerdicts: LayerVerdict[] | undefined;
@@ -2239,6 +2241,18 @@ function dbFindingToFinding(dbf: {
     } catch {
       // Corrupt or legacy row — drop the field rather than crashing the
       // hydration. The triage stage will repopulate on the next scan.
+    }
+  }
+  let pocSteps: PocStep[] | undefined;
+  if (dbf.pocSteps) {
+    try {
+      const parsed = JSON.parse(dbf.pocSteps) as unknown;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        pocSteps = parsed as PocStep[];
+      }
+    } catch {
+      // Corrupt or legacy row — drop the field rather than crashing
+      // hydration. The agent loop is free to repopulate on a future scan.
     }
   }
   return {
@@ -2258,6 +2272,7 @@ function dbFindingToFinding(dbf: {
       analysis: dbf.evidenceAnalysis ?? undefined,
     },
     ...(layerVerdicts ? { layerVerdicts } : {}),
+    ...(pocSteps ? { pocSteps } : {}),
     timestamp: dbf.timestamp,
   };
 }
