@@ -13,6 +13,8 @@ import { ToolExecutor, getToolsForRole } from "./tools.js";
 import { features } from "./features.js";
 import { detectPlaybooks, buildPlaybookInjection } from "./playbooks.js";
 import { estimateCost } from "./cost.js";
+import { eventBus } from "../events/bus.js";
+import { toolCallPreview } from "./tool-preview.js";
 import type { pwnkitDB } from "@pwnkit/db";
 import type { Finding, AttackResult, TargetInfo } from "@pwnkit/shared";
 
@@ -23,6 +25,49 @@ import type { Finding, AttackResult, TargetInfo } from "@pwnkit/shared";
 function externalMemoryPath(scanId?: string): string {
   return `/tmp/pwnkit-state-${scanId ?? randomUUID()}.json`;
 }
+
+// ── Reasoning summary heuristic ──
+// The agent-trace dashboard renders a short preview of what the model was
+// thinking on each turn. We derive a 1-line summary from the streamed
+// thinking text using a cheap, deterministic heuristic:
+//
+//   1. If any line begins with `Thought:` / `Reasoning:` / `Plan:`
+//      (case-insensitive, with optional surrounding whitespace/markdown),
+//      take the first sentence of the remainder of that line.
+//   2. Otherwise, take the first sentence of the whole thinking text.
+//   3. Collapse whitespace and truncate to ~140 chars.
+//   4. Return "" for empty/unusable input — callers skip emit on empty.
+//
+// Exported for unit tests.
+const REASONING_PREFIX_RE =
+  /^\s*(?:[*_>#-]\s*)*(?:thought|reasoning|plan)\s*:\s*/i;
+const SENTENCE_SPLIT_RE = /(?<=[.!?])\s+/;
+const REASONING_MAX_LEN = 140;
+
+export function summarizeReasoning(thinkingText: string | undefined | null): string {
+  if (!thinkingText) return "";
+
+  // Normalize whitespace FIRST — newlines / tabs / repeat spaces all collapse
+  // to single spaces. This lets the prefix regex work regardless of how the
+  // runtime wrapped the thinking text, and gives the sentence splitter clean
+  // input.
+  const normalized = String(thinkingText).replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+
+  // Strip the prefix if one is present — work on the content after it.
+  const candidate = normalized.replace(REASONING_PREFIX_RE, "").trim();
+  if (!candidate) return "";
+
+  // First sentence only (split on `.` / `!` / `?` followed by whitespace).
+  const firstSentence = candidate.split(SENTENCE_SPLIT_RE)[0] ?? candidate;
+  const trimmed = firstSentence.trim();
+  if (!trimmed) return "";
+
+  if (trimmed.length <= REASONING_MAX_LEN) return trimmed;
+  // Truncate with an ellipsis so downstream renderers see clean boundaries.
+  return trimmed.slice(0, REASONING_MAX_LEN - 1).trimEnd() + "…";
+}
+
 const EXTERNAL_MEMORY_MAX_CHARS = 2000;
 
 // ── Native Agent Loop Config ──
@@ -220,6 +265,22 @@ export async function runNativeAgentLoop(
   try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+    const turnStartedAt = Date.now();
+    // Mutable inside the try-block; read in the finally to stamp
+    // agent_turn_completed with the right exit reason. Reassigned by
+    // the break paths below (error, cost_ceiling, early_stop, finished).
+    let turnExitReason: "continue" | "finished" | "max_turns" | "error" | "cost_ceiling" | "early_stop" = "continue";
+
+    // Bus event: agent turn boundary start. Rich sinks (cloud relay,
+    // dashboard tracer) use this to render per-turn UI; the legacy
+    // ScanListener adapter drops it on the floor.
+    eventBus.emit("agent_turn_started", {
+      turn: state.turnCount,
+      max_turns: config.maxTurns,
+      role: config.role,
+    });
+
+    try {
 
     // ── Inject user messages queued from the TUI ──
     if (getPendingUserMessages) {
@@ -236,6 +297,16 @@ export async function runNativeAgentLoop(
     let streamedThinkingText = "";
     let streamedUsageInputTokens: number | undefined;
     let streamedUsageOutputTokens: number | undefined;
+
+    // Bus event: planner invocation. `tokens_est` is cumulative input
+    // tokens going INTO this call — the actual response usage lands on
+    // `cost_update` below once the runtime returns.
+    eventBus.emit("llm_planner_invoked", {
+      turn: state.turnCount,
+      model: config.costModel,
+      tokens_est: state.totalUsage.inputTokens,
+      role: config.role,
+    });
 
     // Call Claude API with native messages + tools
     const result = await runtime.executeNative(
@@ -269,6 +340,13 @@ export async function runNativeAgentLoop(
       },
     );
 
+    // `reasoning_summary` is emitted further down once we've also seen the
+    // assistant's pre-tool-call text — that lets us fall back to summarising
+    // the visible narration when the runtime doesn't stream a separate
+    // thinking channel (most non-reasoning models). Without that fallback,
+    // every turn from a plain GPT-style model produces zero reasoning_summary
+    // events and the dashboard live trace stays cold.
+
     // Track usage
     if (result.usage) {
       state.totalUsage.inputTokens += result.usage.inputTokens;
@@ -285,6 +363,13 @@ export async function runNativeAgentLoop(
           estimatedCostUsd: state.estimatedCostUsd,
         });
       }
+      // Bus event: cumulative cost snapshot for the cloud relay / dashboard.
+      eventBus.emit("cost_update", {
+        cost_usd: state.estimatedCostUsd,
+        input_tokens: state.totalUsage.inputTokens,
+        output_tokens: state.totalUsage.outputTokens,
+        turn: state.turnCount,
+      });
     }
 
     // ── Context window compaction (BoxPwnr-inspired) ──
@@ -367,6 +452,32 @@ export async function runNativeAgentLoop(
       });
     }
 
+    // Bus event: reasoning_summary — a 1-line distillation of the model's
+    // thinking for the dashboard agent-trace UI. Source order:
+    //   1. `streamedThinkingText` from a runtime that exposes a separate
+    //      thinking/reasoning channel (Claude w/ extended thinking, GPT-o
+    //      family, etc.).
+    //   2. `textContent` — the model's pre-tool-call narration ("I'll
+    //      now inspect /admin for stale session cookies"). Most non-
+    //      reasoning models produce this; the heuristic picks the first
+    //      sentence so it reads as a "thinking out loud" snippet.
+    // Wrapped in try/catch so a bad summary never kills the scan; emitted
+    // at most once per turn and only when the result is non-empty.
+    try {
+      const reasoningSource = streamedThinkingText.trim()
+        ? streamedThinkingText
+        : textContent;
+      const summary = summarizeReasoning(reasoningSource);
+      if (summary) {
+        eventBus.emit("reasoning_summary", {
+          turn: state.turnCount,
+          summary,
+        });
+      }
+    } catch {
+      /* heuristic failure must never abort the scan */
+    }
+
     const toolUseBlocks = result.content.filter(
       (b): b is Extract<NativeContentBlock, { type: "tool_use" }> =>
         b.type === "tool_use",
@@ -411,8 +522,46 @@ export async function runNativeAgentLoop(
       const call: ToolCall = { name: block.name, arguments: block.input };
       toolCalls.push(call);
 
+      // Bus event: tool_call_started. `args_preview` is a short, safe
+      // rendering of the tool invocation suitable for dashboard UI.
+      let argsPreview: string;
+      try {
+        argsPreview = toolCallPreview(call).slice(0, 200);
+      } catch {
+        argsPreview = block.name;
+      }
+      eventBus.emit("tool_call_started", {
+        tool: block.name,
+        turn: state.turnCount,
+        args_preview: argsPreview,
+      });
+
+      const toolStartedAt = Date.now();
       const toolResult = await executor.execute(call);
       toolResults.push(toolResult);
+
+      // Bus event: tool_call_completed.
+      eventBus.emit("tool_call_completed", {
+        tool: block.name,
+        turn: state.turnCount,
+        duration_ms: Date.now() - toolStartedAt,
+        status: toolResult.success ? "ok" : "error",
+        ...(toolResult.success ? {} : { error: toolResult.error ?? "unknown" }),
+      });
+
+      // Bus event: finding_ingested — fires whenever the agent successfully
+      // saves a finding so downstream sinks (cloud relay, dashboard) see the
+      // finding at creation time rather than waiting for the final report.
+      if (block.name === "save_finding" && toolResult.success) {
+        const f = toolResult.output as Record<string, unknown> | undefined;
+        const input = block.input as Record<string, unknown>;
+        eventBus.emit("finding_ingested", {
+          finding_id: typeof f?.id === "string" ? f.id : undefined,
+          severity: typeof input.severity === "string" ? input.severity : undefined,
+          title: typeof input.title === "string" ? input.title : undefined,
+          category: typeof input.category === "string" ? input.category : undefined,
+        });
+      }
 
       // Check if agent called done
       if (block.name === "done" && toolResult.success) {
@@ -614,6 +763,29 @@ export async function runNativeAgentLoop(
         }
         break;
       }
+    }
+    } finally {
+      // Bus event: agent turn boundary end. Exit reason is inferred from
+      // state flags set by the various break paths inside the body. If the
+      // loop will iterate again (done=false and no early/error flag),
+      // that's the "continue" case.
+      if (state.done) {
+        turnExitReason = "finished";
+      } else if (state.costCeilingExceeded) {
+        turnExitReason = "cost_ceiling";
+      } else if (state.earlyStopNoProgress) {
+        turnExitReason = "early_stop";
+      } else if (state.summary.startsWith("Error:")) {
+        turnExitReason = "error";
+      } else if (state.turnCount >= config.maxTurns) {
+        turnExitReason = "max_turns";
+      }
+      eventBus.emit("agent_turn_completed", {
+        turn: state.turnCount,
+        duration_ms: Date.now() - turnStartedAt,
+        reason: turnExitReason,
+        role: config.role,
+      });
     }
   }
 
