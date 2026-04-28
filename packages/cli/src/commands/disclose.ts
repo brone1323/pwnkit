@@ -10,11 +10,8 @@ import {
   isFreezeAvailable,
   verifyAgainstRef,
   detectVersionRange,
-<<<<<<< HEAD
   extractSiblingFix,
-=======
   executePocSteps,
->>>>>>> e117777 (feat(disclose): PoC execution runtime (closes #171))
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
@@ -22,6 +19,12 @@ import {
   type PatchStatus,
   type PocExecutionReport,
   type PocExecutionTarget,
+  type PocStepResult,
+  decideFilingState,
+  assembleBundleIndex,
+  formatDroppedReason,
+  droppedFilename,
+  type BundleEntry,
 } from "@pwnkit/core";
 
 interface DiscloseOptions {
@@ -204,7 +207,13 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     console.log("");
 
     type ResultState = "wrote" | "skipped-exists" | "dropped";
-    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus; behaviouralVerdict?: PocExecutionReport["overallVerdict"]; state: ResultState }> = [];
+    interface FindingResult extends BundleEntry {
+      severity: string;
+      title: string;
+      shotCount: number;
+      state: ResultState;
+    }
+    const results: FindingResult[] = [];
     for (const row of selected) {
       const finding = rowToFinding(row);
       let patchStatus: ReverifyResult | undefined;
@@ -263,45 +272,85 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         }
       }
 
-      // If --drop-fixed, route "fixed" / "file-removed" findings into _dropped/
-      // with a reason file instead of into the main advisory bundle.
-      if (patchStatus && opts.dropFixed && (patchStatus.status === "fixed" || patchStatus.status === "file-removed")) {
+      // ── Filing-state gate (#168) ──
+      // Combine code-level patch status (canary) and behavioural verdict
+      // (#171) into a single keep / drop / needs-review verdict the operator
+      // sees in the INDEX. Logic lives in @pwnkit/core/disclose/bundle so the
+      // tests can exercise it without going through the CLI.
+      const { filingState, dropReason } = decideFilingState({
+        patchStatus,
+        behaviouralReport,
+        dropFixed: !!opts.dropFixed,
+      });
+
+      // Route dropped findings into _dropped/ with a reason file. This catches
+      // both code-level drops (canary-fixed) and behavioural drops (exploit
+      // no longer fires) — the reason file makes the audit trail explicit.
+      if (filingState === "drop") {
+        const droppedEntry: BundleEntry = {
+          finding,
+          filename: "",
+          primaryCwe: "",
+          cvssScore: 0,
+          patchStatus: patchStatus?.status,
+          behaviouralVerdict: behaviouralReport?.overallVerdict,
+          filingState,
+          dropReason,
+        };
         if (!opts.dryRun) {
           mkdirSync(droppedDir, { recursive: true });
-          const reasonPath = join(droppedDir, `${finding.id.slice(0, 8)}-${finding.severity}-${patchStatus.status}.md`);
-          const body = [
-            `# Dropped: ${finding.title}`,
-            "",
-            `- **Status:** ${patchStatus.status}`,
-            `- **Ref:** \`${patchStatus.ref}\``,
-            `- **Scan:** \`${scanId}\``,
-            `- **Finding id:** \`${finding.id}\``,
-            "",
-            "## Notes",
-            "",
-            ...patchStatus.notes.map((n) => `- ${n}`),
-            "",
-            "## Refs checked",
-            "",
-            ...patchStatus.refsChecked.map((r) => `- \`${r.file}${r.line ? `:${r.line}` : ""}\``),
-            "",
-          ].join("\n");
+          const reasonPath = join(droppedDir, droppedFilename(droppedEntry));
+          const body = formatDroppedReason({
+            finding,
+            scanId,
+            patchStatus,
+            behaviouralReport,
+            reason: dropReason ?? "dropped",
+          });
           writeFileSync(reasonPath, body, "utf8");
         }
         console.log(
-          `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(`patch=${patchStatus.status}`)}`
+          `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(dropReason ?? "dropped")}`
         );
-        results.push({ finding: row, filename: "_dropped", primaryCwe: "", cvssScore: 0, screenshot: false, patchStatus: patchStatus.status, state: "dropped" });
+        results.push({
+          ...droppedEntry,
+          severity: row.severity,
+          title: row.title,
+          shotCount: 0,
+          state: "dropped",
+        });
         continue;
       }
 
+      // ── Multi-frame screenshot rendering (#168 / #170) ──
+      // When the finding has a step graph, render one PNG per step and embed
+      // each as its own <img>. Falls back to the single-frame composite when
+      // the graph is absent so existing scans without pocSteps still get a
+      // screenshot the way #169 shipped them.
       const screenshots: AdvisoryScreenshot[] = [];
-      let wroteShot = false;
+      let shotCount = 0;
       if (freezeOn) {
-        const shot = renderExploitScreenshot(finding, { outputDir: imagesDir, markdownDir: outputDir });
-        if (shot) {
-          screenshots.push({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 });
-          wroteShot = true;
+        if (finding.pocSteps && finding.pocSteps.length > 0) {
+          const stepResults: Record<string, PocStepResult> = {};
+          if (behaviouralReport) {
+            for (const sr of behaviouralReport.steps) stepResults[sr.stepId] = sr;
+          }
+          const frames = renderExploitScreenshot(finding, {
+            outputDir: imagesDir,
+            markdownDir: outputDir,
+            pocSteps: finding.pocSteps,
+            stepResults,
+          });
+          for (const f of frames) {
+            screenshots.push({ alt: f.alt, relativePath: f.relativePath, caption: f.caption, width: 1200 });
+            shotCount++;
+          }
+        } else {
+          const shot = renderExploitScreenshot(finding, { outputDir: imagesDir, markdownDir: outputDir });
+          if (shot) {
+            screenshots.push({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 });
+            shotCount = 1;
+          }
         }
       }
       const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange };
@@ -315,56 +364,38 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           writeFileSync(path, rendered.markdown, "utf8");
         }
       }
-      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status, behaviouralVerdict: behaviouralReport?.overallVerdict, state });
-      const shotMark = wroteShot ? chalk.cyan(" +png") : chalk.gray("     ");
+      results.push({
+        finding,
+        filename: rendered.filename,
+        primaryCwe: rendered.primaryCwe,
+        cvssScore: rendered.cvssScore,
+        severity: row.severity,
+        title: row.title,
+        shotCount,
+        patchStatus: patchStatus?.status,
+        behaviouralVerdict: behaviouralReport?.overallVerdict,
+        filingState,
+        state,
+      });
+      const shotMark = shotCount > 0 ? chalk.cyan(` +${shotCount}png`) : chalk.gray("       ");
       const patchMark = patchStatus ? " " + STATUS_COLOUR[patchStatus.status](`[${patchStatus.status}]`) : "";
       const behaviouralMark = behaviouralReport
         ? " " + VERDICT_COLOUR[behaviouralReport.overallVerdict](`[${behaviouralReport.overallVerdict}]`)
         : "";
+      const reviewMark = filingState === "needs-review" ? " " + chalk.magenta("[needs-review]") : "";
       const verb = state === "skipped-exists"
         ? chalk.yellow("skip ")
         : chalk.green("wrote");
       console.log(
-        `  ${verb}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}${behaviouralMark}`
+        `  ${verb}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}${behaviouralMark}${reviewMark}`
       );
     }
 
-    if (results.length > 0 && !opts.dryRun) {
+    if (!opts.dryRun) {
       const indexPath = join(outputDir, "INDEX.md");
-      const drafts = results.filter((r) => r.state === "wrote" || r.state === "skipped-exists");
-      const dropped = results.filter((r) => r.state === "dropped");
-      const stateBadge = (s: ResultState) => s === "wrote" ? "new" : s === "skipped-exists" ? "existing" : "dropped";
-      const scanLabel = scanIds.length === 1 ? `\`${scanId}\`` : `\`${scanIds.join("`, `")}\` (${scanIds.length} scans)`;
-      const indexContent = [
-        "# Disclosure batch",
-        "",
-        `- Scan: ${scanLabel}`,
-        `- Drafts: ${drafts.length} (${results.filter((r) => r.state === "wrote").length} new, ${results.filter((r) => r.state === "skipped-exists").length} existing)`,
-        dropped.length > 0 ? `- Dropped: ${dropped.length} (see \`_dropped/\`)` : undefined,
-        `- Generated: ${new Date().toISOString()}`,
-        "",
-        "## Filing order",
-        "",
-        "| State | File | Primary CWE | CVSS | Patch status | Behavioural |",
-        "|---|---|---|---|---|---|",
-        ...drafts.map((r) => `| ${stateBadge(r.state)} | \`${r.filename}\` | ${r.primaryCwe} | ${r.cvssScore.toFixed(1)} | ${r.patchStatus ?? "—"} | ${r.behaviouralVerdict ?? "—"} |`),
-        ...(dropped.length > 0 ? [
-          "",
-          "## Dropped",
-          "",
-          "| File | Reason |",
-          "|---|---|",
-          ...dropped.map((r) => `| \`_dropped/${r.finding.id.slice(0, 8)}-${r.finding.severity}-${r.patchStatus}.md\` | ${r.patchStatus} |`),
-        ] : []),
-        "",
-        "## Before filing each advisory",
-        "",
-        "1. Re-read the draft — the PoC and Patch Status sections are auto-populated from the scan but you should sanity-check against the current upstream HEAD.",
-        "2. Verify the CVSS vector suggested by pwnkit is still appropriate for your deployment model.",
-        "3. Attach or replace screenshots in the PoC section as needed.",
-        "4. File at https://github.com/<owner>/<repo>/security/advisories/new",
-        "",
-      ].filter((line) => line !== undefined).join("\n");
+      // Bundle index assembly is pure and lives in @pwnkit/core/disclose so
+      // the table layout can be tested without touching the CLI / db / fs.
+      const indexContent = assembleBundleIndex(results, { scanIds });
       writeFileSync(indexPath, indexContent, "utf8");
       console.log("\n  " + chalk.gray(`wrote ${indexPath}`));
     }
