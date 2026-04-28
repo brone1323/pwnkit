@@ -10,3 +10,5 @@ export { verifyAgainstRef, extractFileRefs, formatPatchStatusSection } from "./c
 export type { PatchStatus, FileRef, ReverifyResult, ReverifyOptions } from "./canary.js";
 export { detectVersionRange, formatVersionRangeLine } from "./version-range.js";
 export type { VersionRangeResult, VersionRangeOptions } from "./version-range.js";
+export { extractSiblingFix } from "./sibling-fix.js";
+export type { SiblingFixCandidate, SiblingFixOptions } from "./sibling-fix.js";
