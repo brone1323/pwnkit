@@ -16,6 +16,7 @@ import {
   type FetchLike,
 } from "./wp-fingerprint.js";
 import { validateFlagShape } from "./flag-validator.js";
+import { extractPocStepsFromProse } from "./poc-steps-from-prose.js";
 import {
   forgeObjectId,
   forgeObjectIdSequence,
@@ -1454,7 +1455,21 @@ export class ToolExecutor {
     // tolerate already-parsed arrays too. Anything malformed is silently
     // dropped so a bad payload never blocks the finding from being saved.
     const pocSteps = parsePocStepsArg(args.poc_steps);
-    if (pocSteps && pocSteps.length > 0) finding.pocSteps = pocSteps;
+    if (pocSteps && pocSteps.length > 0) {
+      finding.pocSteps = pocSteps;
+    } else {
+      // pwnkit#179 — fall back to a prose-derived heuristic graph when the
+      // agent didn't supply one explicitly. The heuristic is conservative:
+      // it returns undefined whenever it can't extract ≥ 2 steps cleanly,
+      // and we leave `pocSteps` undefined in that case (downstream consumers
+      // gate on field presence).
+      const inferred = extractPocStepsFromProse({
+        request: finding.evidence.request,
+        response: finding.evidence.response,
+        analysis: finding.evidence.analysis,
+      });
+      if (inferred && inferred.length >= 2) finding.pocSteps = inferred;
+    }
 
     this.ctx.findings.push(finding);
     if (this.db && this.ctx.persistFindings !== false) {

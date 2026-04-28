@@ -103,6 +103,83 @@ describe("ToolExecutor", () => {
     expect(ctx.findings[0].id).toBeTruthy();
   });
 
+  // ── save_finding pocSteps emission (pwnkit#179) ──
+
+  it("save_finding populates pocSteps from prose when agent didn't supply them", async () => {
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Auth gap on /admin/users",
+        severity: "high",
+        category: "auth",
+        evidence_request: "GET /admin/users HTTP/1.1\nHost: target.example",
+        evidence_response: "HTTP/1.1 200 OK\nContent-Type: application/json",
+        evidence_analysis: "Endpoint exposes admin data without authentication.",
+      },
+    });
+
+    const finding = ctx.findings[0];
+    expect(finding.pocSteps).toBeDefined();
+    expect(finding.pocSteps!.length).toBeGreaterThanOrEqual(2);
+    const exploit = finding.pocSteps!.find((s) => s.kind === "exploit");
+    expect(exploit?.action).toEqual({
+      type: "http",
+      method: "GET",
+      url: "/admin/users",
+    });
+    const verify = finding.pocSteps!.find((s) => s.kind === "verify");
+    expect(verify?.expect).toEqual({ type: "http-status", status: 200 });
+  });
+
+  it("save_finding leaves pocSteps undefined when prose has no parseable signals", async () => {
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Vague bug",
+        severity: "low",
+        category: "info",
+        evidence_request: "We poked around the page.",
+        evidence_response: "Some interesting output appeared.",
+        evidence_analysis: "Unclear if exploitable.",
+      },
+    });
+
+    expect(ctx.findings[0].pocSteps).toBeUndefined();
+  });
+
+  it("save_finding prefers an agent-supplied pocSteps array over the heuristic", async () => {
+    const agentSteps = [
+      {
+        id: "manual-step",
+        kind: "exploit",
+        summary: "Hand-crafted graph",
+        action: { type: "shell", cmd: "echo crafted-by-agent" },
+      },
+    ];
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Custom finding",
+        severity: "high",
+        category: "auth",
+        // Prose that would otherwise trigger the heuristic.
+        evidence_request: "GET /admin",
+        evidence_response: "HTTP/1.1 200 OK",
+        evidence_analysis: "Admin endpoint exposed.",
+        poc_steps: JSON.stringify(agentSteps),
+      },
+    });
+
+    const finding = ctx.findings[0];
+    expect(finding.pocSteps).toBeDefined();
+    expect(finding.pocSteps!.length).toBe(1);
+    expect(finding.pocSteps![0].id).toBe("manual-step");
+    expect(finding.pocSteps![0].action).toEqual({
+      type: "shell",
+      cmd: "echo crafted-by-agent",
+    });
+  });
+
   // ── query_findings ──
 
   it("payload_lookup returns reusable JSFuck payloads", async () => {
