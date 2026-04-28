@@ -294,6 +294,7 @@ describe("cloud-sink normalizeFinding pass-through of pocSteps (pwnkit#170)", ()
     });
     expect(Array.isArray(out.pocSteps)).toBe(true);
     expect(out.pocSteps).toHaveLength(steps.length);
+    expect(out.pocSteps).toEqual(steps);
   });
 
   it("drops malformed pocSteps without dropping the finding", () => {

@@ -17,7 +17,7 @@ import { detectAvailableRuntimes } from "./runtime/registry.js";
 import { runAgentLoop } from "./agent/loop.js";
 import { runNativeAgentLoop } from "./agent/native-loop.js";
 import { toolCallPreview } from "./agent/tool-preview.js";
-import { getToolsForRole, TOOL_DEFINITIONS } from "./agent/tools.js";
+import { getToolsForRole, TOOL_DEFINITIONS, parsePocStepsArg } from "./agent/tools.js";
 import {
   discoveryPrompt,
   attackPrompt,
@@ -2247,8 +2247,12 @@ function dbFindingToFinding(dbf: {
   if (dbf.pocSteps) {
     try {
       const parsed = JSON.parse(dbf.pocSteps) as unknown;
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        pocSteps = parsed as PocStep[];
+      // Validate each element via the same predicate the agent tool path uses,
+      // so a half-corrupt array degrades to "drop bad steps" rather than
+      // letting malformed rows escape into Finding.pocSteps.
+      const valid = parsePocStepsArg(parsed);
+      if (valid && valid.length > 0) {
+        pocSteps = valid;
       }
     } catch {
       // Corrupt or legacy row — drop the field rather than crashing

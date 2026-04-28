@@ -629,8 +629,9 @@ function isPlainRecord(v: unknown): v is Record<string, unknown> {
 
 function validatePocStep(raw: unknown): PocStep | null {
   if (!isPlainRecord(raw)) return null;
-  const id = typeof raw.id === "string" && raw.id.length > 0 ? raw.id : null;
-  const summary = typeof raw.summary === "string" ? raw.summary : null;
+  const id = typeof raw.id === "string" && raw.id.trim().length > 0 ? raw.id.trim() : null;
+  const summary =
+    typeof raw.summary === "string" && raw.summary.trim().length > 0 ? raw.summary.trim() : null;
   const kind = typeof raw.kind === "string" && POC_STEP_KINDS.has(raw.kind) ? raw.kind : null;
   if (!id || !summary || !kind) return null;
   if (!isPlainRecord(raw.action)) return null;

@@ -110,6 +110,9 @@ describe("triage persistence", () => {
 
       const persisted = db.getFinding(finding.id) as { pocSteps: string | null } | undefined;
       expect(persisted?.pocSteps).toBeTruthy();
+      // Byte-identical persistence: the column stores exactly JSON.stringify(steps),
+      // so disclosure replay can fingerprint by hash without reserializing.
+      expect(persisted!.pocSteps).toBe(JSON.stringify(steps));
       // Stored as JSON text — round-trip parses to the original array.
       const restored = JSON.parse(persisted!.pocSteps as string);
       expect(restored).toEqual(steps);
