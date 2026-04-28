@@ -43,6 +43,19 @@ export interface CloudSinkEvidence {
 }
 
 /**
+ * Optional structured proof-of-concept step graph (pwnkit#170). Emitted only
+ * when the OSS agent has structured execution data; otherwise undefined and
+ * the cloud falls back to the prose `evidence.*` strings as before.
+ *
+ * The cloud orchestrator currently does NOT yet validate this field — by
+ * default zod strips unknown keys, so sending it is safe even before cloud
+ * adds its own schema. When cloud lands the matching zod entry, it should
+ * mirror the `PocStep` shape in `@pwnkit/shared/types.ts` (kept loose here
+ * as `unknown[]` so OSS additions can roll out before cloud's schema does).
+ */
+export type CloudSinkPocSteps = unknown[];
+
+/**
  * Strict finding shape the pwnkit-cloud orchestrator accepts at
  * POST /scans/:id/findings.
  */
@@ -65,6 +78,12 @@ export interface CloudSinkFinding {
   confidence?: number;
   /** Unix epoch milliseconds. */
   timestamp: number;
+  /**
+   * Optional ordered PoC step graph (pwnkit#170). Pass-through field — the
+   * OSS sink does not enrich or validate it beyond a shape check, and the
+   * cloud orchestrator will silently strip it until its schema is updated.
+   */
+  pocSteps?: CloudSinkPocSteps;
 }
 
 /**

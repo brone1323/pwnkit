@@ -108,6 +108,14 @@ export const findings = sqliteTable(
      * query individual verdict rows. See pwnkit#112.
      */
     layerVerdicts: text("layerVerdicts"),
+    /**
+     * JSON-stringified PocStep[] (see @pwnkit/shared types). NULL when the
+     * agent only produced prose evidence (the legacy default). Stored as
+     * text rather than a join table because the array is read-and-write
+     * together at finding-save time and we never query individual steps.
+     * See pwnkit#170.
+     */
+    pocSteps: text("pocSteps"),
     timestamp: integer("timestamp").notNull(),
   },
   (table) => [

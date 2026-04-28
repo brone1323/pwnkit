@@ -283,7 +283,35 @@ export function normalizeFinding(rawFinding: unknown): CloudSinkFinding {
   };
   if (confidence !== undefined) normalized.confidence = confidence;
 
+  // pwnkit#170 — pass-through optional PoC step graph. We accept already-
+  // structured arrays (the in-process OSS Finding case) and JSON-encoded
+  // strings (the LLM tool-call case). Anything malformed is dropped — a bad
+  // step graph must never block a finding from reaching cloud.
+  const pocSteps = normalizePocSteps(raw.pocSteps ?? raw.poc_steps);
+  if (pocSteps && pocSteps.length > 0) normalized.pocSteps = pocSteps;
+
   return normalized;
+}
+
+/**
+ * Pass-through normaliser for the optional pocSteps field. Returns the array
+ * shape unchanged when the input is already array-shaped, parses a JSON-
+ * encoded string into one, and yields null for any other shape. This is
+ * deliberately permissive: the OSS sink is a wire-format chokepoint, not a
+ * schema validator — see PocStep in @pwnkit/shared for the canonical shape.
+ */
+function normalizePocSteps(v: unknown): unknown[] | null {
+  if (v == null || v === "") return null;
+  if (Array.isArray(v)) return v;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (Array.isArray(parsed)) return parsed;
+    } catch {
+      return null;
+    }
+  }
+  return null;
 }
 
 /**

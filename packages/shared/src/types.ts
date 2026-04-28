@@ -251,6 +251,14 @@ export interface Finding {
   cvssVector?: string; // CVSS vector string
   cvssScore?: number; // CVSS numeric score (0–10)
   remediation?: FindingRemediation;
+  /**
+   * Ordered proof-of-concept step graph (pwnkit#170). Optional and additive —
+   * findings produced before this field existed leave it undefined, and every
+   * renderer/exporter/sink must continue to work in that case. When populated,
+   * downstream consumers (screenshot renderer, behavioural re-verify, advisory
+   * markdown) prefer this structured form over the prose `evidence.*` strings.
+   */
+  pocSteps?: PocStep[];
   timestamp: number;
 }
 
@@ -355,6 +363,87 @@ export interface Evidence {
   request: string;
   response: string;
   analysis?: string;
+}
+
+// ── PoC Step Graph (pwnkit#170) ──────────────────────────────────────────────
+//
+// Today, `Finding.evidence` is three free-text strings. Everything downstream
+// that wants to *act* on the PoC — multi-frame screenshot rendering, behavioural
+// re-verification (pwnkit#171), advisory rendering, machine-checkable
+// verification specs — has to re-parse that prose.
+//
+// `pocSteps` formalises the proof-of-concept as an ordered list of named
+// steps. Each step has a `kind` (setup / auth / prerequisite / exploit /
+// verify), a one-line `summary` that captions the step in screenshots and
+// advisories, an `action` (shell / http / docker / note), and an optional
+// `expect` predicate that downstream executors check to decide pass/fail.
+//
+// The field is OPTIONAL and ADDITIVE. Existing findings produced before this
+// type existed have `pocSteps === undefined` and continue to round-trip
+// unchanged through every renderer, exporter, the DB, and the cloud sink.
+
+/** Stage of a PoC step in the discover → exploit → verify lifecycle. */
+export type PocStepKind = "setup" | "auth" | "prerequisite" | "exploit" | "verify";
+
+/**
+ * Action of a PoC step. Discriminated union keyed on `type`. Exactly one
+ * variant is set; downstream executors switch on `type` to dispatch.
+ *
+ * - `shell` — a command to run in a shell. `cwd` is optional and defaults to
+ *   the executor's working directory.
+ * - `http` — a single HTTP request. `headers`/`body` optional.
+ * - `docker` — a docker run with image + args, used when the PoC needs a
+ *   side-container (e.g. attacker-controlled HTTP listener).
+ * - `note` — operator-narrated, non-executable step. Renders into screenshots
+ *   and advisories but is skipped by the behavioural re-verify executor.
+ */
+export type PocStepAction =
+  | { type: "shell"; cmd: string; cwd?: string }
+  | {
+      type: "http";
+      method: string;
+      url: string;
+      headers?: Record<string, string>;
+      body?: string;
+    }
+  | { type: "docker"; image: string; args: string[] }
+  | { type: "note"; text: string };
+
+/**
+ * Predicate the behavioural re-verify executor checks after running an action.
+ * If `expect` is undefined the step is treated as informational and any
+ * non-throwing execution counts as pass.
+ *
+ * - `exit-zero` — process exited 0 (only meaningful for shell/docker).
+ * - `http-status` — HTTP status equals the given code or is a member of the
+ *   given set.
+ * - `body-contains` — response body contains the given substring (HTTP) or
+ *   stdout contains it (shell/docker).
+ * - `body-matches` — response body matches the given regex pattern.
+ * - `file-exists` — the named path exists after the step ran.
+ */
+export type PocStepExpect =
+  | { type: "exit-zero" }
+  | { type: "http-status"; status: number | number[] }
+  | { type: "body-contains"; text: string }
+  | { type: "body-matches"; pattern: string }
+  | { type: "file-exists"; path: string };
+
+export interface PocStep {
+  /** Stable identifier — used by the screenshot renderer to name its output. */
+  id: string;
+  /** Lifecycle stage of this step. */
+  kind: PocStepKind;
+  /** One-line description shown as caption in screenshots and the advisory. */
+  summary: string;
+  /** How to execute this step. Exactly one variant set. */
+  action: PocStepAction;
+  /**
+   * Optional predicate the re-verify executor checks. When present, the step
+   * counts as pass only if the predicate is satisfied; otherwise the step is
+   * informational.
+   */
+  expect?: PocStepExpect;
 }
 
 // ── Kernel Crash Reports ──
