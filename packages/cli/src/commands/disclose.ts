@@ -3,19 +3,25 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
-import type { Finding, AttackCategory, Severity, Evidence, FindingStatus } from "@pwnkit/shared";
+import type { Finding, AttackCategory, Severity, Evidence, FindingStatus, PocStep } from "@pwnkit/shared";
 import {
   renderAdvisoryMarkdown,
   renderExploitScreenshot,
   isFreezeAvailable,
   verifyAgainstRef,
   detectVersionRange,
+<<<<<<< HEAD
   extractSiblingFix,
+=======
+  executePocSteps,
+>>>>>>> e117777 (feat(disclose): PoC execution runtime (closes #171))
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
   type VersionRangeResult,
   type PatchStatus,
+  type PocExecutionReport,
+  type PocExecutionTarget,
 } from "@pwnkit/core";
 
 interface DiscloseOptions {
@@ -28,6 +34,10 @@ interface DiscloseOptions {
   repo?: string;
   ref?: string;
   dropFixed?: boolean;
+  reverify?: boolean;
+  targetUrl?: string;
+  targetEnv?: string[];
+  targetTimeoutMs?: string;
 }
 
 const STATUS_COLOUR: Record<PatchStatus, (s: string) => string> = {
@@ -56,6 +66,7 @@ interface FindingRow {
   evidenceAnalysis?: string | null;
   cvssVector?: string | null;
   cvssScore?: number | null;
+  pocSteps?: string | null;
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -86,8 +97,41 @@ function rowToFinding(row: FindingRow): Finding {
   };
   if (row.cvssVector) finding.cvssVector = row.cvssVector;
   if (row.cvssScore !== null && row.cvssScore !== undefined) finding.cvssScore = row.cvssScore;
+  if (row.pocSteps) {
+    try {
+      const parsed = JSON.parse(row.pocSteps) as PocStep[];
+      if (Array.isArray(parsed) && parsed.length > 0) finding.pocSteps = parsed;
+    } catch {
+      // Malformed pocSteps blob — drop silently and fall back to evidence prose.
+    }
+  }
   return finding;
 }
+
+/**
+ * Parse `--target-env KEY=VAL --target-env OTHER=VAL` repeated flags into a
+ * `Record<string, string>` shaped for `PocExecutionTarget.env`.
+ */
+function parseTargetEnv(pairs: string[] | undefined): Record<string, string> | undefined {
+  if (!pairs || pairs.length === 0) return undefined;
+  const out: Record<string, string> = {};
+  for (const raw of pairs) {
+    const eq = raw.indexOf("=");
+    if (eq <= 0) {
+      throw new Error(`--target-env expects KEY=VALUE, got: ${raw}`);
+    }
+    const k = raw.slice(0, eq);
+    const v = raw.slice(eq + 1);
+    out[k] = v;
+  }
+  return out;
+}
+
+const VERDICT_COLOUR: Record<NonNullable<PocExecutionReport["overallVerdict"]>, (s: string) => string> = {
+  exploit_still_works: (s) => chalk.green(s),
+  exploit_broken: (s) => chalk.yellow(s),
+  could_not_run: (s) => chalk.red(s),
+};
 
 function resolveOutputDir(opts: DiscloseOptions, scanId: string): string {
   if (opts.outputDir) return resolve(opts.outputDir);
@@ -134,6 +178,15 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
 
     const freezeOn = !opts.noScreenshots && !opts.dryRun && isFreezeAvailable();
     const reverifyOn = !!opts.repo;
+    const behaviouralOn = !!opts.reverify && !!opts.targetUrl;
+    if (opts.reverify && !opts.targetUrl) {
+      throw new Error("--reverify requires --target-url <url> to dispatch http actions against.");
+    }
+    const targetEnv = parseTargetEnv(opts.targetEnv);
+    const targetTimeoutMs = opts.targetTimeoutMs ? Number(opts.targetTimeoutMs) : undefined;
+    if (targetTimeoutMs !== undefined && (!Number.isFinite(targetTimeoutMs) || targetTimeoutMs <= 0)) {
+      throw new Error(`--target-timeout-ms must be a positive integer, got: ${opts.targetTimeoutMs}`);
+    }
     const droppedDir = join(outputDir, "_dropped");
     console.log(chalk.red.bold("\n  ◆ pwnkit") + chalk.gray(` disclose — ${selected.length} finding${selected.length === 1 ? "" : "s"}`));
     console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`));
@@ -143,14 +196,36 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     } else {
       console.log(chalk.gray(`  reverify:    disabled (pass --repo to enable)`));
     }
+    if (behaviouralOn) {
+      console.log(chalk.gray(`  behavioural: ${opts.targetUrl}${targetTimeoutMs ? ` (timeout=${targetTimeoutMs}ms)` : ""}`));
+    } else {
+      console.log(chalk.gray(`  behavioural: disabled (pass --reverify --target-url to enable)`));
+    }
     console.log("");
 
     type ResultState = "wrote" | "skipped-exists" | "dropped";
-    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus; state: ResultState }> = [];
+    const results: Array<{ finding: FindingRow; filename: string; primaryCwe: string; cvssScore: number; screenshot: boolean; patchStatus?: PatchStatus; behaviouralVerdict?: PocExecutionReport["overallVerdict"]; state: ResultState }> = [];
     for (const row of selected) {
       const finding = rowToFinding(row);
       let patchStatus: ReverifyResult | undefined;
       let versionRange: VersionRangeResult | undefined;
+      let behaviouralReport: PocExecutionReport | undefined;
+      if (behaviouralOn && finding.pocSteps && finding.pocSteps.length > 0) {
+        const target: PocExecutionTarget = {
+          baseUrl: opts.targetUrl,
+          env: targetEnv,
+          timeoutMs: targetTimeoutMs,
+        };
+        try {
+          behaviouralReport = await executePocSteps(finding, target);
+        } catch (err) {
+          console.log(chalk.red(`  behavioural reverify failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+        if (behaviouralReport && !opts.dryRun) {
+          const execPath = join(outputDir, `${finding.id.slice(0, 8)}.execution.json`);
+          writeFileSync(execPath, JSON.stringify(behaviouralReport, null, 2), "utf8");
+        }
+      }
       if (reverifyOn) {
         try {
           patchStatus = verifyAgainstRef(finding, { repoPath: opts.repo!, ref: opts.ref, checkout: !!opts.ref });
@@ -240,14 +315,17 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           writeFileSync(path, rendered.markdown, "utf8");
         }
       }
-      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status, state });
+      results.push({ finding: row, filename: rendered.filename, primaryCwe: rendered.primaryCwe, cvssScore: rendered.cvssScore, screenshot: wroteShot, patchStatus: patchStatus?.status, behaviouralVerdict: behaviouralReport?.overallVerdict, state });
       const shotMark = wroteShot ? chalk.cyan(" +png") : chalk.gray("     ");
       const patchMark = patchStatus ? " " + STATUS_COLOUR[patchStatus.status](`[${patchStatus.status}]`) : "";
+      const behaviouralMark = behaviouralReport
+        ? " " + VERDICT_COLOUR[behaviouralReport.overallVerdict](`[${behaviouralReport.overallVerdict}]`)
+        : "";
       const verb = state === "skipped-exists"
         ? chalk.yellow("skip ")
         : chalk.green("wrote");
       console.log(
-        `  ${verb}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}`
+        `  ${verb}  ${chalk.white(rendered.filename.padEnd(70))}  ${chalk.cyan(rendered.primaryCwe.padEnd(10))}  ${chalk.dim(`cvss=${rendered.cvssScore.toFixed(1)}`)}${shotMark}${patchMark}${behaviouralMark}`
       );
     }
 
@@ -267,9 +345,9 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         "",
         "## Filing order",
         "",
-        "| State | File | Primary CWE | CVSS | Patch status |",
-        "|---|---|---|---|---|",
-        ...drafts.map((r) => `| ${stateBadge(r.state)} | \`${r.filename}\` | ${r.primaryCwe} | ${r.cvssScore.toFixed(1)} | ${r.patchStatus ?? "—"} |`),
+        "| State | File | Primary CWE | CVSS | Patch status | Behavioural |",
+        "|---|---|---|---|---|---|",
+        ...drafts.map((r) => `| ${stateBadge(r.state)} | \`${r.filename}\` | ${r.primaryCwe} | ${r.cvssScore.toFixed(1)} | ${r.patchStatus ?? "—"} | ${r.behaviouralVerdict ?? "—"} |`),
         ...(dropped.length > 0 ? [
           "",
           "## Dropped",
@@ -308,6 +386,10 @@ export function registerDiscloseCommand(program: Command): void {
     .option("--repo <path>", "Local git checkout of the target repo to re-verify findings against")
     .option("--ref <tag>", "Git ref (tag/sha/branch) to check out before verifying — defaults to the repo's current HEAD")
     .option("--drop-fixed", "Move findings whose status is 'fixed' or 'file-removed' into _dropped/ with a reason file instead of drafting an advisory for them", false)
+    .option("--reverify", "Behaviourally re-verify each finding's PoC step graph against a live target. Requires --target-url.", false)
+    .option("--target-url <url>", "Base URL the behavioural re-verify runtime dispatches http actions against (e.g. http://localhost:3108)")
+    .option("--target-env <kv...>", "Repeated KEY=VALUE pairs added to the shell-action environment for behavioural re-verify")
+    .option("--target-timeout-ms <ms>", "Per-step timeout for behavioural re-verify, in milliseconds (default 30000)")
     .option("--dry-run", "Show what would be written without writing files", false)
     .action(async (findingId: string | undefined, opts: DiscloseOptions) => {
       await disclose(findingId, opts);

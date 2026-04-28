@@ -12,3 +12,16 @@ export { detectVersionRange, formatVersionRangeLine } from "./version-range.js";
 export type { VersionRangeResult, VersionRangeOptions } from "./version-range.js";
 export { extractSiblingFix } from "./sibling-fix.js";
 export type { SiblingFixCandidate, SiblingFixOptions } from "./sibling-fix.js";
+export {
+  executePocSteps,
+  setRuntimeDeps,
+  MAX_CAPTURE_BYTES,
+  DEFAULT_STEP_TIMEOUT_MS,
+} from "./poc-runtime.js";
+export type {
+  PocExecutionTarget,
+  PocExecutionReport,
+  PocStepResult,
+  PocStepVerdict,
+  PocOverallVerdict,
+} from "./poc-runtime.js";
