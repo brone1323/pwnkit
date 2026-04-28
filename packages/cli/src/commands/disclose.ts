@@ -10,6 +10,7 @@ import {
   isFreezeAvailable,
   verifyAgainstRef,
   detectVersionRange,
+  extractSiblingFix,
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
@@ -160,6 +161,30 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           versionRange = detectVersionRange(finding, { repoPath: opts.repo! });
         } catch (err) {
           console.log(chalk.red(`  version-range failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+        // Sibling-code correct-pattern extractor (#172). If the finding has no
+        // pre-populated code example, scan its prose for "correct pattern at
+        // file.ts:N" cues and read the matching snippet from the local repo —
+        // the advisory template renders this verbatim under "Suggested fix".
+        if (!finding.remediation?.codeExample?.after) {
+          try {
+            const sibling = extractSiblingFix(finding, { repoPath: opts.repo! });
+            if (sibling) {
+              const existing = finding.remediation;
+              finding.remediation = {
+                summary: existing?.summary ?? "",
+                steps: existing?.steps ?? [],
+                references: existing?.references ?? [],
+                codeExample: {
+                  before: "",
+                  after: sibling.snippet,
+                  language: sibling.language,
+                },
+              };
+            }
+          } catch (err) {
+            console.log(chalk.red(`  sibling-fix failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+          }
         }
       }
 
