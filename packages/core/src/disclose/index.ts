@@ -4,7 +4,7 @@ export { suggestCvss } from "./cvss.js";
 export type { CvssSuggestion } from "./cvss.js";
 export { renderAdvisoryMarkdown } from "./template.js";
 export type { AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory } from "./template.js";
-export { renderExploitScreenshot, isFreezeAvailable, composeExploitSession } from "./screenshots.js";
+export { renderExploitScreenshot, isFreezeAvailable, composeExploitSession, composeStepSession } from "./screenshots.js";
 export type { ScreenshotResult, ScreenshotOptions } from "./screenshots.js";
 export { verifyAgainstRef, extractFileRefs, formatPatchStatusSection } from "./canary.js";
 export type { PatchStatus, FileRef, ReverifyResult, ReverifyOptions } from "./canary.js";
@@ -25,3 +25,11 @@ export type {
   PocStepVerdict,
   PocOverallVerdict,
 } from "./poc-runtime.js";
+export {
+  decideFilingState,
+  assembleBundleIndex,
+  formatDroppedReason,
+  droppedFilename,
+  dropSlug,
+} from "./bundle.js";
+export type { FilingState, BundleEntry, AssembleIndexOptions } from "./bundle.js";
