@@ -132,6 +132,16 @@ export interface NativeAgentState {
    * `state.findings` are preserved.
    */
   costCeilingExceeded: boolean;
+  /**
+   * Set when the loop terminated because the planner LLM call returned an
+   * error (or empty response). The legacy `state.summary = "Error: ..."`
+   * marker is preserved for back-compat with downstream readers, but this
+   * structured signal is what callers should branch on to surface a
+   * `failed` exit_reason to the cloud / CLI rather than the default
+   * `completed` path. Carries the raw error message and the turn at which
+   * the loop bailed out.
+   */
+  errorExit?: { error: string; turn: number };
 }
 
 /**
@@ -423,7 +433,13 @@ export async function runNativeAgentLoop(
       const errorMsg = result.error || "API returned empty response (0 tokens) — model may be rate-limited or unavailable";
       process.stderr.write(`[pwnkit] Agent loop error on turn ${state.turnCount}: ${errorMsg}\n`);
       onEvent?.("agent_error", { turn: state.turnCount, error: errorMsg });
+      // Preserve the legacy summary marker — downstream readers (cloud
+      // relay legacy paths, CLI TUI) still key on the "Error: " prefix
+      // for back-compat. The `errorExit` field below is the structured
+      // signal modern callers should branch on to distinguish a planner
+      // bailout from a clean completion.
       state.summary = `Error: ${errorMsg}`;
+      state.errorExit = { error: errorMsg, turn: state.turnCount };
       if (db) {
         db.logEvent({
           scanId: config.scanId,

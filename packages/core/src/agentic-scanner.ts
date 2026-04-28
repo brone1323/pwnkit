@@ -1548,15 +1548,33 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     // Stream final report to the opt-in webhook sink (no-op when unset).
     await postFinalReport(report);
 
-    emitScanCompleted("completed", report.findings.length, {
-      turnsUsed:
-        (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
-      // `attackState.summary` is the loop's free-text narrative
-      // ("Audited lodash, no exploitable sinks found"). `report.summary`
-      // is severity counts ({critical, high, medium, low, info}), not
-      // narrative — it goes to `findings` field instead.
-      summary: attackState?.summary ?? discoveryState?.summary,
-    });
+    // If either stage's agent loop bailed because the planner LLM
+    // returned an error (e.g. transient Azure OpenAI 5xx), the loop
+    // already drained and produced an empty/partial report — but the
+    // exit_reason MUST surface as "failed" to the cloud, not
+    // "completed". Without this, the cloud persists status='complete'
+    // and shows the raw "Error: ..." string as the scan summary,
+    // mislabeling a legitimate failure as a clean pass. See
+    // pwnkit-cloud scan 3abdf5b7-873d-449b-ab3f-e9a38f05a778 for the
+    // reproducer that motivated this branch.
+    const planError = attackState?.errorExit ?? discoveryState?.errorExit;
+    if (planError) {
+      emitScanCompleted("failed", report.findings.length, {
+        turnsUsed:
+          (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
+        summary: planError.error,
+      });
+    } else {
+      emitScanCompleted("completed", report.findings.length, {
+        turnsUsed:
+          (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
+        // `attackState.summary` is the loop's free-text narrative
+        // ("Audited lodash, no exploitable sinks found"). `report.summary`
+        // is severity counts ({critical, high, medium, low, info}), not
+        // narrative — it goes to `findings` field instead.
+        summary: attackState?.summary ?? discoveryState?.summary,
+      });
+    }
     return report;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1597,6 +1615,14 @@ interface AgentOutput {
   estimatedCostUsd: number;
   /** True when this stage terminated because the cost ceiling was hit. */
   costCeilingExceeded?: boolean;
+  /**
+   * Set when the agent loop bailed because the planner LLM returned an
+   * error (or empty response). Propagated up from `NativeAgentState.errorExit`
+   * so the top-level scan can flip `exit_reason` from "completed" to "failed"
+   * — the legacy `summary` field still carries the raw "Error: ..." marker
+   * for back-compat with older readers.
+   */
+  errorExit?: { error: string; turn: number };
   /** Full conversation trace (messages) from the agent loop. */
   messages?: NativeMessage[];
 }
@@ -1670,6 +1696,7 @@ async function runNativeDiscovery(
     summary: state.summary,
     turnCount: state.turnCount,
     estimatedCostUsd: state.estimatedCostUsd,
+    errorExit: state.errorExit,
     messages: state.messages,
   };
 }
@@ -1941,6 +1968,9 @@ async function runNativeAttack(
       turnCount: totalTurns,
       estimatedCostUsd: state.estimatedCostUsd + retryState.estimatedCostUsd,
       costCeilingExceeded: state.costCeilingExceeded || retryState.costCeilingExceeded,
+      // If either attempt bailed on a planner error, surface the latest
+      // one (retry takes precedence — it ran most recently).
+      errorExit: retryState.errorExit ?? state.errorExit,
       messages: [...state.messages, ...retryState.messages],
     };
   }
@@ -1954,6 +1984,7 @@ async function runNativeAttack(
     turnCount: state.turnCount,
     estimatedCostUsd: state.estimatedCostUsd,
     costCeilingExceeded: state.costCeilingExceeded,
+    errorExit: state.errorExit,
     messages: state.messages,
   };
 }
