@@ -75,6 +75,21 @@ export interface NativeRuntimeResult {
 export interface NativeStreamCallbacks {
   onThinking?: (text: string) => void;
   onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+  /**
+   * Token-level streaming hook. Fired for every SSE delta event while the
+   * runtime is still streaming the response. `text` is just the incremental
+   * fragment, NOT the full accumulated buffer — callers concatenate.
+   *
+   * `scope`:
+   *   - `"assistant_response"` — visible text the model is producing
+   *     (Responses API: `response.output_text.delta`).
+   *   - `"reasoning"` — the hidden reasoning summary channel
+   *     (Responses API: `response.reasoning_summary_text.delta`).
+   *
+   * Wired in the agent loop only when a cloud sink is active so non-cloud
+   * runs pay zero per-token overhead.
+   */
+  onDelta?: (scope: "assistant_response" | "reasoning", text: string) => void;
 }
 
 export interface NativeRuntime {

@@ -1148,10 +1148,25 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
         }
 
         const type = String(event.type ?? "");
+        if (type === "response.output_text.delta") {
+          // Visible assistant text streaming. We don't accumulate locally —
+          // the agent loop's batcher is responsible for coalescing fragments
+          // before they hit the event bus. Just forward the raw fragment.
+          const delta = typeof event.delta === "string" ? event.delta : "";
+          if (delta) {
+            callbacks?.onDelta?.("assistant_response", delta);
+          }
+          continue;
+        }
+
         if (type === "response.reasoning_summary_text.delta") {
           const delta = typeof event.delta === "string" ? event.delta : "";
           if (delta) {
             thinkingText += delta;
+            // Forward the raw fragment to the cloud-side delta hook BEFORE
+            // running the local thinking-emit heuristic — the cloud needs
+            // the live stream, not the heuristic-throttled snapshots.
+            callbacks?.onDelta?.("reasoning", delta);
             emitThinking(false);
           }
           continue;

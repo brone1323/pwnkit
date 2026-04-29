@@ -51,6 +51,7 @@ import {
 import { runSelfConsistencyVerify } from "./triage/verify-pipeline.js";
 import { generatePov } from "./triage/pov-gate.js";
 import { getCloudSinkConfig, postFinding, postFinalReport } from "./cloud-sink.js";
+import { eventBus } from "./events/bus.js";
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -333,6 +334,83 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     timestamp: Date.now(),
   });
 
+  // Event-bus instrumentation: `agenticScan` has multiple exit paths (MCP
+  // short-circuit, cost-ceiling partial report, normal report return, and the
+  // catch re-throw). Each must emit a single `scan_completed` event so the
+  // cloud worker-controller / dashboard tracer can transition the scan to a
+  // terminal state. `scan()` in scanner.ts does NOT call agenticScan(), so
+  // there is no double-emit risk from nesting — but we still guard against
+  // double-fire from sloppy refactors via the `emittedScanCompleted` latch.
+  let emittedScanCompleted = false;
+  const scanStartedAt = Date.now();
+
+  // ── Per-scan metrics tracked off the bus ─────────────────────────
+  // `tool_calls_total` and `summary` (the agent's final narrative) get
+  // surfaced on the cloud scan card / detail page so a no-findings scan
+  // still tells the operator how much work happened. Tracked here in
+  // the scanner (the producer) so the cloud doesn't re-derive these
+  // from raw scan_events on every page load — see
+  // pwnkit-cloud/services/dashboard/src/routes/_authed/$orgSlug/scans/index.tsx.
+  let toolCallsTotal = 0;
+  let lastDoneSummary = "";
+  const unsubscribeMetrics = eventBus.subscribe({
+    emit(type, payload) {
+      if (type === "tool_call_completed") {
+        toolCallsTotal += 1;
+        return;
+      }
+      if (type === "tool_call_started") {
+        // Capture the `done` tool's args_preview verbatim — it's the
+        // model's final 1-2 sentence narrative ("Audited lodash, no
+        // exploitable sinks found"). Last write wins so a `done` call
+        // in a retry loop overwrites the first-attempt summary.
+        const tool = payload.tool;
+        const argsPreview = payload.args_preview;
+        if (
+          tool === "done" &&
+          typeof argsPreview === "string"
+        ) {
+          const stripped = argsPreview
+            .replace(/^done\s*:\s*/i, "")
+            .trim();
+          if (stripped) lastDoneSummary = stripped;
+        }
+      }
+    },
+  });
+
+  const emitScanCompleted = (
+    exit_reason: "completed" | "failed" | "cost_exceeded" | "max_turns" | "early_stop",
+    findings_count: number,
+    metrics?: { turnsUsed?: number; summary?: string },
+  ): void => {
+    if (emittedScanCompleted) return;
+    emittedScanCompleted = true;
+    try {
+      // Caller-provided summary (from the loop's `state.summary` field)
+      // wins over the bus-derived `lastDoneSummary` because the loop's
+      // version may aggregate retries; fall back to the bus capture for
+      // exit paths that don't surface a state object (e.g. early-fail).
+      const summary =
+        (metrics?.summary && metrics.summary.trim()) ||
+        lastDoneSummary ||
+        undefined;
+      eventBus.emit("scan_completed", {
+        exit_reason,
+        findings: findings_count,
+        findings_count,
+        duration_ms: Date.now() - scanStartedAt,
+        turns_used: metrics?.turnsUsed,
+        tool_calls_total: toolCallsTotal,
+        summary,
+      });
+    } catch {
+      /* bus is fail-soft, but be defensive */
+    } finally {
+      unsubscribeMetrics();
+    }
+  };
+
   try {
     if (!useNative && selectedRuntimeType === "codex") {
       throw new Error(
@@ -419,6 +497,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       emit({ type: "stage:end", stage: "report", message: `Report: ${summary.totalFindings} findings` });
       // Stream final report to the opt-in webhook sink (no-op when unset).
       await postFinalReport(report);
+      emitScanCompleted("completed", allFindings.length);
       return report;
     }
 
@@ -689,6 +768,11 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
         timestamp: Date.now(),
       });
 
+      emitScanCompleted("cost_exceeded", allFindings.length, {
+        turnsUsed:
+          (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
+        summary: attackState?.summary ?? discoveryState?.summary,
+      });
       return partialReport;
     }
 
@@ -1465,6 +1549,33 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     // Stream final report to the opt-in webhook sink (no-op when unset).
     await postFinalReport(report);
 
+    // If either stage's agent loop bailed because the planner LLM
+    // returned an error (e.g. transient Azure OpenAI 5xx), the loop
+    // already drained and produced an empty/partial report — but the
+    // exit_reason MUST surface as "failed" to the cloud, not
+    // "completed". Without this, the cloud persists status='complete'
+    // and shows the raw "Error: ..." string as the scan summary,
+    // mislabeling a legitimate failure as a clean pass. See
+    // pwnkit-cloud scan 3abdf5b7-873d-449b-ab3f-e9a38f05a778 for the
+    // reproducer that motivated this branch.
+    const planError = attackState?.errorExit ?? discoveryState?.errorExit;
+    if (planError) {
+      emitScanCompleted("failed", report.findings.length, {
+        turnsUsed:
+          (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
+        summary: planError.error,
+      });
+    } else {
+      emitScanCompleted("completed", report.findings.length, {
+        turnsUsed:
+          (discoveryState?.turnCount ?? 0) + (attackState?.turnCount ?? 0),
+        // `attackState.summary` is the loop's free-text narrative
+        // ("Audited lodash, no exploitable sinks found"). `report.summary`
+        // is severity counts ({critical, high, medium, low, info}), not
+        // narrative — it goes to `findings` field instead.
+        summary: attackState?.summary ?? discoveryState?.summary,
+      });
+    }
     return report;
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
@@ -1482,8 +1593,15 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       payload: { error: msg },
       timestamp: Date.now(),
     });
+    emitScanCompleted("failed", allFindings.length);
     throw err;
   } finally {
+    // Safety net: if none of the normal exit paths fired (e.g. a synchronous
+    // exception bypassed the catch above, or a future refactor adds a new
+    // return site), ensure the cloud relay still sees a terminal event.
+    if (!emittedScanCompleted) {
+      emitScanCompleted("failed", allFindings.length);
+    }
     db.close();
   }
 }
@@ -1498,6 +1616,14 @@ interface AgentOutput {
   estimatedCostUsd: number;
   /** True when this stage terminated because the cost ceiling was hit. */
   costCeilingExceeded?: boolean;
+  /**
+   * Set when the agent loop bailed because the planner LLM returned an
+   * error (or empty response). Propagated up from `NativeAgentState.errorExit`
+   * so the top-level scan can flip `exit_reason` from "completed" to "failed"
+   * — the legacy `summary` field still carries the raw "Error: ..." marker
+   * for back-compat with older readers.
+   */
+  errorExit?: { error: string; turn: number };
   /** Full conversation trace (messages) from the agent loop. */
   messages?: NativeMessage[];
 }
@@ -1571,6 +1697,7 @@ async function runNativeDiscovery(
     summary: state.summary,
     turnCount: state.turnCount,
     estimatedCostUsd: state.estimatedCostUsd,
+    errorExit: state.errorExit,
     messages: state.messages,
   };
 }
@@ -1842,6 +1969,9 @@ async function runNativeAttack(
       turnCount: totalTurns,
       estimatedCostUsd: state.estimatedCostUsd + retryState.estimatedCostUsd,
       costCeilingExceeded: state.costCeilingExceeded || retryState.costCeilingExceeded,
+      // If either attempt bailed on a planner error, surface the latest
+      // one (retry takes precedence — it ran most recently).
+      errorExit: retryState.errorExit ?? state.errorExit,
       messages: [...state.messages, ...retryState.messages],
     };
   }
@@ -1855,6 +1985,7 @@ async function runNativeAttack(
     turnCount: state.turnCount,
     estimatedCostUsd: state.estimatedCostUsd,
     costCeilingExceeded: state.costCeilingExceeded,
+    errorExit: state.errorExit,
     messages: state.messages,
   };
 }
@@ -2229,8 +2360,8 @@ function dbFindingToFinding(dbf: {
   evidenceRequest: string;
   evidenceResponse: string;
   evidenceAnalysis: string | null;
-  layerVerdicts?: string | null;
   pocSteps?: string | null;
+  layerVerdicts?: string | null;
   timestamp: number;
 }): Finding {
   let layerVerdicts: LayerVerdict[] | undefined;
@@ -2275,6 +2406,7 @@ function dbFindingToFinding(dbf: {
       response: dbf.evidenceResponse,
       analysis: dbf.evidenceAnalysis ?? undefined,
     },
+    ...(pocSteps ? { pocSteps } : {}),
     ...(layerVerdicts ? { layerVerdicts } : {}),
     ...(pocSteps ? { pocSteps } : {}),
     timestamp: dbf.timestamp,
