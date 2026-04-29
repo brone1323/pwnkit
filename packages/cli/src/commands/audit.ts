@@ -8,7 +8,18 @@ export function registerAuditCommand(program: Command): void {
     .description("Audit a package for security vulnerabilities")
     .argument("<package>", "package name (e.g. lodash, express, requests)")
     .option("--ecosystem <ecosystem>", "Package ecosystem: npm, pypi, cargo, oci", "npm")
-    .option("--version <version>", "Specific version to audit (default: latest)")
+    // `--package-version` rather than `--version` because Commander reserves
+    // `-V, --version` as the global "show CLI version" flag — if we declare
+    // `--version <ver>` here, Commander's root parser eats `--version` first
+    // and prints the CLI version instead of routing it into the audit
+    // subcommand. Aliasing a less-conflicting name (with `--pkg-version` and
+    // `--ver` shortcuts) avoids the collision.
+    .option(
+      "--package-version <version>",
+      "Specific package version to audit (default: latest)",
+    )
+    .option("--pkg-version <version>", "Alias for --package-version")
+    .option("--ver <version>", "Alias for --package-version")
     .option("--depth <depth>", "Audit depth: quick, default, deep", "default")
     .option("--format <format>", "Output format: terminal, json, md, html, sarif, pdf", "terminal")
     .option("--runtime <runtime>", "Runtime: auto, claude, codex, gemini, api", "auto")
@@ -52,7 +63,11 @@ export function registerAuditCommand(program: Command): void {
         dbPath: opts.dbPath as string | undefined,
         apiKey: opts.apiKey as string | undefined,
         model: opts.model as string | undefined,
-        packageVersion: opts.version as string | undefined,
+        // Read in priority: --package-version, --pkg-version, --ver.
+        packageVersion:
+          (opts.packageVersion as string | undefined) ??
+          (opts.pkgVersion as string | undefined) ??
+          (opts.ver as string | undefined),
         costCeilingUsd,
         tui: opts.tui as boolean,
       });
