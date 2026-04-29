@@ -3,7 +3,17 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
+import { maybeSubscribeCloudEventSink } from "@pwnkit/core";
 import type { HomeSelection } from "./tui/run.js";
+
+// Subscribe the cloud-event sink before any subcommand runs. Idempotent
+// + env-gated (PWNKIT_CLOUD_EVENTS=1): the sink writes one
+// `PWNKIT_EVENT_<TYPE>` line per emitted event to stdout, which the
+// pwnkit-cloud worker-controller's stdout streamer parses and POSTs to
+// the orchestrator's /scans/:id/events endpoint. Without this call,
+// the sink module is dead code and the cloud's live-trace UI stays
+// dark for every scan.
+maybeSubscribeCloudEventSink();
 import {
   registerScanCommand,
   registerResumeCommand,

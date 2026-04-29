@@ -132,6 +132,18 @@ export { parseCrashReport, crashToFinding, ingestArtifactsFromDirectory, ingestA
 export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, validateCrashReportConsistency } from "./triage/kernel-oracle.js";
 export type { KernelOracleResult, ReproducerResult, CrashSignatureMatch, ConsistencyResult } from "./triage/kernel-oracle.js";
 
+// Cloud event-bus sink (PWNKIT_CLOUD_EVENTS=1 → emit `PWNKIT_EVENT_<TYPE>`
+// lines on stdout for the pwnkit-cloud worker-controller to relay).
+// The CLI entry must call `maybeSubscribeCloudEventSink()` so the sink
+// subscribes once; without that call the sink module is dead code and
+// the cloud's live-trace UI stays dark for every scan.
+export {
+  eventBus,
+  cloudEventSink,
+  maybeSubscribeCloudEventSink,
+  isCloudEventSinkActive,
+} from "./events/bus.js";
+
 // Disclosure bundle assembly (finding → GHSA-ready advisory markdown)
 export { suggestCwesForCategory, formatCweSection, suggestCvss, renderAdvisoryMarkdown, renderExploitScreenshot, isFreezeAvailable, composeExploitSession, composeStepSession, verifyAgainstRef, extractFileRefs, formatPatchStatusSection, detectVersionRange, formatVersionRangeLine, extractSiblingFix, executePocSteps, setRuntimeDeps, MAX_CAPTURE_BYTES, DEFAULT_STEP_TIMEOUT_MS, decideFilingState, assembleBundleIndex, formatDroppedReason, droppedFilename, dropSlug } from "./disclose/index.js";
 export type { CweEntry, CvssSuggestion, AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory, ScreenshotResult, ScreenshotOptions, PatchStatus, FileRef, ReverifyResult, ReverifyOptions, VersionRangeResult, VersionRangeOptions, SiblingFixCandidate, SiblingFixOptions, PocExecutionTarget, PocExecutionReport, PocStepResult, PocStepVerdict, PocOverallVerdict, FilingState, BundleEntry, AssembleIndexOptions } from "./disclose/index.js";
