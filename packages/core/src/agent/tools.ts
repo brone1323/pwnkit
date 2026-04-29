@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawnSync, spawn } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import { isIP } from "node:net";
 import type { Finding, AttackResult, PocStep, TargetInfo } from "@pwnkit/shared";
@@ -55,6 +55,143 @@ function sanitizedEnv(): Record<string, string> {
       ([key]) => !SENSITIVE_ENV_PATTERNS.some((p) => key.includes(p)),
     ),
   ) as Record<string, string>;
+}
+
+// ── Bash tool wallclock ceiling ──
+//
+// Hard upper bound on how long a single `bash` tool invocation may run before
+// the subprocess (and its descendants) are forcibly reaped. This defends
+// against scripts that block on network I/O without a client-side timeout —
+// the canonical case being `python3 -c 'requests.post(…)'`, where `requests`
+// has no default timeout and a hung remote can wedge the agent indefinitely.
+//
+// See https://github.com/PwnKit-Labs/pwnkit/issues/181
+
+const DEFAULT_BASH_WALLCLOCK_MS = 120_000;
+const BASH_GRACE_MS = 2_000;
+
+function resolveBashWallclockCeilingMs(): number {
+  const raw = process.env.PWNKIT_BASH_TIMEOUT_MS?.trim();
+  if (!raw) return DEFAULT_BASH_WALLCLOCK_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return DEFAULT_BASH_WALLCLOCK_MS;
+  return Math.floor(parsed);
+}
+
+type BashOutcome =
+  | { kind: "exit"; exitCode: number; combined: string }
+  | { kind: "timeout"; partial: string }
+  | { kind: "error"; message: string };
+
+interface BashRunOptions {
+  timeoutMs: number;
+  ceilingMs: number;
+  env: Record<string, string>;
+}
+
+/**
+ * Run a shell command with a hard wallclock ceiling. The child is its own
+ * process group leader (`detached: true`); on timeout we signal the entire
+ * group so any forked grandchildren (`python3 -c '…'`, `curl`, etc.) die
+ * alongside the shell. SIGTERM first, then SIGKILL after a short grace.
+ *
+ * Exported via the module-private `runBashWithWallclock` helper so the bash
+ * tool's `shellExec` can consume a typed outcome rather than wrapping the
+ * raw spawn lifecycle inline.
+ */
+async function runBashWithWallclock(
+  command: string,
+  opts: BashRunOptions,
+): Promise<BashOutcome> {
+  return new Promise((resolvePromise) => {
+    let child;
+    try {
+      child = spawn("/bin/bash", ["-c", command], {
+        env: opts.env,
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: true,
+      });
+    } catch (err) {
+      resolvePromise({
+        kind: "error",
+        message: err instanceof Error ? err.message : String(err),
+      });
+      return;
+    }
+
+    const MAX_BUFFER = 1024 * 1024; // 1MB, matches prior execSync limit
+    let stdoutLen = 0;
+    let stderrLen = 0;
+    const stdoutChunks: string[] = [];
+    const stderrChunks: string[] = [];
+    let timedOut = false;
+    let settled = false;
+
+    child.stdout?.setEncoding("utf-8");
+    child.stderr?.setEncoding("utf-8");
+    child.stdout?.on("data", (chunk: string) => {
+      if (stdoutLen >= MAX_BUFFER) return;
+      stdoutChunks.push(chunk);
+      stdoutLen += chunk.length;
+    });
+    child.stderr?.on("data", (chunk: string) => {
+      if (stderrLen >= MAX_BUFFER) return;
+      stderrChunks.push(chunk);
+      stderrLen += chunk.length;
+    });
+
+    const collected = (): string =>
+      (stdoutChunks.join("") + "\n" + stderrChunks.join("")).trim();
+
+    const killGroup = (signal: NodeJS.Signals) => {
+      const pid = child.pid;
+      if (typeof pid !== "number") return;
+      // Negative pid targets the process group (because we spawned detached).
+      try {
+        process.kill(-pid, signal);
+      } catch {
+        // Process may already be gone; fall back to per-pid kill.
+        try {
+          process.kill(pid, signal);
+        } catch {
+          /* already dead */
+        }
+      }
+    };
+
+    const timer = setTimeout(() => {
+      timedOut = true;
+      killGroup("SIGTERM");
+      // Escalate after a short grace if the group ignored SIGTERM.
+      setTimeout(() => {
+        if (!settled) killGroup("SIGKILL");
+      }, BASH_GRACE_MS).unref?.();
+    }, opts.timeoutMs);
+    timer.unref?.();
+
+    const settle = (outcome: BashOutcome) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolvePromise(outcome);
+    };
+
+    child.on("error", (err: Error) => {
+      settle({ kind: "error", message: err.message });
+    });
+
+    child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
+      if (timedOut) {
+        settle({ kind: "timeout", partial: collected() });
+        return;
+      }
+      // Process killed by signal but not from our timer — surface as exit -1
+      // with whatever output we captured. Preserves prior execSync behaviour
+      // of returning combined output for non-zero exits.
+      const exitCode = typeof code === "number" ? code : signal ? 1 : 0;
+      settle({ kind: "exit", exitCode, combined: collected() });
+    });
+  });
 }
 
 // ── Tool Registry ──
@@ -1167,47 +1304,54 @@ export class ToolExecutor {
       return { success: false, output: null, error: "Command is required" };
     }
 
-    const timeoutSec = Math.min((args.timeout as number) ?? 30, 120);
+    // Per-call requested timeout (caller arg) is clamped against the wallclock
+    // ceiling. Even if the caller asks for a longer one, we never exceed the
+    // ceiling — a runaway subprocess (e.g. python3 requests.post with no
+    // timeout) must not be able to wedge the agent indefinitely.
+    const ceilingMs = resolveBashWallclockCeilingMs();
+    const requestedMs = Math.max(1, ((args.timeout as number) ?? 30) * 1000);
+    const timeoutMs = Math.min(requestedMs, ceilingMs);
 
-    try {
-      const { execSync } = await import("node:child_process");
-      const result = execSync(command, {
-        timeout: timeoutSec * 1000,
-        maxBuffer: 1024 * 1024, // 1MB
-        encoding: "utf-8",
-        shell: "/bin/bash",
-        env: { ...sanitizedEnv(), TARGET: this.ctx.target, ...this.buildAuthEnvVars() },
-        stdio: ["pipe", "pipe", "pipe"],
-      });
+    const env = { ...sanitizedEnv(), TARGET: this.ctx.target, ...this.buildAuthEnvVars() };
 
-      const output = (result ?? "").slice(0, 10_000);
+    const outcome = await runBashWithWallclock(command, { timeoutMs, ceilingMs, env });
 
+    if (outcome.kind === "timeout") {
       this.persistToolArtifact("bash", {
         command: command.slice(0, 500),
-        output: output.slice(0, 2_000),
+        output: outcome.partial.slice(0, 2_000),
+        timedOut: true,
+        timeoutMs,
       });
-
-      return { success: true, output };
-    } catch (err: any) {
-      // execSync throws on non-zero exit — capture stdout+stderr anyway
-      const stdout = (err.stdout as string) ?? "";
-      const stderr = (err.stderr as string) ?? "";
-      const combined = (stdout + "\n" + stderr).trim().slice(0, 10_000);
-
-      if (combined) {
-        // Non-zero exit but we got output — return it as success
-        // (many pentesting tools exit non-zero on findings)
-        this.persistToolArtifact("bash", {
-          command: command.slice(0, 500),
-          output: combined.slice(0, 2_000),
-          exitCode: err.status,
-        });
-        return { success: true, output: combined };
-      }
-
-      const msg = err.killed ? "Command timed out" : (err.message ?? String(err));
-      return { success: false, output: null, error: msg.slice(0, 2_000) };
+      return {
+        success: false,
+        output: null,
+        error: `bash tool timed out after ${Math.round(timeoutMs / 1000)}s (PWNKIT_BASH_TIMEOUT_MS=${ceilingMs})`,
+      };
     }
+
+    if (outcome.kind === "error") {
+      return { success: false, output: null, error: outcome.message.slice(0, 2_000) };
+    }
+
+    const combined = outcome.combined.slice(0, 10_000);
+
+    // Many pentesting tools exit non-zero on findings — if we got output,
+    // surface it as success regardless of exit code (preserves prior behaviour).
+    if (outcome.exitCode === 0 || combined.length > 0) {
+      this.persistToolArtifact("bash", {
+        command: command.slice(0, 500),
+        output: combined.slice(0, 2_000),
+        ...(outcome.exitCode !== 0 ? { exitCode: outcome.exitCode } : {}),
+      });
+      return { success: true, output: combined };
+    }
+
+    return {
+      success: false,
+      output: null,
+      error: `bash exited with code ${outcome.exitCode}`,
+    };
   }
 
   // ── Browser automation (Playwright) ──

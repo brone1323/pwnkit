@@ -467,4 +467,83 @@ describe("ToolExecutor", () => {
     // Either cross-origin or local blocked
     expect(result.error).toBeTruthy();
   });
+
+  // ── bash tool wallclock ceiling ──
+  //
+  // Regression test for https://github.com/PwnKit-Labs/pwnkit/issues/181
+  // A hung subprocess (canonical case: `python3 -c 'requests.post(…)'` with
+  // no timeout) used to wedge the tool indefinitely. The wallclock ceiling
+  // must reap the process group and return an `is_error`-shaped result.
+
+  describe("bash wallclock ceiling", () => {
+    const ORIGINAL_TIMEOUT_MS = process.env.PWNKIT_BASH_TIMEOUT_MS;
+
+    beforeEach(() => {
+      // 1.5s ceiling so the test runs fast.
+      process.env.PWNKIT_BASH_TIMEOUT_MS = "1500";
+    });
+
+    afterEach(() => {
+      if (ORIGINAL_TIMEOUT_MS === undefined) delete process.env.PWNKIT_BASH_TIMEOUT_MS;
+      else process.env.PWNKIT_BASH_TIMEOUT_MS = ORIGINAL_TIMEOUT_MS;
+    });
+
+    it("kills a hanging subprocess and returns a timeout error", async () => {
+      const start = Date.now();
+      const result = await executor.execute({
+        name: "bash",
+        // `sleep` does not fork further, so this exercises the basic
+        // SIGTERM-the-process-group path. The grandchild-survives case is
+        // covered by the next test.
+        arguments: { command: "sleep 30" },
+      });
+      const elapsed = Date.now() - start;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/bash tool timed out after \d+s/);
+      expect(result.error).toContain("PWNKIT_BASH_TIMEOUT_MS=1500");
+      // Ceiling 1.5s + 2s SIGKILL grace + slack — must be much less than
+      // the requested 30s sleep, proving the subprocess was actually reaped.
+      expect(elapsed).toBeLessThan(8_000);
+    }, 15_000);
+
+    it("reaps a forked grandchild that holds the stdout pipe", async () => {
+      // Reproduces the original bug shape: a python subprocess that ignores
+      // SIGTERM on the parent shell would keep stdout open and wedge
+      // execSync. With the new spawn-detached + process-group kill, the
+      // grandchild is in the same group and dies too.
+      const start = Date.now();
+      const result = await executor.execute({
+        name: "bash",
+        arguments: {
+          command:
+            "python3 -c 'import time, signal; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(30)'",
+        },
+      });
+      const elapsed = Date.now() - start;
+
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/bash tool timed out/);
+      // Ceiling 1.5s + 2s grace before SIGKILL + slack.
+      expect(elapsed).toBeLessThan(8_000);
+    }, 15_000);
+
+    it("returns successful output for fast-completing commands", async () => {
+      const result = await executor.execute({
+        name: "bash",
+        arguments: { command: "echo hello-from-bash-tool" },
+      });
+      expect(result.success).toBe(true);
+      expect(result.output).toContain("hello-from-bash-tool");
+    });
+
+    it("preserves non-zero exit output (pentesting tools often exit non-zero on findings)", async () => {
+      const result = await executor.execute({
+        name: "bash",
+        arguments: { command: "echo finding && exit 2" },
+      });
+      expect(result.success).toBe(true);
+      expect(result.output).toContain("finding");
+    });
+  });
 });
