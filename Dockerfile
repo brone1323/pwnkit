@@ -54,9 +54,16 @@ ENV NODE_ENV=production \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright \
     PATH=/usr/local/bin:/usr/bin:/bin
 
-# Base system + Node 20 + pentest tooling
+# Base system + Node 20 + pentest tooling.
+# `ripgrep` is included because the audit/scan agent's discovery loop
+# defaults to `rg` for fast source-tree searches across npm/cargo/oci
+# packages — without it, every audit run logs `spawnSync rg ENOENT`
+# and the agent falls back to slower `find` + per-file reads, hurting
+# scan quality. Cheap to add (a few MB) and the agent has been
+# expecting it since the audit subcommand shipped.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates curl wget gnupg jq git unzip xz-utils \
+        ripgrep \
         python3 python3-requests python3-bs4 \
         sqlmap nmap nikto gobuster hydra john ffuf wfuzz \
         whatweb wafw00f dirb \
