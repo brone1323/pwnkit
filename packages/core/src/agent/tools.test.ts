@@ -547,3 +547,46 @@ describe("ToolExecutor", () => {
     });
   });
 });
+
+// ── splitOnTopLevelPipes ───────────────────────────────────────────
+//
+// The naive `command.split("|")` corrupts any `|` that lives inside a
+// quoted regex pattern — very common in the agent's grep/rg calls.
+// Pin that the new splitter respects single + double quotes and
+// backslash escapes the same way a POSIX shell does.
+
+describe("splitOnTopLevelPipes", () => {
+  it("splits on top-level pipes", async () => {
+    const { splitOnTopLevelPipes } = await import("./tools.js");
+    expect(splitOnTopLevelPipes("grep foo | head -5")).toEqual([
+      "grep foo ",
+      " head -5",
+    ]);
+  });
+
+  it("does NOT split on a pipe inside a double-quoted string", async () => {
+    const { splitOnTopLevelPipes } = await import("./tools.js");
+    expect(
+      splitOnTopLevelPipes('grep -n "module.exports|export default" lodash.js'),
+    ).toEqual(['grep -n "module.exports|export default" lodash.js']);
+  });
+
+  it("does NOT split on a pipe inside a single-quoted string", async () => {
+    const { splitOnTopLevelPipes } = await import("./tools.js");
+    expect(
+      splitOnTopLevelPipes("grep -n 'foo|bar|baz' file.js | wc -l"),
+    ).toEqual(["grep -n 'foo|bar|baz' file.js ", " wc -l"]);
+  });
+
+  it("does NOT split on a backslash-escaped pipe", async () => {
+    const { splitOnTopLevelPipes } = await import("./tools.js");
+    expect(splitOnTopLevelPipes("grep foo\\|bar file.js")).toEqual([
+      "grep foo\\|bar file.js",
+    ]);
+  });
+
+  it("returns the input unchanged when there are no pipes", async () => {
+    const { splitOnTopLevelPipes } = await import("./tools.js");
+    expect(splitOnTopLevelPipes("grep foo file.js")).toEqual(["grep foo file.js"]);
+  });
+});

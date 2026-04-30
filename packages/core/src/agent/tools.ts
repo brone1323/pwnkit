@@ -545,11 +545,77 @@ const ALLOWED_COMMANDS = new Set([
   "file",
   "stat",
   "npm",
+  // Text-mangling utilities the audit agent frequently reaches for to
+  // post-process grep / rg output (sort + uniq for top-N counts, sed
+  // for line-trimming, awk for field extraction, cut/tr for cleanup,
+  // tee for tap-points). Read-only; safe under the same no-shell-meta
+  // policy the rest of the allowlist relies on.
+  "sort",
+  "uniq",
+  "sed",
+  "awk",
+  "cut",
+  "tr",
+  "tee",
+  "diff",
+  // Hash + encoding helpers — useful for fingerprinting compiled
+  // assets and decoding embedded blobs during source review.
+  "sha256sum",
+  "md5sum",
+  "base64",
+  "xxd",
 ]);
 
 // Block dangerous shell chars. Piping is handled manually without invoking a shell.
 const DISALLOWED_SHELL_CHARS = /[;&<>`$\n\r]/;
 const ALLOWED_NPM_SUBCOMMANDS = new Set(["audit", "view", "ls", "list"]);
+
+/**
+ * Split a command on top-level `|` (pipe) characters, respecting
+ * single + double quotes and backslash escapes. A naive
+ * `command.split("|")` corrupts any \\\| or `|` that lives inside a
+ * quoted regex pattern (very common in the audit agent's grep / rg
+ * calls — e.g. `grep "foo\\|bar" file.js`).
+ *
+ * Exported for unit tests so the quote-handling invariants are
+ * pinned without the surrounding {@link runCommand} machinery.
+ */
+export function splitOnTopLevelPipes(command: string): string[] {
+  const out: string[] = [];
+  let buf = "";
+  let quote: "'" | '"' | null = null;
+  let escaping = false;
+  for (const ch of command) {
+    if (escaping) {
+      buf += ch;
+      escaping = false;
+      continue;
+    }
+    if (ch === "\\") {
+      buf += ch;
+      escaping = true;
+      continue;
+    }
+    if (quote) {
+      buf += ch;
+      if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === "\"") {
+      buf += ch;
+      quote = ch;
+      continue;
+    }
+    if (ch === "|") {
+      out.push(buf);
+      buf = "";
+      continue;
+    }
+    buf += ch;
+  }
+  out.push(buf);
+  return out;
+}
 
 function tokenizeCommand(command: string): string[] {
   const tokens: string[] = [];
@@ -681,9 +747,26 @@ function resolveScopedPath(scopePath: string, inputPath: string): string {
   return candidate;
 }
 
-function validateScopedCommand(tokens: string[]): void {
+function validateScopedCommand(tokens: string[], scopePath?: string): void {
+  const scopeRoot = scopePath ? resolve(scopePath) : null;
   for (const token of tokens.slice(1)) {
     if (isAbsolute(token)) {
+      // Allow absolute paths that resolve INSIDE the scan's scope dir
+      // (e.g. /tmp/pwnkit-audit-xxxxxxxx/node_modules/lodash/lodash.js
+      // when scope is /tmp/pwnkit-audit-xxxxxxxx). Without this the
+      // agent kept burning turns rewriting full paths to relative ones
+      // while exploring its own scratch dir — pure friction with no
+      // security benefit. The scope check still rejects /etc/passwd
+      // and friends.
+      if (scopeRoot) {
+        const resolvedToken = resolve(token);
+        if (
+          resolvedToken === scopeRoot ||
+          resolvedToken.startsWith(scopeRoot + "/")
+        ) {
+          continue;
+        }
+      }
       throw new Error(`Absolute paths are not allowed in scoped commands: ${token}`);
     }
     if (/(^|\/)\.\.(\/|$)/.test(token)) {
@@ -1702,7 +1785,9 @@ export class ToolExecutor {
 
     // Split on pipe to support "grep foo | head -5" style commands.
     // Empty segments indicate shell operators like || or malformed pipes.
-    const rawSegments = command.split("|");
+    // Quote-aware so a `|` inside a regex pattern (e.g.
+    // `grep "foo\|bar" file`) doesn't get treated as a pipe break.
+    const rawSegments = splitOnTopLevelPipes(command);
     if (rawSegments.some((segment) => segment.trim().length === 0)) {
       return { success: false, output: null, error: "Empty pipe segments are not allowed" };
     }
@@ -1737,7 +1822,7 @@ export class ToolExecutor {
 
       try {
         validateCommandTokens(tokens);
-        validateScopedCommand(tokens);
+        validateScopedCommand(tokens, this.ctx.scopePath);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { success: false, output: null, error: msg };

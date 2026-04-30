@@ -118,6 +118,22 @@ function assertApiRuntimeSelection(
  * automatically switch to "web" mode for better coverage.
  */
 async function normalizeScanConfig(config: ScanConfig): Promise<ScanConfig> {
+  // Normalize target URL first — if the user gave a bare hostname like
+  // `doruk.ch`, every URL-using tool downstream (`crawl`, `http_request`,
+  // playwright `goto`) blows up with "Invalid URL" on `new URL(input,
+  // ctx.target)` because the base must be absolute. Auto-prefix `https://`
+  // when no scheme is present so the rest of the pipeline gets a
+  // well-formed URL. Skips package targets (npm/pypi/cargo names like
+  // "lodash") — those don't have `.` or `://` in a way that triggers
+  // this branch, and audit-mode targets aren't URLs anyway.
+  if (
+    config.target &&
+    /\./.test(config.target) &&
+    !/^[a-z][a-z0-9+.-]*:\/\//i.test(config.target)
+  ) {
+    config = { ...config, target: `https://${config.target.trim()}` };
+  }
+
   // Only auto-route for default/deep mode on HTTP targets
   const requestedMode = config.mode ?? "deep";
   if (requestedMode !== "deep") return config;
