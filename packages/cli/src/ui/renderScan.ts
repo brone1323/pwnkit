@@ -2,9 +2,12 @@ import React, { useState, useEffect } from "react";
 import { render, useInput } from "ink";
 import {
   appendStageAction,
+  eventBus,
   normalizeStageAction,
   normalizeStageEndDetail,
+  reduceLiveAgentState,
 } from "@pwnkit/core";
+import type { LiveAgentState } from "@pwnkit/core";
 import { printBanner } from "./banner.js";
 import { ScanUI } from "./ScanUI.js";
 import { buildShareUrl } from "../utils.js";
@@ -43,6 +46,13 @@ export function renderScanUI(opts: RenderScanOptions): RenderScanResult {
   let verbose = false;
   let rerender: (() => void) | null = null;
   let resolveExit: (() => void) | null = null;
+  /**
+   * Live snapshot of the agent's most-recent activity, fed by the
+   * eventBus subscriber below. Replaces in place — no scrollback —
+   * so the panel stays terminal-friendly even on long scans where
+   * the eventBus fires hundreds of times.
+   */
+  let liveAgent: LiveAgentState = {};
 
 
   // Static banner — printed once before Ink takes over
@@ -80,11 +90,28 @@ export function renderScanUI(opts: RenderScanOptions): RenderScanResult {
       depth: opts.depth,
       mode: opts.mode,
       verbose,
+      liveAgent,
       exitHint: summary ? "Press Enter, Esc, or q to close." : null,
     });
   }
 
   const instance = render(React.createElement(App));
+
+  // Subscribe to the agent's eventBus so the live panel can render
+  // turn / tool / reasoning / cost in real time. The pure reducer
+  // lives in @pwnkit/core (`reduceLiveAgentState`) so the
+  // replace-in-place invariants are unit-tested without booting the
+  // TUI. Unsubscribed in `waitForExit` so embedded SDK consumers
+  // don't leak listeners.
+  const unsubscribeLiveAgent = eventBus.subscribe({
+    emit(type, payload) {
+      const next = reduceLiveAgentState(liveAgent, type, payload);
+      if (next !== liveAgent) {
+        liveAgent = next;
+        rerender?.();
+      }
+    },
+  });
 
   function updateStage(id: string, updater: (s: StageState) => StageState) {
     stages = stages.map((s) => (s.id === id ? updater(s) : s));
@@ -231,6 +258,7 @@ export function renderScanUI(opts: RenderScanOptions): RenderScanResult {
     await new Promise<void>((resolve) => {
       resolveExit = () => {
         resolveExit = null;
+        unsubscribeLiveAgent();
         instance.unmount();
         resolve();
       };

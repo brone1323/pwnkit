@@ -3,9 +3,13 @@ import { Box, Text } from "ink";
 import Spinner from "ink-spinner";
 import {
   formatStageDetail,
+  hasLiveAgentState,
   selectVisibleActions,
   truncateStageAction,
 } from "@pwnkit/core";
+import type { LiveAgentState } from "@pwnkit/core";
+
+export type { LiveAgentState };
 import {
   ACCENT,
   BORDER,
@@ -59,6 +63,11 @@ export interface ScanEvent {
   data?: unknown;
 }
 
+// `LiveAgentState` is defined in @pwnkit/core alongside its pure
+// reducer (`reduceLiveAgentState`) so the snapshot semantics stay
+// unit-tested in one place. Re-exported above for convenience —
+// callers using ScanUI.tsx don't need a second import.
+
 export interface ScanUIProps {
   stages: StageState[];
   summary: ScanSummary | null;
@@ -75,6 +84,13 @@ export interface ScanUIProps {
    * the scan TUI. The actual caps live in @pwnkit/core's scan-ui-state module.
    */
   verbose?: boolean;
+  /**
+   * Live agent state — current turn, current tool call, latest
+   * reasoning summary, running cost. Replaces in place as the agent
+   * loop progresses. When undefined the panel renders nothing
+   * (review-mode and pre-loop scans).
+   */
+  liveAgent?: LiveAgentState;
 }
 
 function formatDuration(ms: number): string {
@@ -283,7 +299,99 @@ function OutcomeBlock({ stages }: { stages: StageState[] }) {
 
 // ── Main ──
 
-export function ScanUI({ stages, summary, thinking, target, depth, mode, exitHint, verbose = false }: ScanUIProps) {
+function formatCostUsd(usd: number): string {
+  // 4 decimals up to a dollar (catches sub-cent precision the
+  // cost_update payload reports), 2 decimals beyond.
+  if (usd < 1) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return `${n}`;
+}
+
+function LiveAgentPanel({
+  state,
+  verbose,
+}: {
+  state: LiveAgentState;
+  verbose: boolean;
+}): React.ReactElement {
+  // Header line: turn N/M · role
+  const headerParts: string[] = [];
+  if (state.turn !== undefined) {
+    headerParts.push(
+      state.maxTurns ? `turn ${state.turn}/${state.maxTurns}` : `turn ${state.turn}`,
+    );
+  }
+  if (state.role) headerParts.push(state.role);
+  const headerMeta = headerParts.length > 0 ? headerParts.join(" · ") : undefined;
+
+  // Cost / tokens — single right-aligned line of badges
+  const costParts: React.ReactElement[] = [];
+  if (state.costUsd !== undefined) {
+    costParts.push(
+      <InlineBadge key="cost" label="cost" value={formatCostUsd(state.costUsd)} color={ACCENT} />,
+    );
+  }
+  if (state.inputTokens !== undefined) {
+    costParts.push(
+      <InlineBadge key="in" label="in" value={formatTokens(state.inputTokens)} color={MUTED} />,
+    );
+  }
+  if (state.outputTokens !== undefined) {
+    costParts.push(
+      <InlineBadge key="out" label="out" value={formatTokens(state.outputTokens)} color={MUTED} />,
+    );
+  }
+
+  // Tool call — status mark + name + args preview, status colored.
+  let toolLine: React.ReactElement | null = null;
+  if (state.currentTool) {
+    const t = state.currentTool;
+    const mark =
+      t.status === "running" ? "▸" : t.status === "ok" ? "✓" : "✗";
+    const tone =
+      t.status === "running" ? PRIMARY : t.status === "ok" ? SUCCESS : ERROR;
+    const args = t.argsPreview ?? "";
+    const argsClipped =
+      verbose || args.length <= 80 ? args : args.slice(0, 80) + "…";
+    // `!== undefined` not truthy — a zero-ms tool call is a real
+    // (and useful) signal in the panel, not a missing duration.
+    const tail = t.durationMs !== undefined ? ` (${t.durationMs}ms)` : "";
+    toolLine = (
+      <Text color={MUTED}>
+        <Text color={tone}>{mark} </Text>
+        <Text color={TEXT} bold>{t.tool}</Text>
+        {argsClipped ? <Text>: {argsClipped}</Text> : null}
+        {tail ? <Text color={MUTED}>{tail}</Text> : null}
+        {t.status === "error" && t.error ? (
+          <Text color={ERROR}> — {t.error}</Text>
+        ) : null}
+      </Text>
+    );
+  }
+
+  return (
+    <RailBlock tone={ACCENT} title="Agent live" meta={headerMeta}>
+      {state.reasoningSummary && (
+        <Text color={MUTED} wrap={verbose ? "wrap" : "truncate"}>
+          {verbose
+            ? state.reasoningSummary
+            : state.reasoningSummary.length > 100
+              ? state.reasoningSummary.slice(0, 100) + "…"
+              : state.reasoningSummary}
+        </Text>
+      )}
+      {toolLine}
+      {costParts.length > 0 && <Box gap={2}>{costParts}</Box>}
+    </RailBlock>
+  );
+}
+
+export function ScanUI({ stages, summary, thinking, target, depth, mode, exitHint, verbose = false, liveAgent }: ScanUIProps) {
   return (
     <Box flexDirection="column" paddingLeft={2} paddingRight={2}>
       <SessionHeader target={target} mode={mode} depth={depth} summary={summary} />
@@ -296,6 +404,9 @@ export function ScanUI({ stages, summary, thinking, target, depth, mode, exitHin
         <StageRow key={stage.id} stage={stage} verbose={verbose} />
       ))}
       </Box>
+      {!summary && hasLiveAgentState(liveAgent) && (
+        <LiveAgentPanel state={liveAgent!} verbose={verbose} />
+      )}
       {thinking && (
         <RailBlock tone={ACCENT} title="Latest thought" meta={verbose ? "expanded" : "tail"}>
           <Text color={MUTED} wrap={verbose ? "wrap" : "truncate"}>
