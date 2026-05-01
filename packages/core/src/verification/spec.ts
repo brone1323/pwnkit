@@ -73,6 +73,11 @@ const MAX_FILE_BYTES = 1_000_000;
  * root via `..` segments or absolute paths — same defence-in-depth pattern
  * the agent's `read_file` uses, so that a malicious finding can't be made
  * to read `/etc/passwd` on a verifier host. Returns null on rejection.
+ *
+ * NOTE: the lexical check here is necessary but not sufficient — symlinks
+ * inside the repo can still resolve outside it. Use {@link checkRepoBoundary}
+ * before any actual filesystem read to enforce the boundary on the resolved
+ * target.
  */
 function resolveRepoPath(repoRoot: string, file: string): string | null {
   if (typeof file !== "string" || file.length === 0) return null;
@@ -88,6 +93,58 @@ function resolveRepoPath(repoRoot: string, file: string): string | null {
     return null;
   }
   return normalized;
+}
+
+/**
+ * Outcome of the realpath-based boundary check. We distinguish three cases
+ * so the caller can produce a stable, accurate reason string:
+ *   - `inside`: target resolves under the repo root → safe to read.
+ *   - `missing`: path entry does not exist (no symlink, no file).
+ *     Callers surface this as "file not found", same as the pre-symlink-
+ *     hardening behaviour.
+ *   - `outside`: path entry exists but resolves outside the repo root
+ *     (escaping symlink, broken symlink, dangling chain). Callers refuse
+ *     the read with "path resolves outside repo root".
+ */
+type RepoBoundaryOutcome = "inside" | "missing" | "outside";
+
+/**
+ * Defence-in-depth boundary check that resolves symlinks before comparing
+ * paths. `resolveRepoPath` already rejects lexical escapes (`..`, absolute
+ * paths); this helper covers the case where a symlink *inside* the repo
+ * points *outside* it.
+ *
+ * Distinguishes a genuinely missing path (no entry at all) from one that
+ * exists but resolves outside the repo, so callers can keep the legacy
+ * "file not found" reason for missing files while flipping escapes to
+ * "path resolves outside repo root".
+ */
+async function checkRepoBoundary(
+  repoRoot: string,
+  absPath: string,
+): Promise<RepoBoundaryOutcome> {
+  // `lstat` succeeds on broken symlinks (it doesn't follow them), so a
+  // failure here means the path entry itself doesn't exist.
+  try {
+    await fs.lstat(absPath);
+  } catch {
+    return "missing";
+  }
+  try {
+    const [realRoot, realTarget] = await Promise.all([
+      fs.realpath(repoRoot),
+      fs.realpath(absPath),
+    ]);
+    if (realTarget === realRoot || realTarget.startsWith(realRoot + sep)) {
+      return "inside";
+    }
+    return "outside";
+  } catch {
+    // The path entry exists (lstat succeeded) but realpath couldn't
+    // resolve it — broken symlink, dangling chain, or EACCES on a parent.
+    // Conservatively treat as outside so we never read it.
+    return "outside";
+  }
 }
 
 /**
@@ -146,7 +203,17 @@ async function evaluateOne(
           reason: `path escapes repo root or is invalid: ${predicate.file}`,
         };
       }
-      const ok = await fileExists(abs);
+      const outcome = await checkRepoBoundary(repoRoot, abs);
+      if (outcome === "outside") {
+        // Symlink-traversal guard: a symlink inside the repo whose real
+        // target lives outside it must not be reported as "exists".
+        return {
+          predicate,
+          passed: false,
+          reason: `path resolves outside repo root: ${predicate.file}`,
+        };
+      }
+      const ok = outcome === "inside";
       return {
         predicate,
         passed: ok,
@@ -161,6 +228,23 @@ async function evaluateOne(
           predicate,
           passed: false,
           reason: `path escapes repo root or is invalid: ${predicate.file}`,
+        };
+      }
+      const outcome = await checkRepoBoundary(repoRoot, abs);
+      if (outcome === "outside") {
+        // Symlink-traversal guard before any read. Predicate fails closed
+        // when the resolved target lives outside the repo root.
+        return {
+          predicate,
+          passed: false,
+          reason: `path resolves outside repo root: ${predicate.file}`,
+        };
+      }
+      if (outcome === "missing") {
+        return {
+          predicate,
+          passed: false,
+          reason: `file not found or unreadable: ${predicate.file}`,
         };
       }
       const content = await readFileSafe(abs);
@@ -196,6 +280,27 @@ async function evaluateOne(
           predicate,
           passed: false,
           reason: `path escapes repo root or is invalid: ${predicate.file}`,
+        };
+      }
+      const outcome = await checkRepoBoundary(repoRoot, abs);
+      if (outcome === "outside") {
+        // Symlink-traversal guard before any read. Otherwise the predicate
+        // becomes a confirmed-presence oracle for arbitrary files outside
+        // the repo (passed=true means "pattern absent in /etc/passwd").
+        return {
+          predicate,
+          passed: false,
+          reason: `path resolves outside repo root: ${predicate.file}`,
+        };
+      }
+      if (outcome === "missing") {
+        // Conservative: missing file means we can't assert the pattern is
+        // absent in any meaningful sense. Treat as failed so the finding
+        // surfaces as `partial-fix` rather than silently passing.
+        return {
+          predicate,
+          passed: false,
+          reason: `file not found or unreadable: ${predicate.file}`,
         };
       }
       const content = await readFileSafe(abs);

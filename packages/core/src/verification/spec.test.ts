@@ -20,7 +20,13 @@
  *   9. Bad regex patterns flip the predicate to failed without throwing.
  */
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  writeFileSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { VerificationSpec } from "@pwnkit/shared";
@@ -342,6 +348,160 @@ describe("evaluateVerificationSpec — path safety", () => {
     };
     const result = await evaluateVerificationSpec(spec, repoRoot);
     expect(result.passed).toBe(false);
+  });
+});
+
+/**
+ * pwnkit#193 follow-up — defence-in-depth against symlink traversal.
+ *
+ * `resolveRepoPath` rejects lexical escapes (`..`, absolute paths) but
+ * cannot detect a symlink *inside* the repo whose real target is outside.
+ * A malicious finding could otherwise smuggle a `read /etc/passwd` into a
+ * `file-contains` predicate by pointing at a symlink the agent created
+ * during the original scan. Every read/access path is wrapped in a
+ * realpath-based boundary check; broken symlinks, links to outside files,
+ * and link chains all fail closed with a stable reason.
+ */
+describe("evaluateVerificationSpec — symlink traversal guards", () => {
+  let symlinkRoot: string;
+  let outsideDir: string;
+
+  beforeAll(() => {
+    // We need an outside directory we can point a symlink at. Use a
+    // sibling of the repo root so the symlink target is real but outside
+    // the verifier sandbox.
+    outsideDir = mkdtempSync(join(tmpdir(), "pwnkit-verify-outside-"));
+    writeFileSync(
+      join(outsideDir, "secrets.env"),
+      "SECRET_KEY=should-never-be-readable\n",
+    );
+
+    symlinkRoot = mkdtempSync(join(tmpdir(), "pwnkit-verify-symlink-"));
+    mkdirSync(join(symlinkRoot, "app"), { recursive: true });
+    writeFileSync(
+      join(symlinkRoot, "app", "real.ts"),
+      "// inside the repo, perfectly fine to read\n",
+    );
+
+    // Symlink that resolves *outside* the repo.
+    symlinkSync(
+      join(outsideDir, "secrets.env"),
+      join(symlinkRoot, "app", "leak.env"),
+    );
+
+    // Symlink to a directory outside the repo.
+    symlinkSync(outsideDir, join(symlinkRoot, "app", "leak-dir"));
+
+    // Broken symlink (target does not exist).
+    symlinkSync(
+      join(outsideDir, "does-not-exist"),
+      join(symlinkRoot, "app", "broken"),
+    );
+
+    // Chain: link → link → outside file.
+    symlinkSync(
+      join(symlinkRoot, "app", "leak.env"),
+      join(symlinkRoot, "app", "chained.env"),
+    );
+
+    // Inside-only symlink (target inside the repo) — must still resolve.
+    symlinkSync(
+      join(symlinkRoot, "app", "real.ts"),
+      join(symlinkRoot, "app", "alias.ts"),
+    );
+  });
+
+  afterAll(() => {
+    rmSync(symlinkRoot, { recursive: true, force: true });
+    rmSync(outsideDir, { recursive: true, force: true });
+  });
+
+  it("rejects file-exists on a symlink that escapes the repo", async () => {
+    const spec: VerificationSpec = {
+      code: [{ kind: "file-exists", file: "app/leak.env" }],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(false);
+    expect(result.failedPredicates[0].reason).toMatch(
+      /path resolves outside repo root/,
+    );
+  });
+
+  it("rejects file-contains read through an escaping symlink", async () => {
+    // Without the realpath guard, this would happily read the contents of
+    // an outside-the-repo file and run a regex over it.
+    const spec: VerificationSpec = {
+      code: [
+        {
+          kind: "file-contains",
+          file: "app/leak.env",
+          pattern: "SECRET_KEY",
+        },
+      ],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(false);
+    expect(result.failedPredicates[0].reason).toMatch(
+      /path resolves outside repo root/,
+    );
+  });
+
+  it("rejects file-missing-pattern through an escaping symlink", async () => {
+    // file-missing-pattern would otherwise be exploitable as an oracle:
+    // attacker sets a pattern that matches /etc/passwd, learns whether
+    // the file contains it from passed=true/false.
+    const spec: VerificationSpec = {
+      code: [
+        {
+          kind: "file-missing-pattern",
+          file: "app/leak.env",
+          pattern: "SECRET_KEY",
+        },
+      ],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(false);
+    expect(result.failedPredicates[0].reason).toMatch(
+      /path resolves outside repo root/,
+    );
+  });
+
+  it("rejects symlink chains that ultimately escape the repo", async () => {
+    const spec: VerificationSpec = {
+      code: [
+        {
+          kind: "file-contains",
+          file: "app/chained.env",
+          pattern: "SECRET_KEY",
+        },
+      ],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(false);
+    expect(result.failedPredicates[0].reason).toMatch(
+      /path resolves outside repo root/,
+    );
+  });
+
+  it("treats broken symlinks conservatively as failed", async () => {
+    // Broken symlink → realpath rejects → conservative fail. Either
+    // "outside repo" or "file not found" reason is acceptable; the key
+    // requirement is that the predicate does not throw and does not pass.
+    const spec: VerificationSpec = {
+      code: [{ kind: "file-exists", file: "app/broken" }],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(false);
+  });
+
+  it("still allows reads through symlinks that stay inside the repo", async () => {
+    // Inside-only symlinks must keep working — otherwise we'd break repos
+    // that legitimately use symlinks for monorepo aliasing.
+    const spec: VerificationSpec = {
+      code: [{ kind: "file-exists", file: "app/alias.ts" }],
+    };
+    const result = await evaluateVerificationSpec(spec, symlinkRoot);
+    expect(result.passed).toBe(true);
   });
 });
 
