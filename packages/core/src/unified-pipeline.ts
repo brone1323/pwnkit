@@ -351,7 +351,41 @@ function buildSummary(findings: Finding[], totalAttacks: number) {
   };
 }
 
-function restorePersistedFinding(row: any): Finding {
+/**
+ * Rehydrate a persisted findings-table row into a {@link Finding}.
+ *
+ * Exported for tests so the wire round-trip (verificationSpec, evidence,
+ * triage flags, etc.) can be exercised without a full pipeline run.
+ * Production callers reach this through the `getFindings(...).map(...)`
+ * inside `runPipeline`.
+ */
+export function restorePersistedFinding(row: any): Finding {
+  // pwnkit#193 — `verificationSpec` is the deterministic re-check contract
+  // produced by the OSS engine and consumed by cloud's canary watcher.
+  // It is persisted as JSON text and must be threaded through every
+  // reload path; otherwise findings restored from storage silently lose
+  // the contract before cloud re-checks can run.
+  let verificationSpec: Finding["verificationSpec"];
+  if (typeof row.verificationSpec === "string" && row.verificationSpec.length > 0) {
+    try {
+      const parsed = JSON.parse(row.verificationSpec);
+      // Defensive: only accept the shape we expect. Older rows that
+      // stored something malformed get dropped silently rather than
+      // breaking the resume path.
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.code)) {
+        verificationSpec = parsed;
+      }
+    } catch {
+      // Malformed JSON in the column is non-fatal; the finding still
+      // restores, just without a verification contract.
+    }
+  } else if (row.verificationSpec && typeof row.verificationSpec === "object") {
+    // Some shims (cloud sinks, in-memory test doubles) hand back the
+    // already-parsed object. Pass it through unchanged.
+    if (Array.isArray(row.verificationSpec.code)) {
+      verificationSpec = row.verificationSpec;
+    }
+  }
   return {
     id: row.id,
     templateId: row.templateId,
@@ -371,6 +405,7 @@ function restorePersistedFinding(row: any): Finding {
       response: row.evidenceResponse,
       analysis: row.evidenceAnalysis ?? undefined,
     },
+    verificationSpec,
     timestamp: row.timestamp,
   };
 }
