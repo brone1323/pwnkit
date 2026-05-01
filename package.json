@@ -17,7 +17,7 @@
     "build:bundle": "node ./scripts/bundle-cli.mjs",
     "dev": "pnpm -r --parallel dev",
     "lint": "pnpm -r exec tsc --noEmit",
-    "test": "pnpm --filter @pwnkit/core test && pnpm --filter @pwnkit/test-targets test",
+    "test": "pnpm --filter @pwnkit/core test && pnpm --filter @pwnkit/test-targets test && pnpm --filter ./packages/cli test",
     "bench": "pnpm --filter @pwnkit/benchmark bench",
     "bench:quick": "pnpm --filter @pwnkit/benchmark bench:quick",
     "consolidate-xbow": "pnpm --filter @pwnkit/benchmark consolidate-xbow",
