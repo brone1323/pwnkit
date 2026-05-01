@@ -290,6 +290,15 @@ export function normalizeFinding(rawFinding: unknown): CloudSinkFinding {
   const pocSteps = normalizePocSteps(raw.pocSteps ?? raw.poc_steps);
   if (pocSteps && pocSteps.length > 0) normalized.pocSteps = pocSteps;
 
+  // pwnkit#193 — pass-through optional VerificationSpec. Same wire-shape
+  // tolerance as pocSteps (object OR JSON string OR null). Anything
+  // malformed is dropped silently; the spec is decoration on the finding,
+  // never a reason to drop the finding itself.
+  const verificationSpec = normalizeVerificationSpec(
+    raw.verificationSpec ?? raw.verification_spec,
+  );
+  if (verificationSpec) normalized.verificationSpec = verificationSpec;
+
   return normalized;
 }
 
@@ -310,6 +319,34 @@ function normalizePocSteps(v: unknown): unknown[] | null {
     } catch {
       return null;
     }
+  }
+  return null;
+}
+
+/**
+ * Pass-through normaliser for the optional `verificationSpec` field
+ * (pwnkit#193). Returns the object shape unchanged when input is already an
+ * object, parses a JSON-encoded string into one, and yields null otherwise.
+ *
+ * Mirrors `normalizePocSteps` in being deliberately permissive: the OSS
+ * sink is a wire-format chokepoint, not a schema validator. The canonical
+ * shape lives in `@pwnkit/shared/types.ts` (`VerificationSpec`).
+ */
+function normalizeVerificationSpec(v: unknown): Record<string, unknown> | null {
+  if (v == null || v === "") return null;
+  if (typeof v === "string") {
+    try {
+      const parsed = JSON.parse(v);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as Record<string, unknown>;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (typeof v === "object" && !Array.isArray(v)) {
+    return v as Record<string, unknown>;
   }
   return null;
 }
