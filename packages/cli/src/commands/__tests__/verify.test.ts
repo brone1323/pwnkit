@@ -481,3 +481,29 @@ describe("runVerify workspace isolation", () => {
   });
 });
 
+// ── process.exit / exitCode tests (CodeRabbit #194 — flush stdout) ──────────
+//
+// We can't easily import `verifyAction` directly (it's not exported), so we
+// validate the property by introspection of the verify.ts source: the
+// invariant is that the file must not contain `process.exit(` calls. This
+// is mechanical but it's exactly what CodeRabbit flagged — `process.exit`
+// can truncate pending stdout writes; we use `process.exitCode` instead.
+
+describe("verify.ts uses process.exitCode (no process.exit in the action)", () => {
+  it("source file does not call process.exit() (uses process.exitCode instead)", () => {
+    // Resolve verify.ts relative to this test file.
+    const verifySrc = readFileSync(
+      join(__dirname, "..", "verify.ts"),
+      "utf8",
+    );
+    // Strip block + line comments so commentary mentioning `process.exit`
+    // doesn't trip the assertion.
+    const stripped = verifySrc
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
+    expect(stripped).not.toMatch(/\bprocess\.exit\s*\(/);
+    // And it *should* be using process.exitCode at least once (the
+    // success/error paths each set it).
+    expect(stripped).toMatch(/\bprocess\.exitCode\s*=/);
+  });
+});

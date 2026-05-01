@@ -455,7 +455,10 @@ async function verifyAction(opts: VerifyOpts): Promise<void> {
   } else {
     process.stdout.write(json + "\n");
   }
-  process.exit(outcome.exitCode);
+  // Avoid `process.exit()` immediately after a stdout write — Node's docs warn
+  // that exit() can truncate pending async writes. Setting `process.exitCode`
+  // and returning lets the event loop drain the JSON cleanly before we exit.
+  process.exitCode = outcome.exitCode;
 }
 
 export function registerVerifyCommand(program: Command): void {
@@ -512,7 +515,9 @@ export function registerVerifyCommand(program: Command): void {
         } else {
           process.stdout.write(json + "\n");
         }
-        process.exit(3);
+        // Same reason as the success path: prefer `process.exitCode` so the
+        // pending stderr/stdout JSON write actually flushes before exit.
+        process.exitCode = 3;
       }
     });
 }
