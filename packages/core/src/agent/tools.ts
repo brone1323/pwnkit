@@ -3,7 +3,16 @@ import { readFileSync } from "node:fs";
 import { spawnSync, spawn } from "node:child_process";
 import { isAbsolute, resolve } from "node:path";
 import { isIP } from "node:net";
-import type { Finding, AttackResult, PocStep, TargetInfo } from "@pwnkit/shared";
+import type {
+  Finding,
+  AttackResult,
+  PocStep,
+  TargetInfo,
+  VerificationSpec,
+  VerificationCodePredicate,
+  VerificationBehavior,
+  VerificationBehaviorStep,
+} from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.js";
 import { sendPrompt, extractResponseText } from "../http.js";
 import { buildAuthHeaders } from "./prompts.js";
@@ -281,6 +290,23 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
         type: "string",
         description:
           "OPTIONAL JSON-encoded PocStep[] array (pwnkit#170). Each step: { id, kind: setup|auth|prerequisite|exploit|verify, summary, action: { type: shell|http|docker|note, ... }, expect?: { type: ... } }. Leave unset when you only have prose evidence.",
+      },
+      // pwnkit#193 — optional machine-executable verification contract. When
+      // the agent has cited concrete file:line evidence, it should populate
+      // `code[]` predicates so cloud's canary watcher can later re-evaluate
+      // the finding deterministically. Each predicate is one of:
+      //   - { kind:"file-contains", file, pattern, flags? } — vulnerable
+      //     shape still present.
+      //   - { kind:"file-missing-pattern", file, pattern, flags? } — fix
+      //     marker still absent.
+      //   - { kind:"file-exists", file } — vulnerable file still present.
+      //   - { kind:"ast-shape", file, query } — tree-sitter (not yet eval'd
+      //     by the OSS verifier; record for future use).
+      // Pass as a JSON-encoded string to match the LLM tool wire format.
+      verification_spec: {
+        type: "string",
+        description:
+          "OPTIONAL JSON-encoded VerificationSpec (pwnkit#193). Shape: { code: Array<{ kind:'file-contains'|'file-missing-pattern'|'file-exists'|'ast-shape', file, pattern?, flags?, query? }>, behavior?: { steps: Array<{ method, path, body?, expect: 'success'|'forbidden'|{status:number} }> } }. Populate code[] predicates from the file:line evidence you cited so cloud can re-verify the finding deterministically. Example for a SQLi at app/users.ts:43: code:[{kind:'file-contains',file:'app/users.ts',pattern:'db\\\\.query.*req\\\\.body'}]. Leave unset when you cannot pin the vulnerable shape to a regex.",
       },
       // Self-reported calibration of how confident the agent is that this
       // finding is a true positive. The cloud DB stores it in
@@ -894,6 +920,152 @@ function validatePocStep(raw: unknown): PocStep | null {
     }
   }
   return step;
+}
+
+// ── Verification spec helpers (pwnkit#193) ──
+//
+// Mirrors the PoC-step parser pattern above: tolerate already-parsed objects
+// AND JSON strings, validate strictly, and return null on anything malformed
+// so a bad payload from the LLM never blocks the finding from saving.
+
+const VERIFICATION_PREDICATE_KINDS: ReadonlySet<string> = new Set([
+  "file-contains",
+  "file-missing-pattern",
+  "file-exists",
+  "ast-shape",
+]);
+
+const VERIFICATION_BEHAVIOR_EXPECT_LITERALS: ReadonlySet<string> = new Set([
+  "success",
+  "forbidden",
+]);
+
+function validateVerificationPredicate(
+  raw: unknown,
+): VerificationCodePredicate | null {
+  if (!isPlainRecord(raw)) return null;
+  const kind = raw.kind;
+  if (typeof kind !== "string" || !VERIFICATION_PREDICATE_KINDS.has(kind)) {
+    return null;
+  }
+  const file = raw.file;
+  if (typeof file !== "string" || file.length === 0) return null;
+
+  switch (kind) {
+    case "file-exists":
+      return { kind: "file-exists", file };
+    case "file-contains": {
+      const pattern = raw.pattern;
+      if (typeof pattern !== "string" || pattern.length === 0) return null;
+      const flags = typeof raw.flags === "string" ? raw.flags : undefined;
+      return flags !== undefined
+        ? { kind: "file-contains", file, pattern, flags }
+        : { kind: "file-contains", file, pattern };
+    }
+    case "file-missing-pattern": {
+      const pattern = raw.pattern;
+      if (typeof pattern !== "string" || pattern.length === 0) return null;
+      const flags = typeof raw.flags === "string" ? raw.flags : undefined;
+      return flags !== undefined
+        ? { kind: "file-missing-pattern", file, pattern, flags }
+        : { kind: "file-missing-pattern", file, pattern };
+    }
+    case "ast-shape": {
+      const query = raw.query;
+      if (typeof query !== "string" || query.length === 0) return null;
+      return { kind: "ast-shape", file, query };
+    }
+    default:
+      return null;
+  }
+}
+
+function validateVerificationBehaviorStep(
+  raw: unknown,
+): VerificationBehaviorStep | null {
+  if (!isPlainRecord(raw)) return null;
+  const method = raw.method;
+  const path = raw.path;
+  if (typeof method !== "string" || method.length === 0) return null;
+  if (typeof path !== "string" || path.length === 0) return null;
+  const expectRaw = raw.expect;
+  let expect: VerificationBehaviorStep["expect"];
+  if (typeof expectRaw === "string") {
+    if (!VERIFICATION_BEHAVIOR_EXPECT_LITERALS.has(expectRaw)) return null;
+    expect = expectRaw as "success" | "forbidden";
+  } else if (
+    isPlainRecord(expectRaw) &&
+    typeof expectRaw.status === "number" &&
+    Number.isInteger(expectRaw.status)
+  ) {
+    expect = { status: expectRaw.status };
+  } else {
+    return null;
+  }
+  const step: VerificationBehaviorStep = { method, path, expect };
+  if ("body" in raw) step.body = raw.body;
+  return step;
+}
+
+function validateVerificationBehavior(
+  raw: unknown,
+): VerificationBehavior | null {
+  if (!isPlainRecord(raw)) return null;
+  if (!Array.isArray(raw.steps)) return null;
+  const steps: VerificationBehaviorStep[] = [];
+  for (const item of raw.steps) {
+    const step = validateVerificationBehaviorStep(item);
+    if (step) steps.push(step);
+  }
+  if (steps.length === 0) return null;
+  return { steps };
+}
+
+/**
+ * Parse the `verification_spec` LLM tool argument into a VerificationSpec or
+ * null. Same wire-shape tolerance as `parsePocStepsArg` (already-parsed
+ * object OR JSON string OR garbage → null).
+ *
+ * Validation rules:
+ *  - `code` MUST be an array (possibly empty after dropping malformed
+ *    predicates). If it's missing entirely, the spec is rejected.
+ *  - Each predicate is validated per-variant; malformed predicates are
+ *    dropped silently (one bad predicate doesn't kill the spec).
+ *  - `behavior` is optional; if present-but-malformed, the whole spec is
+ *    still accepted, with `behavior` dropped.
+ *
+ * Exported only for unit tests; not part of the public agent surface.
+ */
+export function parseVerificationSpecArg(raw: unknown): VerificationSpec | null {
+  if (raw == null || raw === "") return null;
+  let parsed: unknown = raw;
+  if (typeof raw === "string") {
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return null;
+    }
+  }
+  if (!isPlainRecord(parsed)) return null;
+  if (!Array.isArray(parsed.code)) return null;
+
+  const code: VerificationCodePredicate[] = [];
+  for (const item of parsed.code) {
+    const predicate = validateVerificationPredicate(item);
+    if (predicate) code.push(predicate);
+  }
+
+  const spec: VerificationSpec = { code };
+  if (parsed.behavior !== undefined) {
+    const behavior = validateVerificationBehavior(parsed.behavior);
+    if (behavior) spec.behavior = behavior;
+  }
+
+  // A spec with zero usable code predicates AND no behavior is effectively
+  // empty — drop it so the finding doesn't carry a meaningless field.
+  if (spec.code.length === 0 && !spec.behavior) return null;
+
+  return spec;
 }
 
 /**
@@ -1710,6 +1882,16 @@ export class ToolExecutor {
         analysis: finding.evidence.analysis,
       });
       if (inferred && inferred.length >= 2) finding.pocSteps = inferred;
+    }
+
+    // pwnkit#193 — optional machine-executable verification spec. Same
+    // wire-shape tolerance as poc_steps (object OR JSON string OR garbage).
+    // When parseable, attach to the finding so cloud's canary watcher can
+    // later evaluate it via `evaluateVerificationSpec`. Findings without a
+    // spec stay backwards-compatible (field is undefined).
+    const verificationSpec = parseVerificationSpecArg(args.verification_spec);
+    if (verificationSpec) {
+      finding.verificationSpec = verificationSpec;
     }
 
     // Hybrid confidence (LLM self-report + PoC-status floor). Closes the gap
