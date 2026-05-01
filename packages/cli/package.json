@@ -12,6 +12,8 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -38,6 +40,7 @@
   "devDependencies": {
     "@types/pdfkit": "^0.13.9",
     "@types/react": "^19.2.14",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "vitest": "^2.1.9"
   }
 }
