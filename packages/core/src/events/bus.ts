@@ -68,6 +68,13 @@ export interface FindingIngestedPayload {
   severity?: string;
   title?: string;
   category?: string;
+  /**
+   * Agent-assessed confidence in [0,1]. Optional — sourced from the hybrid
+   * helper in `agent/finding-confidence.ts` (LLM self-report clamped UP to
+   * a PoC-status floor). Older OSS releases that don't compute this leave
+   * it absent; the cloud parser must accept absent as NULL.
+   */
+  confidence?: number;
   [k: string]: unknown;
 }
 

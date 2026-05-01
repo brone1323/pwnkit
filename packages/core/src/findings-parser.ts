@@ -54,7 +54,12 @@ function parseJsonOutput(output: string, prefix: string): Finding[] {
             response: f.poc ?? "",
             analysis: f.description ?? "",
           },
-          confidence: undefined,
+          // Pass-through with clamping when the upstream JSON schema includes
+          // `confidence`. Downstream cloud-sink also clamps; this is defence
+          // in depth so an agent runtime that reports a wild value (1.5,
+          // -0.2, NaN) never escapes the OSS engine. Absent → undefined,
+          // which the cloud column accepts as NULL.
+          confidence: clampConfidence(f.confidence),
           timestamp: Date.now(),
         }));
     }
@@ -62,6 +67,19 @@ function parseJsonOutput(output: string, prefix: string): Finding[] {
     // Not valid JSON
   }
   return [];
+}
+
+/**
+ * Clamp an arbitrary confidence value to [0,1], or return `undefined` if
+ * the input isn't a usable finite number. Mirrors the `cloud-sink.ts`
+ * normalizer so OSS-side and wire-side agree on what "no confidence
+ * signal" looks like.
+ */
+function clampConfidence(v: unknown): number | undefined {
+  if (typeof v !== "number" || !Number.isFinite(v)) return undefined;
+  if (v < 0) return 0;
+  if (v > 1) return 1;
+  return v;
 }
 
 /** Parse ---FINDING--- / ---END--- delimited blocks. */

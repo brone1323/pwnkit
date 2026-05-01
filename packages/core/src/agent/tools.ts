@@ -17,6 +17,7 @@ import {
 } from "./wp-fingerprint.js";
 import { validateFlagShape } from "./flag-validator.js";
 import { extractPocStepsFromProse } from "./poc-steps-from-prose.js";
+import { computeFindingConfidence } from "./finding-confidence.js";
 import {
   forgeObjectId,
   forgeObjectIdSequence,
@@ -280,6 +281,19 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
         type: "string",
         description:
           "OPTIONAL JSON-encoded PocStep[] array (pwnkit#170). Each step: { id, kind: setup|auth|prerequisite|exploit|verify, summary, action: { type: shell|http|docker|note, ... }, expect?: { type: ... } }. Leave unset when you only have prose evidence.",
+      },
+      // Self-reported calibration of how confident the agent is that this
+      // finding is a true positive. The cloud DB stores it in
+      // `findings.confidence` (numeric(4,3)) and the dashboard surfaces it in
+      // triage views. LLMs are notoriously bad at calibration, so the OSS
+      // engine clamps to [0,1] AND applies a PoC-status floor in
+      // `saveFinding()` (no PoC → no floor; pocSteps present → ≥0.6;
+      // pocSteps with at least one verifiable `expect` predicate → ≥0.8).
+      // Leave unset if you genuinely have no signal.
+      confidence: {
+        type: "number",
+        description:
+          "OPTIONAL self-reported confidence in [0,1]. Use 0.9+ only when the PoC actually executed and produced the expected output. 0.6–0.8 for solid evidence without execution. 0.3–0.5 for plausible but unverified leads. Leave unset when you have no signal.",
       },
     },
     required: ["title", "severity", "category", "evidence_request", "evidence_response"],
@@ -1696,6 +1710,20 @@ export class ToolExecutor {
         analysis: finding.evidence.analysis,
       });
       if (inferred && inferred.length >= 2) finding.pocSteps = inferred;
+    }
+
+    // Hybrid confidence (LLM self-report + PoC-status floor). Closes the gap
+    // where every cloud-side `findings.confidence` row was NULL because the
+    // OSS engine never emitted a value. We mutate the call args in-place so
+    // downstream readers — agent-runner's `postFinding(call.arguments)`
+    // mid-scan webhook and the native-loop's `finding_ingested` bus event
+    // (which reads from `block.input`, the same dict) — all see the same
+    // computed value rather than the raw, possibly-absent LLM-reported one.
+    // See finding-confidence.ts for the heuristic.
+    const confidence = computeFindingConfidence(args.confidence, finding.pocSteps);
+    if (confidence !== undefined) {
+      finding.confidence = confidence;
+      args.confidence = confidence;
     }
 
     this.ctx.findings.push(finding);

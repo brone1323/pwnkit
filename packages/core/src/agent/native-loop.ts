@@ -609,6 +609,10 @@ export async function runNativeAgentLoop(
       // Bus event: finding_ingested — fires whenever the agent successfully
       // saves a finding so downstream sinks (cloud relay, dashboard) see the
       // finding at creation time rather than waiting for the final report.
+      // `input.confidence` is the hybrid value the `save_finding` tool
+      // stamped back onto the call args (LLM self-report clamped UP to a
+      // PoC-status floor — see agent/finding-confidence.ts), not the raw
+      // LLM-reported number.
       if (block.name === "save_finding" && toolResult.success) {
         const f = toolResult.output as Record<string, unknown> | undefined;
         const input = block.input as Record<string, unknown>;
@@ -617,6 +621,10 @@ export async function runNativeAgentLoop(
           severity: typeof input.severity === "string" ? input.severity : undefined,
           title: typeof input.title === "string" ? input.title : undefined,
           category: typeof input.category === "string" ? input.category : undefined,
+          confidence:
+            typeof input.confidence === "number" && Number.isFinite(input.confidence)
+              ? input.confidence
+              : undefined,
         });
       }
 

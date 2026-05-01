@@ -180,6 +180,89 @@ describe("ToolExecutor", () => {
     });
   });
 
+  // ── save_finding confidence emission ──
+  // Closes the cloud-side gap where every `findings.confidence` row was NULL
+  // because pwnkit-cli never emitted a value. See agent/finding-confidence.ts
+  // for the hybrid heuristic.
+
+  it("save_finding stamps confidence onto the finding when the agent reports one", async () => {
+    const args = {
+      title: "Reflected XSS in /search",
+      severity: "high",
+      category: "xss",
+      evidence_request: "GET /search?q=<script>",
+      evidence_response: "<script> echoed",
+      evidence_analysis: "no encoding",
+      confidence: 0.92,
+    };
+    await executor.execute({ name: "save_finding", arguments: args });
+
+    const f = ctx.findings[0];
+    expect(typeof f.confidence).toBe("number");
+    expect(Number.isFinite(f.confidence)).toBe(true);
+    expect(f.confidence!).toBeGreaterThanOrEqual(0);
+    expect(f.confidence!).toBeLessThanOrEqual(1);
+    expect(f.confidence!).toBeCloseTo(0.92);
+    // Mirrored back onto the call args so agent-runner's mid-scan
+    // postFinding(call.arguments) and the native-loop's finding_ingested
+    // event both see the computed value.
+    expect(args.confidence).toBeCloseTo(0.92);
+  });
+
+  it("save_finding clamps an out-of-range LLM-reported confidence", async () => {
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Wild value",
+        severity: "high",
+        category: "xss",
+        evidence_request: "GET /a",
+        evidence_response: "ok",
+        confidence: 1.7,
+      },
+    });
+    expect(ctx.findings[0].confidence).toBe(1);
+  });
+
+  it("save_finding floors confidence by PoC-status when agent doesn't report one", async () => {
+    // Heuristic prose extraction will produce pocSteps with a body-contains
+    // / http-status `expect`, so the verifiable floor (0.8) applies.
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Auth gap on /admin/users",
+        severity: "high",
+        category: "auth",
+        evidence_request: "GET /admin/users HTTP/1.1\nHost: target.example",
+        evidence_response: "HTTP/1.1 200 OK\nContent-Type: application/json",
+        evidence_analysis: "Endpoint exposes admin data without authentication.",
+        // No confidence reported.
+      },
+    });
+    const f = ctx.findings[0];
+    expect(f.pocSteps).toBeDefined();
+    expect(typeof f.confidence).toBe("number");
+    expect(f.confidence!).toBeGreaterThanOrEqual(0);
+    expect(f.confidence!).toBeLessThanOrEqual(1);
+    expect(f.confidence!).toBeGreaterThanOrEqual(0.6);
+  });
+
+  it("save_finding leaves confidence undefined when neither LLM nor PoC signal exists", async () => {
+    await executor.execute({
+      name: "save_finding",
+      arguments: {
+        title: "Vague bug",
+        severity: "low",
+        category: "info",
+        evidence_request: "We poked around the page.",
+        evidence_response: "Some interesting output appeared.",
+        evidence_analysis: "Unclear if exploitable.",
+      },
+    });
+    expect(ctx.findings[0].pocSteps).toBeUndefined();
+    expect(ctx.findings[0].confidence).toBeUndefined();
+  });
+
   // ── query_findings ──
 
   it("payload_lookup returns reusable JSFuck payloads", async () => {
