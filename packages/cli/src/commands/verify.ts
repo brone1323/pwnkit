@@ -20,8 +20,9 @@
  */
 
 import type { Command } from "commander";
-import { readFileSync, writeFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import {
   executePocSteps,
   type PocExecutionReport,
@@ -328,9 +329,41 @@ export interface VerifyOutcome {
 }
 
 /**
+ * Allocate an isolated workspace for shell/docker PoC steps when the caller
+ * didn't pass a `--target` (and therefore didn't specify a `cwd`). Without
+ * this, Node's `spawn()` falls through to `process.cwd()` — meaning a PoC
+ * would execute in the operator's current working directory, which is
+ * exactly the kind of "PoC steps touching real user paths" the #194 spec
+ * is designed to prevent. We create the dir under `os.tmpdir()` with a
+ * recognisable prefix, return both the dir and a cleanup callback to the
+ * caller, and the caller is responsible for invoking cleanup once
+ * execution completes (or errors out).
+ */
+function allocateIsolatedWorkspace(): { cwd: string; cleanup: () => void } {
+  const cwd = mkdtempSync(join(tmpdir(), "pwnkit-verify-"));
+  return {
+    cwd,
+    cleanup: () => {
+      try {
+        rmSync(cwd, { recursive: true, force: true });
+      } catch {
+        // Best-effort cleanup. Leaving a stale tmp dir behind is preferable
+        // to throwing in a finally block and masking the real outcome.
+      }
+    },
+  };
+}
+
+/**
  * Run the verifier and return the outcome without writing files or exiting.
  * Exposed separately from the commander action so tests can drive it
  * directly without spawning a subprocess.
+ *
+ * Working-directory contract: if `--target` is supplied and provides a
+ * `cwd`, that wins. Otherwise, we always allocate an isolated tmpdir under
+ * `os.tmpdir()` and pass that as `target.cwd`, then clean it up when
+ * execution completes. PoC shell/docker steps therefore never inherit the
+ * caller's `process.cwd()`.
  */
 export async function runVerify(opts: {
   findingPath: string;
@@ -338,6 +371,7 @@ export async function runVerify(opts: {
 }): Promise<VerifyOutcome> {
   const startedAt = new Date().toISOString();
   let finding: Finding | null = null;
+  let cleanup: (() => void) | undefined;
   try {
     finding = readJson<Finding>(opts.findingPath, "finding");
     if (!finding || typeof finding !== "object" || !finding.id) {
@@ -346,9 +380,19 @@ export async function runVerify(opts: {
       );
     }
 
-    const target: PocExecutionTarget = opts.targetPath
+    const baseTarget: PocExecutionTarget = opts.targetPath
       ? readJson<PocExecutionTarget>(opts.targetPath, "target")
       : {};
+
+    // Always provide a cwd to the runtime. If the caller's target didn't set
+    // one, allocate an isolated tmpdir so PoC steps cannot reach into the
+    // operator's process.cwd() (#194 isolation requirement).
+    let target: PocExecutionTarget = baseTarget;
+    if (!baseTarget.cwd) {
+      const isolated = allocateIsolatedWorkspace();
+      cleanup = isolated.cleanup;
+      target = { ...baseTarget, cwd: isolated.cwd };
+    }
 
     if (!finding.pocSteps || finding.pocSteps.length === 0) {
       const completedAt = new Date().toISOString();
@@ -374,6 +418,8 @@ export async function runVerify(opts: {
       error: err,
     });
     return { result, exitCode: exitCodeForStatus(result.status) };
+  } finally {
+    if (cleanup) cleanup();
   }
 }
 
