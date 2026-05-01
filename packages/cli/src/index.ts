@@ -32,6 +32,7 @@ import {
   registerEvalCommand,
   registerIngestCommand,
   registerDiscloseCommand,
+  registerVerifyCommand,
 } from "./commands/index.js";
 import { detectAndRoute } from "./routing.js";
 import { preloadBanner } from "./ui/banner.js";
@@ -63,6 +64,7 @@ registerTriageCommand(program);
 registerEvalCommand(program);
 registerIngestCommand(program);
 registerDiscloseCommand(program);
+registerVerifyCommand(program);
 
 // ── Interactive menu (Ink) ──
 async function showInteractiveMenu(): Promise<void> {
@@ -155,7 +157,7 @@ async function showInteractiveMenu(): Promise<void> {
 
 // ── Entry point ──
 const userArgs = process.argv.slice(2);
-const knownCommands = ["scan", "resume", "replay", "history", "findings", "review", "audit", "doctor", "dashboard", "tui", "watch", "orchestrate", "db", "mcp-server", "eval", "ingest", "disclose", "help"];
+const knownCommands = ["scan", "resume", "replay", "history", "findings", "review", "audit", "doctor", "dashboard", "tui", "watch", "orchestrate", "db", "mcp-server", "eval", "ingest", "disclose", "verify", "help"];
 
 if (userArgs.length === 0) {
   showInteractiveMenu().catch((err) => {
