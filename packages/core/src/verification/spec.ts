@@ -1,0 +1,283 @@
+// pwnkit#193 / pwnkit-cloud#111 — deterministic finding re-verification.
+//
+// `evaluateVerificationSpec` runs a finding's `VerificationSpec.code[]`
+// predicates against a target repo on disk and reports whether the finding
+// is still real. It is intentionally *cheap*: no LLM calls, no target
+// provisioning, no network. Cloud's canary watcher calls this on every
+// upstream HEAD refresh; the OSS engine emits the spec when it produces a
+// finding so that re-evaluation later is deterministic.
+//
+// Behavioural predicates (`VerificationSpec.behavior`) require a provisioned
+// target and are out of scope here — the helper short-circuits with a stable
+// `behavior eval not yet supported` reason.
+
+import { promises as fs } from "node:fs";
+import { resolve, isAbsolute, normalize, sep } from "node:path";
+import type {
+  VerificationCodePredicate,
+  VerificationSpec,
+} from "@pwnkit/shared";
+
+/**
+ * Result of a single predicate evaluation. `passed === true` means the
+ * predicate held; `false` means it was definitely violated; `null` means
+ * it could not be evaluated (file missing, regex invalid, etc.) and the
+ * caller should treat it conservatively.
+ */
+export interface PredicateResult {
+  predicate: VerificationCodePredicate;
+  passed: boolean;
+  /** Short, stable, human-readable explanation. */
+  reason: string;
+}
+
+/**
+ * Aggregate verification result. `passed === true` only when every code-level
+ * predicate held. `failedPredicates` lists the ones that did not (including
+ * predicates that could not be evaluated).
+ */
+export interface VerificationResult {
+  passed: boolean;
+  failedPredicates: PredicateResult[];
+  /**
+   * Optional top-level reason. Populated for short-circuit cases:
+   *  - empty `code[]` and no `behavior` → "no predicates"
+   *  - `behavior` present → "behavior eval not yet supported"
+   * For normal evaluations, this is undefined and the per-predicate reasons
+   * carry the detail.
+   */
+  reason?: string;
+}
+
+/**
+ * Resolve a repo-relative path against `repoRoot`. Refuses to escape the
+ * root via `..` segments or absolute paths — same defence-in-depth pattern
+ * the agent's `read_file` uses, so that a malicious finding can't be made
+ * to read `/etc/passwd` on a verifier host. Returns null on rejection.
+ */
+function resolveRepoPath(repoRoot: string, file: string): string | null {
+  if (typeof file !== "string" || file.length === 0) return null;
+  // Reject absolute paths outright. The spec is a contract about a target
+  // repo's tree; absolute paths belong to nobody.
+  if (isAbsolute(file)) return null;
+  const root = resolve(repoRoot);
+  const candidate = resolve(root, file);
+  const normalized = normalize(candidate);
+  // Ensure the candidate is *under* root (or equal to it). Use `sep` so the
+  // boundary check works on both posix and win32.
+  if (normalized !== root && !normalized.startsWith(root + sep)) {
+    return null;
+  }
+  return normalized;
+}
+
+/**
+ * Build a RegExp from a pattern + optional flags string. Returns null on
+ * invalid regex. The verifier never throws on malformed predicates — a bad
+ * regex flips the predicate to `passed: false` with a clear reason.
+ */
+function safeRegex(pattern: string, flags?: string): RegExp | null {
+  try {
+    return new RegExp(pattern, flags);
+  } catch {
+    return null;
+  }
+}
+
+async function readFileSafe(absPath: string): Promise<string | null> {
+  try {
+    return await fs.readFile(absPath, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+async function fileExists(absPath: string): Promise<boolean> {
+  try {
+    await fs.access(absPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function evaluateOne(
+  predicate: VerificationCodePredicate,
+  repoRoot: string,
+): Promise<PredicateResult> {
+  switch (predicate.kind) {
+    case "file-exists": {
+      const abs = resolveRepoPath(repoRoot, predicate.file);
+      if (!abs) {
+        return {
+          predicate,
+          passed: false,
+          reason: `path escapes repo root or is invalid: ${predicate.file}`,
+        };
+      }
+      const ok = await fileExists(abs);
+      return {
+        predicate,
+        passed: ok,
+        reason: ok ? "file exists" : `file not found: ${predicate.file}`,
+      };
+    }
+
+    case "file-contains": {
+      const abs = resolveRepoPath(repoRoot, predicate.file);
+      if (!abs) {
+        return {
+          predicate,
+          passed: false,
+          reason: `path escapes repo root or is invalid: ${predicate.file}`,
+        };
+      }
+      const content = await readFileSafe(abs);
+      if (content === null) {
+        return {
+          predicate,
+          passed: false,
+          reason: `file not found or unreadable: ${predicate.file}`,
+        };
+      }
+      const re = safeRegex(predicate.pattern, predicate.flags);
+      if (!re) {
+        return {
+          predicate,
+          passed: false,
+          reason: `invalid regex: /${predicate.pattern}/${predicate.flags ?? ""}`,
+        };
+      }
+      const matched = re.test(content);
+      return {
+        predicate,
+        passed: matched,
+        reason: matched
+          ? `pattern matched in ${predicate.file}`
+          : `pattern not found in ${predicate.file}`,
+      };
+    }
+
+    case "file-missing-pattern": {
+      const abs = resolveRepoPath(repoRoot, predicate.file);
+      if (!abs) {
+        return {
+          predicate,
+          passed: false,
+          reason: `path escapes repo root or is invalid: ${predicate.file}`,
+        };
+      }
+      const content = await readFileSafe(abs);
+      if (content === null) {
+        // Conservative: missing file means we can't assert the pattern is
+        // absent in any meaningful sense. Treat as failed so the finding
+        // surfaces as `partial-fix` rather than silently passing.
+        return {
+          predicate,
+          passed: false,
+          reason: `file not found or unreadable: ${predicate.file}`,
+        };
+      }
+      const re = safeRegex(predicate.pattern, predicate.flags);
+      if (!re) {
+        return {
+          predicate,
+          passed: false,
+          reason: `invalid regex: /${predicate.pattern}/${predicate.flags ?? ""}`,
+        };
+      }
+      const matched = re.test(content);
+      return {
+        predicate,
+        passed: !matched,
+        reason: matched
+          ? `pattern unexpectedly present in ${predicate.file}`
+          : `pattern absent in ${predicate.file}`,
+      };
+    }
+
+    case "ast-shape": {
+      // Tree-sitter not yet wired in as a runtime dep. The conservative
+      // contract is: an unimplemented predicate cannot prove the finding
+      // is fixed, so we mark it as failed with a stable reason. Cloud's
+      // watcher can downgrade this case to `unknown` rather than treating
+      // it as a hard partial-fix; the OSS verifier just reports facts.
+      return {
+        predicate,
+        passed: false,
+        reason: "ast-shape predicates are not yet implemented in the OSS verifier",
+      };
+    }
+    default: {
+      // Exhaustiveness guard. If a new predicate kind is added to the
+      // discriminated union without a case here, this branch becomes a
+      // type error at compile time.
+      const _exhaustive: never = predicate;
+      void _exhaustive;
+      return {
+        predicate: predicate as VerificationCodePredicate,
+        passed: false,
+        reason: "unknown predicate kind",
+      };
+    }
+  }
+}
+
+/**
+ * Evaluate a {@link VerificationSpec} against `repoRoot` on disk.
+ *
+ * - Every `code[]` predicate is evaluated. The aggregate `passed` is true
+ *   iff every predicate's `passed` is true.
+ * - `failedPredicates` is the list of predicates whose `passed` was false
+ *   (for caller-side rendering: "these predicates flipped → finding is
+ *   partial-fix").
+ * - When `spec.behavior` is present, this helper does NOT attempt to run
+ *   it; it returns the code-level result with `reason` set to a stable
+ *   "behavior eval not yet supported" string. Callers that need
+ *   behavioural verification should dispatch separately.
+ *
+ * No exceptions are thrown for normal failure modes (missing files, bad
+ * regex, path escapes). Every failure is a structured PredicateResult.
+ */
+export async function evaluateVerificationSpec(
+  spec: VerificationSpec,
+  repoRoot: string,
+): Promise<VerificationResult> {
+  const results: PredicateResult[] = [];
+  for (const predicate of spec.code) {
+    results.push(await evaluateOne(predicate, repoRoot));
+  }
+
+  const failedPredicates = results.filter((r) => !r.passed);
+
+  // Empty code[] with no behavior → no signal either way. Pass=false is
+  // the conservative default (the caller can't claim "still vulnerable"
+  // from zero predicates) but we surface it via `reason` so the caller
+  // can downgrade to `unknown` rather than `partial-fix`.
+  if (spec.code.length === 0 && !spec.behavior) {
+    return {
+      passed: false,
+      failedPredicates: [],
+      reason: "no predicates",
+    };
+  }
+
+  const codePassed = failedPredicates.length === 0 && spec.code.length > 0;
+
+  if (spec.behavior) {
+    // Code-level passed and a behavioural step exists: we can't actually
+    // run it here. Surface the limitation rather than silently claiming
+    // "still vulnerable". Callers should treat this as inconclusive
+    // pending a behavioural runner.
+    return {
+      passed: codePassed,
+      failedPredicates,
+      reason: "behavior eval not yet supported",
+    };
+  }
+
+  return {
+    passed: codePassed,
+    failedPredicates,
+  };
+}
