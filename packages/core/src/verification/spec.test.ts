@@ -344,3 +344,81 @@ describe("evaluateVerificationSpec — path safety", () => {
     expect(result.passed).toBe(false);
   });
 });
+
+/**
+ * pwnkit#193 follow-up — ReDoS + oversized-input guards.
+ *
+ * The verifier is the inner loop of cloud's canary watcher. An LLM-emitted
+ * spec that contains a pathological regex like `(a+)+$` matched against a
+ * large file would stall the worker via catastrophic backtracking. The
+ * evaluator caps both the pattern length and the file size before any
+ * regex match runs.
+ */
+describe("evaluateVerificationSpec — ReDoS + oversize guards", () => {
+  it("rejects oversized regex patterns without compiling them", async () => {
+    // 513 chars is just over MAX_PATTERN_LENGTH; the predicate must flip
+    // to failed with an `invalid regex` reason rather than running the
+    // pattern over the file.
+    const oversized = "a".repeat(513);
+    const spec: VerificationSpec = {
+      code: [
+        {
+          kind: "file-contains",
+          file: "app/users.ts",
+          pattern: oversized,
+        },
+      ],
+    };
+    const result = await evaluateVerificationSpec(spec, repoRoot);
+    expect(result.passed).toBe(false);
+    expect(result.failedPredicates[0].reason).toMatch(/invalid regex/);
+  });
+
+  it("refuses to read files larger than the byte cap", async () => {
+    // Build a fresh repo with a >1MB file. We don't want to pollute the
+    // shared repoRoot with multi-megabyte fixtures.
+    const big = mkdtempSync(join(tmpdir(), "pwnkit-verify-big-"));
+    try {
+      writeFileSync(join(big, "huge.txt"), "x".repeat(1_000_001));
+      const spec: VerificationSpec = {
+        code: [
+          {
+            kind: "file-contains",
+            file: "huge.txt",
+            pattern: "x",
+          },
+        ],
+      };
+      const result = await evaluateVerificationSpec(spec, big);
+      expect(result.passed).toBe(false);
+      // readFileSafe returns null for oversized files; the contained-pattern
+      // branch surfaces it as "file not found or unreadable" — same stable
+      // reason as a missing file, which the canary watcher already handles.
+      expect(result.failedPredicates[0].reason).toMatch(
+        /file not found or unreadable/,
+      );
+    } finally {
+      rmSync(big, { recursive: true, force: true });
+    }
+  });
+
+  it("does not hang on a small ReDoS-prone pattern over a small file", async () => {
+    // Sanity check on the combined defence: a small ReDoS-prone pattern
+    // compiles and runs because it's under the length cap, but the file
+    // is small (< 1MB) so backtracking is bounded. This test exists to
+    // document the contract — pattern bound is a guard, file bound is the
+    // second guard. The test should not hang.
+    const start = Date.now();
+    const spec: VerificationSpec = {
+      code: [
+        {
+          kind: "file-contains",
+          file: "app/users.ts",
+          pattern: "(a+)+$",
+        },
+      ],
+    };
+    await evaluateVerificationSpec(spec, repoRoot);
+    expect(Date.now() - start).toBeLessThan(2000);
+  });
+});

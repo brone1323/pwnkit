@@ -50,6 +50,25 @@ export interface VerificationResult {
 }
 
 /**
+ * Maximum length of a regex pattern the verifier will compile. Verification
+ * specs are produced by an LLM and consumed by a long-running canary watcher
+ * — a single pathological pattern (e.g. `(a+)+$`) on a large file is enough
+ * to stall the worker for minutes via catastrophic backtracking. The bound
+ * here is a defence-in-depth complement to the file-size cap below: it
+ * rejects most ReDoS-prone inputs before they ever reach the regex engine.
+ */
+const MAX_PATTERN_LENGTH = 512;
+
+/**
+ * Maximum file size (bytes) the verifier will read into memory for pattern
+ * matching. Files above this cap short-circuit with a stable reason. 1 MB
+ * is generous for the kinds of source files specs target (TS/JS/Py/Go) and
+ * keeps regex matching cost predictable. Combined with `MAX_PATTERN_LENGTH`,
+ * this caps the worst-case runtime of a single predicate.
+ */
+const MAX_FILE_BYTES = 1_000_000;
+
+/**
  * Resolve a repo-relative path against `repoRoot`. Refuses to escape the
  * root via `..` segments or absolute paths — same defence-in-depth pattern
  * the agent's `read_file` uses, so that a malicious finding can't be made
@@ -73,10 +92,13 @@ function resolveRepoPath(repoRoot: string, file: string): string | null {
 
 /**
  * Build a RegExp from a pattern + optional flags string. Returns null on
- * invalid regex. The verifier never throws on malformed predicates — a bad
+ * invalid regex OR when the pattern exceeds {@link MAX_PATTERN_LENGTH}.
+ * The verifier never throws on malformed predicates — a bad or oversized
  * regex flips the predicate to `passed: false` with a clear reason.
  */
 function safeRegex(pattern: string, flags?: string): RegExp | null {
+  if (typeof pattern !== "string") return null;
+  if (pattern.length > MAX_PATTERN_LENGTH) return null;
   try {
     return new RegExp(pattern, flags);
   } catch {
@@ -84,8 +106,17 @@ function safeRegex(pattern: string, flags?: string): RegExp | null {
   }
 }
 
+/**
+ * Read a file into memory, capped at {@link MAX_FILE_BYTES}. Returns null
+ * for missing/unreadable/oversized files so the caller surfaces a stable
+ * "file not found or unreadable" reason rather than running a regex over
+ * a multi-megabyte blob.
+ */
 async function readFileSafe(absPath: string): Promise<string | null> {
   try {
+    const stat = await fs.stat(absPath);
+    if (!stat.isFile()) return null;
+    if (stat.size > MAX_FILE_BYTES) return null;
     return await fs.readFile(absPath, "utf8");
   } catch {
     return null;
