@@ -116,6 +116,15 @@ export const findings = sqliteTable(
      * See pwnkit#170.
      */
     pocSteps: text("pocSteps"),
+    /**
+     * JSON-stringified VerificationSpec (see @pwnkit/shared types). NULL
+     * when the agent produced a finding without a deterministic re-check
+     * contract — every reader must continue to work in that case. Stored
+     * as text because the spec is an opaque blob that the verifier reads
+     * whole; we never query individual predicates. See pwnkit#193 /
+     * pwnkit-cloud#111.
+     */
+    verificationSpec: text("verificationSpec"),
     timestamp: integer("timestamp").notNull(),
   },
   (table) => [

@@ -369,6 +369,11 @@ export class pwnkitDB {
     if (!colNames.has("pocSteps")) {
       this.sqlite.exec("ALTER TABLE findings ADD COLUMN pocSteps TEXT");
     }
+    // pwnkit#193 — machine-executable verification contract. JSON-stringified
+    // VerificationSpec. Optional/additive: legacy findings keep working.
+    if (!colNames.has("verificationSpec")) {
+      this.sqlite.exec("ALTER TABLE findings ADD COLUMN verificationSpec TEXT");
+    }
     this.sqlite.exec("UPDATE findings SET fingerprint = id WHERE fingerprint IS NULL OR fingerprint = ''");
     this.sqlite.exec("UPDATE findings SET triageStatus = 'new' WHERE triageStatus IS NULL OR triageStatus = ''");
     this.sqlite.exec(`
@@ -1166,6 +1171,15 @@ export class pwnkitDB {
       finding.pocSteps && finding.pocSteps.length > 0
         ? JSON.stringify(finding.pocSteps)
         : null;
+    // pwnkit#193 — persist the optional VerificationSpec. NULL when the
+    // finding has no machine-executable re-check contract. Stored as
+    // JSON text; cloud's canary watcher reads it back via
+    // restorePersistedFinding to re-evaluate findings on each upstream
+    // HEAD refresh. Without this column the spec was silently dropped on
+    // any reload path.
+    const verificationSpecJson = finding.verificationSpec
+      ? JSON.stringify(finding.verificationSpec)
+      : null;
     this.db
       .insert(schema.findings)
       .values({
@@ -1192,6 +1206,7 @@ export class pwnkitDB {
         evidenceAnalysis: finding.evidence.analysis ?? null,
         layerVerdicts: layerVerdictsJson,
         pocSteps: pocStepsJson,
+        verificationSpec: verificationSpecJson,
         timestamp: finding.timestamp,
       })
       .onConflictDoUpdate({
@@ -1218,6 +1233,7 @@ export class pwnkitDB {
           evidenceAnalysis: finding.evidence.analysis ?? null,
           layerVerdicts: layerVerdictsJson,
           pocSteps: pocStepsJson,
+          verificationSpec: verificationSpecJson,
           timestamp: finding.timestamp,
         },
       })
@@ -2020,6 +2036,7 @@ CREATE TABLE IF NOT EXISTS findings (
   evidenceResponse TEXT NOT NULL,
   evidenceAnalysis TEXT,
   pocSteps TEXT,
+  verificationSpec TEXT,
   timestamp INTEGER NOT NULL
 );
 

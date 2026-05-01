@@ -259,6 +259,13 @@ export interface Finding {
    * markdown) prefer this structured form over the prose `evidence.*` strings.
    */
   pocSteps?: PocStep[];
+  /**
+   * Machine-executable verification contract (pwnkit#193 / pwnkit-cloud#111).
+   * Optional and additive. When populated, cloud's canary watcher (and any
+   * OSS caller) can re-evaluate whether the finding is still real against
+   * a fresh checkout of the target repo. See {@link VerificationSpec}.
+   */
+  verificationSpec?: VerificationSpec;
   timestamp: number;
 }
 
@@ -444,6 +451,93 @@ export interface PocStep {
    * informational.
    */
   expect?: PocStepExpect;
+}
+
+// ── Verification Spec (pwnkit#193 / pwnkit-cloud#111) ───────────────────────
+//
+// A `VerificationSpec` is a *machine-executable* contract attached to a
+// finding. It answers a single question: "is this finding still real?".
+//
+// The engine emits the spec when it produces a finding. Cloud (and OSS
+// callers) can later evaluate it against a fresh checkout of the target
+// repo to decide if the underlying vulnerability has been patched, partially
+// fixed, or is still exploitable — without re-running the full LLM agent.
+//
+// The spec is split into two layers:
+//
+// 1. `code[]` — pure code-level predicates. Cheap, deterministic, no target
+//    provisioning required. All predicates must pass for the finding to
+//    still count as vulnerable. If any fails, surface as `partial-fix`.
+//
+// 2. `behavior` — optional behavioural predicate. Requires a provisioned
+//    target. If present and its exploit predicate fails, the finding is
+//    `fixed` regardless of what `code[]` says.
+//
+// The field is OPTIONAL and ADDITIVE on `Finding`. Existing findings produced
+// before this type existed leave it undefined and continue to round-trip
+// unchanged through every renderer, exporter, the DB, and the cloud sink.
+
+/**
+ * Code-level predicate. Each variant is a discriminated union keyed on
+ * `kind`. All paths are repo-relative (resolved against the repoRoot the
+ * verifier is given). Patterns are JS regex source strings (so they can
+ * be persisted as JSON and re-hydrated cleanly).
+ *
+ * - `file-contains` — file exists AND its contents match `pattern` (with
+ *   optional regex `flags`). The vulnerable shape should still be present.
+ * - `file-missing-pattern` — file exists AND its contents do NOT match
+ *   `pattern`. Used to assert that a fix-marker (e.g. an `assertAdmin`
+ *   call) is still absent.
+ * - `file-exists` — file simply exists. Cheapest predicate; useful when
+ *   the vulnerable file has a stable name but the shape is hard to pin
+ *   with a single regex.
+ * - `ast-shape` — tree-sitter query against the file's parsed AST.
+ *   Stronger than regex but costs a tree-sitter dependency. Marked as
+ *   not-yet-implemented in the OSS verifier; treated as "skipped" when
+ *   evaluated, which is conservative (an unimplemented predicate cannot
+ *   prove the finding is fixed).
+ */
+export type VerificationCodePredicate =
+  | { kind: "file-contains"; file: string; pattern: string; flags?: string }
+  | { kind: "file-missing-pattern"; file: string; pattern: string; flags?: string }
+  | { kind: "file-exists"; file: string }
+  | { kind: "ast-shape"; file: string; query: string };
+
+/**
+ * Behavioural predicate — a single HTTP step the verifier should replay
+ * against a provisioned target. `expect` is one of:
+ *
+ * - `"success"` — any 2xx is fine.
+ * - `"forbidden"` — the request is expected to be rejected (4xx, typically
+ *   401/403). When the finding is "still vulnerable" the actual response
+ *   is a `success`, so a `forbidden` here is the *fix marker*: if the
+ *   target is forbidden, the exploit no longer works.
+ * - `{ status: number }` — exact status code match.
+ *
+ * The runtime executor that consumes this is OUT OF SCOPE for the OSS
+ * verifier in pwnkit#193 — code predicates only. The shape is recorded
+ * here so cloud's canary watcher can dispatch it later.
+ */
+export interface VerificationBehaviorStep {
+  method: string;
+  path: string;
+  body?: unknown;
+  expect: "success" | "forbidden" | { status: number };
+}
+
+export interface VerificationBehavior {
+  steps: VerificationBehaviorStep[];
+}
+
+export interface VerificationSpec {
+  /**
+   * Code-level predicates that must all be true for the finding to remain
+   * vulnerable. Empty array is permitted (means "no code-level signal";
+   * verifier returns inconclusive when there is also no `behavior`).
+   */
+  code: VerificationCodePredicate[];
+  /** Optional behavioural predicate. Requires target provisioning. */
+  behavior?: VerificationBehavior;
 }
 
 // ── Kernel Crash Reports ──

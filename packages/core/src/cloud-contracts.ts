@@ -56,6 +56,16 @@ export interface CloudSinkEvidence {
 export type CloudSinkPocSteps = unknown[];
 
 /**
+ * Optional machine-executable verification contract (pwnkit#193 /
+ * pwnkit-cloud#111). Pass-through field; the OSS sink does not enrich or
+ * validate beyond a shape check. Cloud's canary watcher imports
+ * `evaluateVerificationSpec` from `@pwnkit/core` to evaluate it; the
+ * orchestrator schema strips unknown keys today and will land its own zod
+ * entry mirroring `VerificationSpec` in `@pwnkit/shared/types.ts`.
+ */
+export type CloudSinkVerificationSpec = Record<string, unknown>;
+
+/**
  * Strict finding shape the pwnkit-cloud orchestrator accepts at
  * POST /scans/:id/findings.
  */
@@ -84,6 +94,12 @@ export interface CloudSinkFinding {
    * cloud orchestrator will silently strip it until its schema is updated.
    */
   pocSteps?: CloudSinkPocSteps;
+  /**
+   * Optional machine-executable verification spec (pwnkit#193). Pass-through;
+   * the cloud orchestrator strips it today and will accept it once its
+   * schema mirrors `VerificationSpec` in `@pwnkit/shared/types.ts`.
+   */
+  verificationSpec?: CloudSinkVerificationSpec;
 }
 
 /**
