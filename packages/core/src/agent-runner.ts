@@ -70,7 +70,7 @@ function getMaxTurns(
   // call duration grows with conversation history — 5s at turn 1, 60s at
   // turn 14 — so trimming late verify turns is the highest-leverage cut.)
   if (purpose === "verify") {
-    return Math.min(8, branch === "native" ? 8 : 10);
+    return branch === "native" ? 8 : 10;
   }
   if (role === "audit") {
     if (branch === "native") {
