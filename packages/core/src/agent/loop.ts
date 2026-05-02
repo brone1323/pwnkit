@@ -124,11 +124,25 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
   process.on("SIGINT", signalCleanup);
   process.on("SIGTERM", signalCleanup);
 
+  // CI heartbeat: one stderr line per turn so a CI log of a hung scan
+  // tells us at which turn / on which tool we stopped making progress.
+  // Gated on CI / explicit opt-in so local TUI runs stay quiet.
+  const heartbeatEnabled = !!(process.env.CI || process.env.PWNKIT_HEARTBEAT || process.env.PWNKIT_DEBUG);
+  const loopStartedAt = Date.now();
+  let lastToolName: string | null = null;
+
   // ── Main loop ──
 
   try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+
+    if (heartbeatEnabled) {
+      const elapsed = ((Date.now() - loopStartedAt) / 1000).toFixed(1);
+      process.stderr.write(
+        `[pwnkit:hb] t=${elapsed}s role=${config.role} turn=${state.turnCount}/${config.maxTurns} runtime=${runtime.type} last_tool=${lastToolName ?? "-"}\n`,
+      );
+    }
 
     // Build the full conversation as a single prompt for the runtime
     const prompt = serializeConversation(state.messages);
@@ -169,6 +183,10 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
 
     const assistantContent = result.output;
     const toolCalls = parseToolCalls(assistantContent);
+
+    if (toolCalls.length > 0) {
+      lastToolName = toolCalls[toolCalls.length - 1].name;
+    }
 
     const assistantMsg: AgentMessage = {
       role: "assistant",
