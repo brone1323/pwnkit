@@ -33,6 +33,14 @@ export interface AnalysisAgentOptions {
   cliSystemPrompt: string;
   /** Optional: direct API prompt with embedded source code for single-shot fallback */
   directApiPrompt?: string;
+  /**
+   * Why the agent is being invoked. `research` (default) uses the full
+   * depth-derived turn budget. `verify` reproves a single specific finding
+   * and is capped much tighter — late turns in a long verify call cost as
+   * much as in a long research call (each one re-sends the entire growing
+   * conversation), and a single finding shouldn't need 15 turns to reproduce.
+   */
+  purpose?: "research" | "verify";
 }
 
 /**
@@ -50,7 +58,20 @@ export interface AnalysisAgentResult {
 
 // ── Depth → maxTurns mapping ──
 
-function getMaxTurns(role: "audit" | "review", depth: string | undefined, branch: "native" | "legacy"): number {
+function getMaxTurns(
+  role: "audit" | "review",
+  depth: string | undefined,
+  branch: "native" | "legacy",
+  purpose: "research" | "verify" = "research",
+): number {
+  // Verify reproves one specific finding and should never need more than
+  // a handful of turns; cap it tight regardless of depth so verify-wave
+  // wall-clock stays bounded. (See PR #198 heartbeat data: per-turn LLM
+  // call duration grows with conversation history — 5s at turn 1, 60s at
+  // turn 14 — so trimming late verify turns is the highest-leverage cut.)
+  if (purpose === "verify") {
+    return branch === "native" ? 8 : 10;
+  }
   if (role === "audit") {
     if (branch === "native") {
       return depth === "deep" ? 30 : depth === "default" ? 20 : 10;
@@ -77,7 +98,7 @@ function getMaxTurns(role: "audit" | "review", depth: string | undefined, branch
  * 3. Legacy fallback (runAgentLoop)
  */
 export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<AnalysisAgentResult> {
-  const { role, scopePath, target, scanId, sessionId, config, db, emit, cliPrompt, agentSystemPrompt, cliSystemPrompt, directApiPrompt } = opts;
+  const { role, scopePath, target, scanId, sessionId, config, db, emit, cliPrompt, agentSystemPrompt, cliSystemPrompt, directApiPrompt, purpose = "research" } = opts;
 
   const templatePrefix = `cli-${role}`;
   const requestedRuntime = config.runtime as RuntimeType | "auto" | undefined;
@@ -239,7 +260,7 @@ export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<Anal
     }
 
     if (supportsNative) {
-      const maxTurns = getMaxTurns(role, config.depth, "native");
+      const maxTurns = getMaxTurns(role, config.depth, "native", purpose);
 
       const agentState = await runNativeAgentLoop({
         config: {
@@ -359,7 +380,7 @@ export async function runAnalysisAgent(opts: AnalysisAgentOptions): Promise<Anal
   }
 
   // ── Branch 3: Legacy fallback — text-based agent loop ──
-  const maxTurns = getMaxTurns(role, config.depth, "legacy");
+  const maxTurns = getMaxTurns(role, config.depth, "legacy", purpose);
 
   const runtimeConfig = {
     type: runtimeType as RuntimeType,

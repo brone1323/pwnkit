@@ -935,6 +935,7 @@ export async function runPipeline(opts: PipelineOptions): Promise<PipelineReport
             try {
               const agentResult = await runAnalysisAgent({
                 role: "review",
+                purpose: "verify",
                 scopePath: prepared.scopePath,
                 target: prepared.resolvedTarget,
                 scanId: `${persistedScanId}-verify`,

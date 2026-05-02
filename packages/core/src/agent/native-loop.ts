@@ -240,6 +240,13 @@ export async function runNativeAgentLoop(
   // Collect tool names used for the attempt summary (deduped)
   const toolsUsedSet = new Set<string>();
 
+  // CI heartbeat: one stderr line per turn so a CI log of a hung scan
+  // tells us at which turn / on which tool we stopped making progress.
+  // Gated on CI / explicit opt-in so local TUI runs stay quiet.
+  const heartbeatEnabled = !!(process.env.CI || process.env.PWNKIT_HEARTBEAT || process.env.PWNKIT_DEBUG);
+  const loopStartedAt = Date.now();
+  let lastToolName: string | null = null;
+
   // Context window compaction — allow re-compaction as context regrows
   let compactionCount = 0;
   let tokensAtLastCompaction = 0;
@@ -290,6 +297,16 @@ export async function runNativeAgentLoop(
       max_turns: config.maxTurns,
       role: config.role,
     });
+
+    if (heartbeatEnabled) {
+      const elapsed = ((Date.now() - loopStartedAt) / 1000).toFixed(1);
+      const inTok = state.totalUsage.inputTokens;
+      const outTok = state.totalUsage.outputTokens;
+      const cost = state.estimatedCostUsd.toFixed(4);
+      process.stderr.write(
+        `[pwnkit:hb] t=${elapsed}s role=${config.role} turn=${state.turnCount}/${config.maxTurns} tokens=${inTok}/${outTok} cost=$${cost} last_tool=${lastToolName ?? "-"}\n`,
+      );
+    }
 
     try {
 
@@ -539,6 +556,10 @@ export async function runNativeAgentLoop(
       (b): b is Extract<NativeContentBlock, { type: "tool_use" }> =>
         b.type === "tool_use",
     );
+
+    if (toolUseBlocks.length > 0) {
+      lastToolName = toolUseBlocks[toolUseBlocks.length - 1].name;
+    }
 
     // If no tool calls, the model responded with text only
     if (toolUseBlocks.length === 0) {
