@@ -162,7 +162,7 @@ control the container image, networking, and bootstrap behavior:
 
 | Variable | Default | Purpose |
 |----------|---------|---------|
-| `PWNKIT_DOCKER_IMAGE` | `ghcr.io/PwnKit-Labs/pwnkit:latest` | Override the executor image |
+| `PWNKIT_DOCKER_IMAGE` | `ghcr.io/pwnkit-labs/pwnkit:latest` | Override the executor image |
 | `PWNKIT_DOCKER_NETWORK` | `bridge` | Docker network mode for the executor container |
 | `PWNKIT_DOCKER_BOOTSTRAP_TOOLS` | auto | Force or disable apt-based tool bootstrap inside the container |
 

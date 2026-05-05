@@ -168,7 +168,7 @@ npx pwnkit-cli scan --target https://example.com --mode web --race
 
 ### Kali Docker executor
 
-Enable `PWNKIT_FEATURE_DOCKER_EXECUTOR=1` to run every bash command inside a containerized pentest environment. By default, pwnkit now pulls the prebuilt GHCR image `ghcr.io/PwnKit-Labs/pwnkit:latest`, which already includes Node, Playwright/Chromium, and the standard pentest toolset. No host pollution, reproducible tool versions, and much faster startup than bootstrapping raw Kali on every run.
+Enable `PWNKIT_FEATURE_DOCKER_EXECUTOR=1` to run every bash command inside a containerized pentest environment. By default, pwnkit now pulls the prebuilt GHCR image `ghcr.io/pwnkit-labs/pwnkit:latest`, which already includes Node, Playwright/Chromium, and the standard pentest toolset. No host pollution, reproducible tool versions, and much faster startup than bootstrapping raw Kali on every run.
 
 ```bash
 export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
@@ -179,7 +179,7 @@ Advanced overrides:
 
 ```bash
 # Force a specific image
-export PWNKIT_DOCKER_IMAGE=ghcr.io/PwnKit-Labs/pwnkit:latest
+export PWNKIT_DOCKER_IMAGE=ghcr.io/pwnkit-labs/pwnkit:latest
 
 # Force apt-based tool bootstrap even on a custom image
 export PWNKIT_DOCKER_BOOTSTRAP_TOOLS=1

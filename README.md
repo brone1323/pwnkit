@@ -62,7 +62,7 @@ Binaries ship for linux-x64, linux-arm64, darwin-arm64, and windows-x64. The int
 
 ```bash
 docker run --rm -e OPENROUTER_API_KEY=$KEY \
-  ghcr.io/peaktwilight/pwnkit:latest scan --target https://example.com
+  ghcr.io/pwnkit-labs/pwnkit:latest scan --target https://example.com
 ```
 
 If you use Azure OpenAI instead, also pass `AZURE_OPENAI_BASE_URL` and `AZURE_OPENAI_MODEL`. For the Responses API, the Azure base URL should include `/openai/v1`.
