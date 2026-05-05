@@ -54,6 +54,7 @@ const verificationResultSchema = z.object({
       detail: z.string(),
     }),
   ),
+  artifacts: z.record(z.string()),
   summary: z.string(),
   error_reason: z.union([z.string(), z.null()]),
 });
@@ -327,6 +328,51 @@ describe("runVerify", () => {
     writeFileSync(outPath, JSON.stringify(outcome.result, null, 2), "utf8");
     const parsed: VerificationResult = JSON.parse(readFileSync(outPath, "utf8"));
     expect(verificationResultSchema.parse(parsed)).toEqual(parsed);
+  });
+
+  it("runs the built-in cli-path-traversal fixture and reports reproduced", async () => {
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      fixtureMode: "vulnerable",
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result.status).toBe("reproduced");
+    expect(outcome.result.finding_id).toBe("fixture:cli-path-traversal");
+    expect(outcome.result.commands).toHaveLength(1);
+    expect(outcome.result.assertions.find((a) => a.kind === "filesystem_exists")?.passed).toBe(true);
+    expect(outcome.result.assertions.find((a) => a.kind === "path_outside_export_root")?.passed).toBe(true);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("runs the patched cli-path-traversal fixture as the negative control", async () => {
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      fixtureMode: "patched",
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.result.status).toBe("not_reproduced");
+    expect(outcome.result.commands[0].stderr_excerpt).toContain("blocked path traversal");
+    expect(outcome.result.assertions.find((a) => a.kind === "filesystem_exists")?.passed).toBe(false);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("retains fixture artifacts when requested", async () => {
+    const artifactDir = join(tmpRoot, "retained-fixture");
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      retainArtifacts: true,
+      artifactDir,
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result.artifacts.sandbox_ref).toBe(artifactDir);
+    expect(outcome.result.artifacts.harness_ref).toBeTruthy();
+    expect(existsSync(outcome.result.artifacts.harness_ref)).toBe(true);
+    expect(existsSync(outcome.result.artifacts.stdout_ref)).toBe(true);
+    expect(existsSync(outcome.result.artifacts.stderr_ref)).toBe(true);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
   });
 });
 

@@ -158,8 +158,19 @@ export type { LiveAgentState } from "./agent/live-agent-state.js";
 // finding's `verificationSpec` predicates against a repo on disk so cloud's
 // canary watcher (and any OSS caller) can deterministically decide whether
 // a finding is still real after upstream changes.
-export { evaluateVerificationSpec } from "./verification/index.js";
-export type { PredicateResult, VerificationResult } from "./verification/index.js";
+export {
+  evaluateVerificationSpec,
+  runCliPathTraversalReplayFixture,
+} from "./verification/index.js";
+export type {
+  CliPathTraversalFixtureOptions,
+  DeterministicReplayResult,
+  PredicateResult,
+  ReplayAssertion,
+  ReplayCommand,
+  ReplayStatus,
+  VerificationResult,
+} from "./verification/index.js";
 
 // Disclosure bundle assembly (finding → GHSA-ready advisory markdown)
 export { suggestCwesForCategory, formatCweSection, suggestCvss, renderAdvisoryMarkdown, renderExploitScreenshot, isFreezeAvailable, composeExploitSession, composeStepSession, verifyAgainstRef, extractFileRefs, formatPatchStatusSection, detectVersionRange, formatVersionRangeLine, extractSiblingFix, executePocSteps, setRuntimeDeps, MAX_CAPTURE_BYTES, DEFAULT_STEP_TIMEOUT_MS, decideFilingState, assembleBundleIndex, formatDroppedReason, droppedFilename, dropSlug } from "./disclose/index.js";

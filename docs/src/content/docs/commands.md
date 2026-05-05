@@ -384,6 +384,39 @@ npx pwnkit-cli findings reopen <finding-id>
 | `suppress <id>` | Suppress a finding (known FP or accepted risk) |
 | `reopen <id>` | Reopen a previously suppressed finding |
 
+## verify
+
+Replay structured PoC steps or a built-in deterministic fixture and emit a
+`verification_result` JSON payload. The final assertion phase does not require
+an LLM.
+
+```bash
+# Replay PoC steps from a finding JSON
+npx pwnkit-cli verify --finding finding.json
+
+# Run the deterministic CLI path traversal fixture
+npx pwnkit-cli verify --fixture cli-path-traversal
+
+# Keep the sandbox, harness script, and stdout/stderr logs
+npx pwnkit-cli verify --fixture cli-path-traversal --retain-artifacts
+```
+
+The `cli-path-traversal` fixture starts a malicious local API, runs a
+Paperclip-style export CLI against a temp export directory, and checks that a
+marker file escapes the selected export root while staying inside the sandbox.
+Use `--fixture-mode patched` as a negative control; it rejects `../` paths and
+should return `status: "not_reproduced"`.
+
+| Flag | Description | Default |
+|------|-------------|---------|
+| `--finding <path>` | Finding JSON with `pocSteps` to replay | |
+| `--target <path>` | Optional `PocExecutionTarget` JSON for PoC steps | |
+| `--fixture <name>` | Built-in deterministic fixture. Supported: `cli-path-traversal` | |
+| `--fixture-mode <mode>` | Fixture behavior: `vulnerable` or `patched` | `vulnerable` |
+| `--retain-artifacts` | Keep the fixture sandbox and log files | `false` |
+| `--artifact-dir <path>` | Use a specific fixture sandbox root | |
+| `--output <path>` | Write JSON to a file instead of stdout | |
+
 ## XBOW benchmark runner
 
 The XBOW benchmark runner lives in `packages/benchmark` and is invoked with `pnpm --filter @pwnkit/benchmark xbow`. It runs pwnkit against the 104 XBOW validation challenges and reports pass/fail with evidence.
