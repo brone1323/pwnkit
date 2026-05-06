@@ -128,4 +128,53 @@ describe("renderAdvisoryMarkdown", () => {
     const sorted = [high.filename, critical.filename].sort();
     expect(sorted[0]).toBe(critical.filename);
   });
+
+  it("renders the pocSteps step graph block under ## PoC when finding.pocSteps is present", () => {
+    const finding = baseFinding({
+      pocSteps: [
+        {
+          id: "exploit-1",
+          kind: "exploit",
+          summary: "Hit the SSRF endpoint",
+          action: { type: "http", method: "GET", url: "/api/foo?url=http://169.254.169.254/" },
+          expect: { type: "http-status", status: 200 },
+        },
+      ],
+    });
+    const { markdown } = renderAdvisoryMarkdown(finding);
+    expect(markdown).toContain("**Step graph:**");
+    expect(markdown).toContain("**exploit** — Hit the SSRF endpoint");
+    expect(markdown).toContain("GET /api/foo?url=http://169.254.169.254/");
+    expect(markdown).toContain("Expected result: `http-status`");
+  });
+
+  it("appends a behavioural verdict line under ## Patch status when ctx.pocExecution is present", () => {
+    const finding = baseFinding();
+    const { markdown } = renderAdvisoryMarkdown(finding, {
+      pocExecution: {
+        findingId: finding.id,
+        startedAt: "2026-05-06T17:00:00Z",
+        endedAt: "2026-05-06T17:00:01Z",
+        steps: [{ stepId: "exploit-1", kind: "passed", durationMs: 12 }],
+        overallVerdict: "exploit_still_works",
+      },
+    });
+    expect(markdown).toContain("**Behavioural check: exploit still reproducible.**");
+    expect(markdown).toContain("`exploit_still_works`");
+  });
+
+  it("renders the siblingFix snippet under ## Suggested fix when there is no remediation.codeExample", () => {
+    const finding = baseFinding();
+    const { markdown } = renderAdvisoryMarkdown(finding, {
+      siblingFix: {
+        fileRef: { file: "src/handlers/safe.ts", line: 42 },
+        snippet: "if (!isPrivateIp(host)) await fetch(host);",
+        language: "typescript",
+        confidence: 0.9,
+        rationale: "uses the correct allowlist",
+      },
+    });
+    expect(markdown).toContain("Correct pattern already present in the repo at `src/handlers/safe.ts:42`");
+    expect(markdown).toContain("isPrivateIp");
+  });
 });

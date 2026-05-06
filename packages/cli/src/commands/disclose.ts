@@ -233,6 +233,10 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         if (behaviouralReport && !opts.dryRun) {
           const execPath = join(outputDir, `${finding.id.slice(0, 8)}.execution.json`);
           writeFileSync(execPath, JSON.stringify(behaviouralReport, null, 2), "utf8");
+          // Round-trip the verdict through the findings table so cloud sinks
+          // and re-runs of disclose can read it back without re-executing
+          // the step graph against the live target.
+          db.saveFindingPocExecution(finding.id, behaviouralReport);
         }
       }
       if (reverifyOn) {
