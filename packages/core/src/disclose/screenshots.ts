@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Finding, PocStep } from "@pwnkit/shared";
 import type { PocStepResult } from "./poc-runtime.js";
+import { redactSensitiveHeaders } from "./template.js";
 
 export interface ScreenshotResult {
   alt: string;
@@ -82,7 +83,7 @@ export function composeExploitSession(finding: Finding): string {
   const response = finding.evidence?.response?.trim();
 
   if (request) {
-    const requestLines = request.split("\n");
+    const requestLines = redactSensitiveHeaders(request).split("\n");
     lines.push(`$ ${requestLines[0]}`);
     for (const line of requestLines.slice(1)) {
       lines.push(`  ${line}`);
@@ -91,7 +92,7 @@ export function composeExploitSession(finding: Finding): string {
   }
 
   if (response) {
-    lines.push(response);
+    lines.push(redactSensitiveHeaders(response));
   }
 
   const analysis = finding.evidence?.analysis?.trim();
@@ -137,12 +138,17 @@ export function composeStepSession(
       lines.push(`$ ${step.action.method.toUpperCase()} ${step.action.url}`);
       if (step.action.headers) {
         for (const [k, v] of Object.entries(step.action.headers)) {
-          lines.push(`  ${k}: ${v}`);
+          // Redact sensitive header values inline so the screenshot text
+          // never leaks the operator's session / JWT / API key into a
+          // published advisory (sensitive-data disclosure prevention).
+          const headerLine = redactSensitiveHeaders(`${k}: ${v}`);
+          lines.push(`  ${headerLine}`);
         }
       }
       if (step.action.body) {
         lines.push("");
-        for (const l of step.action.body.split("\n")) lines.push(`  ${l}`);
+        const redactedBody = redactSensitiveHeaders(step.action.body);
+        for (const l of redactedBody.split("\n")) lines.push(`  ${l}`);
       }
       break;
     }
@@ -166,14 +172,14 @@ export function composeStepSession(
       lines.push(`# http-status=${result.observedStatus}`);
     }
     if (result.observedStdout && result.observedStdout.trim().length > 0) {
-      for (const l of result.observedStdout.split("\n")) lines.push(l);
+      for (const l of redactSensitiveHeaders(result.observedStdout).split("\n")) lines.push(l);
     }
     if (result.observedResponseBody && result.observedResponseBody.trim().length > 0) {
-      for (const l of result.observedResponseBody.split("\n")) lines.push(l);
+      for (const l of redactSensitiveHeaders(result.observedResponseBody).split("\n")) lines.push(l);
     }
     if (result.observedStderr && result.observedStderr.trim().length > 0) {
       lines.push("");
-      for (const l of result.observedStderr.split("\n")) lines.push(`# stderr: ${l}`);
+      for (const l of redactSensitiveHeaders(result.observedStderr).split("\n")) lines.push(`# stderr: ${l}`);
     }
     lines.push("");
     lines.push(`# verdict: ${result.kind}${result.error ? ` (${result.error})` : ""}`);

@@ -51,10 +51,20 @@ export interface AssembleIndexOptions {
  * Decide a finding's filing state from the canary patch status (#170 canary)
  * and the behavioural reverify verdict (#171). The gate is conservative:
  *
+ *   - Empty PoC                                  → drop, reason = unverified-poc
  *   - Code-level fixed (when --drop-fixed is on) → drop, reason = canary
  *   - Behavioural `exploit_broken`               → drop, reason = behavioural
- *   - Behavioural `could_not_run`                → needs-review (operator)
+ *   - Behavioural `could_not_run`                → drop (default), or
+ *                                                  needs-review when
+ *                                                  `keepUnrun` is on
  *   - Otherwise                                  → keep
+ *
+ * Defaulting `could_not_run` to drop (rather than the previous
+ * needs-review) is an advisory-quality hardening: a finding whose own
+ * runtime can't reproduce the exploit is the canonical "AI-generated
+ * low-quality" advisory trigger and gets auto-closed at any responsible
+ * disclosure venue. Operators who want to manually inspect those rows
+ * can pass `--keep-unrun`.
  *
  * Returns both the verdict and the reason so the caller can render the
  * dropped-reason file or surface "needs-review" in the INDEX.
@@ -64,9 +74,23 @@ export function decideFilingState(
     patchStatus?: ReverifyResult;
     behaviouralReport?: PocExecutionReport;
     dropFixed: boolean;
+    /**
+     * When true, route `could_not_run` to needs-review instead of the new
+     * default (drop). Mirrors the disclose CLI's `--keep-unrun` flag.
+     */
+    keepUnrun?: boolean;
+    /**
+     * When true, the renderer threw `EmptyPocError` because the finding has
+     * no PoC content (no pocSteps, no evidence request/response, no
+     * screenshots). Such findings are dropped with reason `unverified-poc`.
+     */
+    emptyPoc?: boolean;
   },
 ): { filingState: FilingState; dropReason?: string } {
-  const { patchStatus, behaviouralReport, dropFixed } = inputs;
+  const { patchStatus, behaviouralReport, dropFixed, keepUnrun, emptyPoc } = inputs;
+  if (emptyPoc) {
+    return { filingState: "drop", dropReason: "unverified-poc: empty PoC" };
+  }
   if (patchStatus && dropFixed && (patchStatus.status === "fixed" || patchStatus.status === "file-removed")) {
     return { filingState: "drop", dropReason: `canary status=${patchStatus.status}` };
   }
@@ -74,7 +98,8 @@ export function decideFilingState(
     return { filingState: "drop", dropReason: "behavioural reverify: exploit_broken" };
   }
   if (behaviouralReport?.overallVerdict === "could_not_run") {
-    return { filingState: "needs-review" };
+    if (keepUnrun) return { filingState: "needs-review" };
+    return { filingState: "drop", dropReason: "unverified-poc: behavioural reverify could_not_run" };
   }
   return { filingState: "keep" };
 }

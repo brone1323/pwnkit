@@ -45,6 +45,110 @@ export interface RenderedAdvisory {
   severity: string;
 }
 
+/**
+ * Thrown by {@link renderAdvisoryMarkdown} when the finding has no
+ * reproducible PoC content (no `pocSteps`, no `evidence.request`, no
+ * `evidence.response`, no screenshots in `ctx`). Publishing an advisory
+ * with a literal "to fill in" placeholder is the canonical "AI-generated
+ * low-quality" trigger that gets reports auto-closed at any responsible
+ * disclosure venue. The CLI catches this error and routes the finding
+ * into `_dropped/` with an `unverified-poc` reason file so the audit
+ * trail is explicit.
+ */
+export class EmptyPocError extends Error {
+  readonly findingId: string;
+  constructor(findingId: string) {
+    super(`Finding ${findingId} has no PoC content (pocSteps, evidence, or screenshots) — refusing to render advisory.`);
+    this.name = "EmptyPocError";
+    this.findingId = findingId;
+  }
+}
+
+// ── Sensitive-data redaction ────────────────────────────────────────────────
+//
+// Publishing an advisory that leaks the operator's session cookie, AWS key,
+// or JWT into a triage queue is the textbook "sensitive-data disclosure"
+// own-goal — and most responsible-disclosure programs treat it as a CoC
+// violation that earns the report a fast-track close. Mask values for known
+// auth headers (case-insensitive), AWS access keys, and JWT-looking strings.
+// Inline by design — this is a small, mechanical transform applied right
+// before content is emitted into the advisory or the screenshot session text.
+
+const SENSITIVE_HEADER_NAMES = new Set([
+  "authorization",
+  "cookie",
+  "set-cookie",
+  "x-auth-token",
+  "x-api-key",
+  "x-csrf-token",
+]);
+
+const AWS_KEY_RE = /\bAKIA[0-9A-Z]{16}\b/g;
+// JWT: three base64url segments separated by dots, total length >= 80.
+// Base64url charset: A-Z a-z 0-9 - _, with optional `=` padding.
+const JWT_RE = /\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+={0,2}\b/g;
+
+// Inline `Bearer <token>` matches anywhere in a line. Targets shell commands
+// like `curl -H "Authorization: Bearer eyJ..."` where the line-oriented
+// `^Header:` matcher doesn't fire because the header lives inside an arg.
+// Token is "non-whitespace, non-quote" so we don't swallow trailing quote
+// or shell separators.
+const INLINE_BEARER_RE = /\b(Bearer)\s+([^\s"'`]+)/gi;
+
+// Inline `-H 'Sensitive-Header: ...'` / `-H "Sensitive-Header: ..."` /
+// `--header 'Sensitive-Header: ...'` for curl-style commands. Quoting is
+// optional (`-H Sensitive-Header: ...` is valid curl too).
+const INLINE_CURL_HEADER_RE =
+  /(-H|--header)(\s+|=)(["']?)([A-Za-z][A-Za-z0-9-]*)\s*:\s*([^"'\n]*)\3/gi;
+
+/**
+ * Redact sensitive header values, AWS access keys, and JWT-looking strings
+ * from a block of text. Header redaction is line-oriented and case-
+ * insensitive — `Authorization: Bearer xyz` becomes
+ * `Authorization: <REDACTED-Authorization>`. AWS keys and JWTs are masked
+ * wherever they appear in the body.
+ *
+ * Also masks two shell-command patterns that wouldn't be caught by the
+ * line-oriented `^Header:` matcher:
+ *   - inline `Bearer <token>` (e.g. embedded in a `curl -H` arg)
+ *   - `curl -H 'Cookie: ...'` / `--header "Authorization: ..."`
+ * Without these, a `pocSteps` shell step that wraps a real bearer token
+ * inside its `cmd` field would leak verbatim into the rendered advisory.
+ */
+export function redactSensitiveHeaders(text: string): string {
+  if (!text) return text;
+  const lines = text.split("\n");
+  const redactedLines = lines.map((line) => {
+    // Header line: `Name: value` or `Name:value`. Allow leading whitespace
+    // (request indentation) and arbitrary case on the header name.
+    const m = /^(\s*)([A-Za-z][A-Za-z0-9-]*)\s*:\s*(.*)$/.exec(line);
+    if (m && SENSITIVE_HEADER_NAMES.has(m[2].toLowerCase())) {
+      return `${m[1]}${m[2]}: <REDACTED-${m[2]}>`;
+    }
+    return line;
+  });
+  let out = redactedLines.join("\n");
+  // Inline `curl -H 'Sensitive: ...'` patterns. Apply BEFORE bearer/JWT/AWS
+  // sweeps so the value is wholly replaced, not partially masked.
+  out = out.replace(INLINE_CURL_HEADER_RE, (match, flag, sep, quote, name, _value) => {
+    if (!SENSITIVE_HEADER_NAMES.has(name.toLowerCase())) return match;
+    return `${flag}${sep}${quote}${name}: <REDACTED-${name}>${quote}`;
+  });
+  // Inline `Bearer <token>` anywhere in the text — handles cases the
+  // `^Authorization:` matcher above already covered, but also wraps
+  // tokens embedded in shell args.
+  out = out.replace(INLINE_BEARER_RE, "$1 <REDACTED-Bearer>");
+  out = out.replace(AWS_KEY_RE, "<REDACTED-AWS-KEY>");
+  // Apply JWT regex AFTER header redaction so we don't double-replace masks.
+  // The mask placeholder doesn't match the JWT pattern so this is safe.
+  out = out.replace(JWT_RE, (match) => {
+    // Skip strings that don't look like real JWTs (need to be 80+ chars).
+    if (match.length < 80) return match;
+    return "<REDACTED-JWT>";
+  });
+  return out;
+}
+
 function severityHeading(severity: string): string {
   const upper = severity.toUpperCase();
   return upper === "CRITICAL" || upper === "HIGH" || upper === "MEDIUM" || upper === "LOW" ? upper : severity;
@@ -153,7 +257,23 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
     const bits: string[] = [];
     if (ctx.pwnkitVersion) bits.push(`pwnkit \`${ctx.pwnkitVersion}\``);
     if (ctx.scanId) bits.push(`scan \`${ctx.scanId.slice(0, 8)}\``);
-    out.push(`> Code-verified by ${bits.join(", ")}.`, "");
+    // Honesty gate: only claim "code-verified" when BOTH the canary
+    // patch-status check (#170) and the behavioural reverify (#171)
+    // returned positive verdicts. Without that pair the advisory is a
+    // static draft, not a live-verified issue — claiming otherwise is
+    // misrepresentation, and most disclosure venues treat that as a
+    // hard CoC violation. The negative branch is deliberately neutral:
+    // saying "not behaviourally re-verified" is itself a false claim
+    // when ctx.pocExecution exists with verdict exploit_broken or
+    // could_not_run (the run happened, it just didn't confirm). The
+    // Patch Status section below carries the actual reverify state.
+    const canaryPositive = ctx.patchStatus?.status === "still-vulnerable";
+    const behaviouralPositive = ctx.pocExecution?.overallVerdict === "exploit_still_works";
+    if (canaryPositive && behaviouralPositive) {
+      out.push(`> Code-verified by ${bits.join(", ")}.`, "");
+    } else {
+      out.push(`_Generated by ${bits.join(", ")}._`, "");
+    }
   }
 
   out.push("## Summary", "");
@@ -164,13 +284,32 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
     out.push(evidenceAnalysis, "");
   }
 
-  out.push("## PoC", "");
+  // ── Empty-PoC gate ──
+  // Refuse to render an advisory whose PoC section would be a literal
+  // "to fill in" placeholder. Publishing that gets the advisory auto-closed
+  // at any responsible-disclosure venue and burns operator reputation.
+  // Callers (CLI, bundle) catch EmptyPocError and route the finding into
+  // _dropped/ with reason `unverified-poc`.
   const pocStepsBlock = renderPocSteps(finding);
-  if (pocStepsBlock.length > 0) {
-    out.push(...pocStepsBlock);
+  const hasRequest = !!finding.evidence?.request?.trim();
+  const hasResponse = !!finding.evidence?.response?.trim();
+  const hasScreenshots = !!ctx.screenshots && ctx.screenshots.length > 0;
+  if (pocStepsBlock.length === 0 && !hasRequest && !hasResponse && !hasScreenshots) {
+    throw new EmptyPocError(finding.id);
   }
-  if (ctx.screenshots && ctx.screenshots.length > 0) {
-    for (const shot of ctx.screenshots) {
+
+  out.push("## PoC", "");
+  if (pocStepsBlock.length > 0) {
+    // Redact the rendered step graph before emitting. PoC step bodies are
+    // operator-supplied shell commands and HTTP request/response chunks —
+    // a real bearer token, cookie, or JWT can land here verbatim. Without
+    // this pass the rendered advisory leaks the operator's auth context
+    // (sensitive-data disclosure → instant CoC violation).
+    const redactedSteps = redactSensitiveHeaders(pocStepsBlock.join("\n")).split("\n");
+    out.push(...redactedSteps);
+  }
+  if (hasScreenshots) {
+    for (const shot of ctx.screenshots!) {
       const width = shot.width ? ` width="${shot.width}"` : "";
       out.push(`<img${width} alt="${shot.alt}" src="${shot.relativePath}" />`, "");
       if (shot.caption) {
@@ -178,16 +317,13 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
       }
     }
   }
-  if (finding.evidence?.request?.trim()) {
+  if (hasRequest) {
     out.push("**Request:**", "");
-    out.push(indentEvidenceBlock(finding.evidence.request, "http"), "");
+    out.push(indentEvidenceBlock(redactSensitiveHeaders(finding.evidence!.request), "http"), "");
   }
-  if (finding.evidence?.response?.trim()) {
+  if (hasResponse) {
     out.push("**Response:**", "");
-    out.push(indentEvidenceBlock(finding.evidence.response, "http"), "");
-  }
-  if (pocStepsBlock.length === 0 && !finding.evidence?.request?.trim() && !finding.evidence?.response?.trim() && (!ctx.screenshots || ctx.screenshots.length === 0)) {
-    out.push("_To fill in: concrete reproduction steps. `pwnkit-cli disclose` will auto-populate this once PoC execution lands (issue #168)._", "");
+    out.push(indentEvidenceBlock(redactSensitiveHeaders(finding.evidence!.response), "http"), "");
   }
 
   out.push("## Suggested fix", "");

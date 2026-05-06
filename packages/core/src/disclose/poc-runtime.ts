@@ -52,6 +52,23 @@ export interface PocExecutionTarget {
   cwd?: string;
   /** Per-step timeout in milliseconds. Defaults to 30 000. */
   timeoutMs?: number;
+  /**
+   * Per-host requests-per-second cap for http-action dispatch — rate-limit
+   * reverify so we don't accidentally hammer a vendor's production target.
+   * Defaults to 2 rps. The bucket is shared across every http step in the
+   * graph and refills 1 token / (1000/rps) ms. (Most responsible-disclosure
+   * programs require some form of rate limit on testing traffic.)
+   */
+  rpsPerHost?: number;
+  /**
+   * Optional comma-separated list of host patterns. When set, http and shell
+   * steps whose target host (or URL-shaped tokens in shell cmds) don't match
+   * are refused as `errored` — responsible-disclosure programs almost
+   * universally prohibit scanning out-of-scope hosts. Wildcards: `*.acme.com`
+   * matches subdomains but NOT `acme.com` itself (matches the typical
+   * subdomain-glob semantics used by major bug-bounty platforms).
+   */
+  scopeAllowlist?: string[];
 }
 
 /** Per-step verdict returned to the caller. */
@@ -97,6 +114,178 @@ export const DEFAULT_STEP_TIMEOUT_MS = 30_000;
 const PERSONA_HEADER = "X-Pwnkit-Persona";
 /** Marker appended when a captured stream is truncated. */
 const TRUNCATION_MARKER = "\n…[truncated at 1MiB]";
+
+/** Default per-host requests-per-second cap for http-action dispatch. */
+export const DEFAULT_RPS_PER_HOST = 2;
+
+// ── Per-host token bucket (responsible-disclosure rate limit) ───────────────
+//
+// In-memory token bucket keyed on `URL(target).host`. We use a tiny ad-hoc
+// implementation rather than pulling in a dependency: the bucket is
+// per-host-per-process, so the worst-case state is tiny.
+//
+// 429 handling: when a host returns 429 we set `retryUntil = now +
+// max(parseInt(retryAfter)*1000, 60_000)` — that blocks every subsequent
+// acquire until the deadline passes. Conservative: even a 1-second
+// `Retry-After` triggers a 60-second cool-off so we don't tarpit-loop the
+// target.
+
+interface HostBucket {
+  /** Tokens currently available (1 token = 1 request). */
+  tokens: number;
+  /** Tokens added per millisecond. */
+  refillRatePerMs: number;
+  /** Maximum tokens (bucket capacity) — also the burst cap. */
+  capacity: number;
+  /** Last refill timestamp (Date.now). */
+  lastRefill: number;
+  /** When > now(), all acquires block. Set on 429. */
+  retryUntil: number;
+}
+
+const hostBuckets = new Map<string, HostBucket>();
+
+function getOrInitBucket(host: string, rps: number): HostBucket {
+  let bucket = hostBuckets.get(host);
+  if (!bucket) {
+    bucket = {
+      tokens: rps, // full bucket on first use
+      refillRatePerMs: rps / 1000,
+      capacity: rps,
+      lastRefill: Date.now(),
+      retryUntil: 0,
+    };
+    hostBuckets.set(host, bucket);
+  }
+  return bucket;
+}
+
+function refill(bucket: HostBucket): void {
+  const now = Date.now();
+  const elapsed = now - bucket.lastRefill;
+  if (elapsed > 0) {
+    bucket.tokens = Math.min(bucket.capacity, bucket.tokens + elapsed * bucket.refillRatePerMs);
+    bucket.lastRefill = now;
+  }
+}
+
+/**
+ * Block until 1 token is available for `host`, then consume it. Honours
+ * `retryUntil` (set on 429) by sleeping until the deadline first.
+ */
+async function acquireHostToken(host: string, rps: number): Promise<void> {
+  const bucket = getOrInitBucket(host, rps);
+  // 429-induced cool-off: hard sleep until retryUntil before doing anything.
+  while (Date.now() < bucket.retryUntil) {
+    const waitMs = bucket.retryUntil - Date.now();
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(Math.min(waitMs, 1000));
+  }
+  // Refill + consume; spin (with sleep) until we have at least one token.
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    refill(bucket);
+    if (bucket.tokens >= 1) {
+      bucket.tokens -= 1;
+      return;
+    }
+    const tokensNeeded = 1 - bucket.tokens;
+    const waitMs = Math.max(1, Math.ceil(tokensNeeded / bucket.refillRatePerMs));
+    // eslint-disable-next-line no-await-in-loop
+    await sleep(waitMs);
+  }
+}
+
+/**
+ * Mark a host as 429-rate-limited until the given deadline. Subsequent
+ * `acquireHostToken(host)` calls will block until `retryUntil`.
+ */
+function markHostRateLimited(host: string, retryAfterHeader: string | null): void {
+  const bucket = hostBuckets.get(host);
+  if (!bucket) return;
+  const parsed = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
+  const retryAfterMs = Number.isFinite(parsed) && parsed > 0 ? parsed * 1000 : 0;
+  bucket.retryUntil = Date.now() + Math.max(retryAfterMs, 60_000);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+/**
+ * Test-only: reset the in-process token bucket state. Also unsticks any
+ * already-parked `acquireHostToken` promise by zeroing the retryUntil and
+ * topping up tokens on every still-referenced bucket — otherwise a 429
+ * cool-off test would leave a 60-second sleep lingering in the event loop
+ * after the assertion has already passed.
+ */
+export function _resetRateLimitState(): void {
+  for (const bucket of hostBuckets.values()) {
+    bucket.retryUntil = 0;
+    bucket.tokens = bucket.capacity;
+  }
+  hostBuckets.clear();
+}
+
+// ── Scope allowlist (responsible-disclosure: refuse out-of-scope hosts) ─────
+//
+// `scopeAllowlist` patterns:
+//   - exact host match: `acme.com` matches host == "acme.com"
+//   - subdomain wildcard: `*.acme.com` matches `a.acme.com`, `b.c.acme.com`
+//     but NOT `acme.com` itself (H1's documented semantic)
+//   - host comparison is case-insensitive and ignores the port
+//   - IPv6 literals are normalised by stripping the `[ ]` brackets so
+//     `[2001:db8::1]:443` and `[2001:db8::1]` both match the allowlist
+//     entry `[2001:db8::1]` or the bare `2001:db8::1`. A naive
+//     `split(":")[0]` would collapse every IPv6 literal to its first
+//     hextet — making one allowlisted IPv6 host accidentally match every
+//     other IPv6 host.
+
+/**
+ * Normalise a host (target or allowlist pattern) for case-insensitive,
+ * port-agnostic comparison. Handles IPv6 literals correctly:
+ *   - `[2001:db8::1]:443` → `2001:db8::1`
+ *   - `[2001:db8::1]`     → `2001:db8::1`
+ *   - `2001:db8::1`       → `2001:db8::1` (bare IPv6 — preserved, not port-stripped)
+ *   - `acme.com:8080`     → `acme.com`
+ *   - `acme.com`          → `acme.com`
+ */
+function normalizeHostForMatch(value: string): string {
+  const trimmed = value.trim().toLowerCase();
+  if (trimmed.startsWith("[")) {
+    const end = trimmed.indexOf("]");
+    return end === -1 ? trimmed : trimmed.slice(1, end);
+  }
+  // Heuristic for bare (un-bracketed) IPv6 literals: 2+ colons. Don't strip
+  // the trailing `:N` because it's a final hextet, not a port. Hostnames and
+  // IPv4 with optional `:port` have 0–1 colons.
+  if ((trimmed.match(/:/g) ?? []).length >= 2) return trimmed;
+  return trimmed.replace(/:\d+$/, "");
+}
+
+function hostMatchesAllowlist(host: string, allowlist: string[] | undefined): boolean {
+  if (!allowlist || allowlist.length === 0) return true; // no list → no gate
+  const target = normalizeHostForMatch(host);
+  for (const raw of allowlist) {
+    const pattern = normalizeHostForMatch(raw);
+    if (!pattern) continue;
+    if (pattern.startsWith("*.")) {
+      const suffix = pattern.slice(1); // ".acme.com"
+      if (target.endsWith(suffix) && target.length > suffix.length) return true;
+    } else if (target === pattern) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function extractUrlsFromShellCommand(cmd: string): string[] {
+  const matches = cmd.match(/https?:\/\/[^\s'"]+/g);
+  return matches ?? [];
+}
+
+/** Test-only export. */
+export const _scopeMatch = hostMatchesAllowlist;
 
 // ── Spawn shim (overridable for tests) ──────────────────────────────────────
 //
@@ -225,6 +414,27 @@ async function runShellStep(
   target: PocExecutionTarget,
   start: number,
 ): Promise<PocStepResult> {
+  // Scope allowlist (Fix 7): pre-flight extract any URL-shaped tokens and
+  // refuse the whole command if any of them point at an out-of-scope host.
+  if (target.scopeAllowlist && target.scopeAllowlist.length > 0) {
+    for (const u of extractUrlsFromShellCommand(action.cmd)) {
+      let host: string;
+      try {
+        host = new URL(u).host;
+      } catch {
+        continue;
+      }
+      if (!hostMatchesAllowlist(host, target.scopeAllowlist)) {
+        return {
+          stepId: step.id,
+          kind: "errored",
+          durationMs: Date.now() - start,
+          error: `out-of-scope url in shell cmd: ${u} (allowlist: ${target.scopeAllowlist.join(", ")})`,
+        };
+      }
+    }
+  }
+
   const env = { ...process.env, ...(target.env ?? {}) };
   const cwd = action.cwd ?? target.cwd;
   const timeoutMs = target.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
@@ -283,6 +493,31 @@ async function runHttpStep(
     };
   }
 
+  // Scope allowlist (Fix 7): refuse before we even touch the wire.
+  let host: string;
+  try {
+    host = new URL(url).host;
+  } catch {
+    return {
+      stepId: step.id,
+      kind: "errored",
+      durationMs: Date.now() - start,
+      error: `http step url is not a valid URL: ${url}`,
+    };
+  }
+  if (!hostMatchesAllowlist(host, target.scopeAllowlist)) {
+    return {
+      stepId: step.id,
+      kind: "errored",
+      durationMs: Date.now() - start,
+      error: `out-of-scope host: ${host} (allowlist: ${target.scopeAllowlist!.join(", ")})`,
+    };
+  }
+
+  // Per-host rate limit (Fix 6).
+  const rps = target.rpsPerHost ?? DEFAULT_RPS_PER_HOST;
+  await acquireHostToken(host, rps);
+
   const headers = mergePersonaHeaders(action.headers ?? {}, target);
 
   const timeoutMs = target.timeoutMs ?? DEFAULT_STEP_TIMEOUT_MS;
@@ -299,6 +534,11 @@ async function runHttpStep(
       signal: ac.signal,
     });
     body = await readBodyCapped(response);
+    if (response.status === 429) {
+      // Block subsequent acquires on this host until the cool-off expires.
+      const retryAfter = response.headers.get("retry-after");
+      markHostRateLimited(host, retryAfter);
+    }
   } catch (err) {
     clearTimeout(timer);
     const aborted = ac.signal.aborted;

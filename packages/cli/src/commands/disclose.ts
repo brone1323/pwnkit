@@ -12,6 +12,7 @@ import {
   detectVersionRange,
   extractSiblingFix,
   executePocSteps,
+  EmptyPocError,
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
@@ -41,6 +42,9 @@ interface DiscloseOptions {
   targetUrl?: string;
   targetEnv?: string[];
   targetTimeoutMs?: string;
+  keepUnrun?: boolean;
+  reverifyRps?: string;
+  scopeAllowlist?: string;
 }
 
 const STATUS_COLOUR: Record<PatchStatus, (s: string) => string> = {
@@ -161,7 +165,20 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
       else throw new Error(`Finding '${findingId}' not found.`);
     } else {
       const floor = SEVERITY_RANK[opts.severityFloor ?? "medium"] ?? 2;
-      selected = rows.filter((r) => (SEVERITY_RANK[r.severity] ?? 0) >= floor && r.triageStatus !== "suppressed");
+      // Advisory quality gate: never auto-draft advisories from "discovered"
+      // (LLM hypothesised but not agent-confirmed) or "false-positive"
+      // (explicitly rejected) findings. Auto-filing an unverified PoC is the
+      // canonical "AI-generated low-quality" trigger that gets advisories
+      // auto-closed at any responsible disclosure venue. Operators who
+      // explicitly want to inspect those rows can pass an exact `--scan` +
+      // `findingId` since single-finding mode bypasses this filter.
+      selected = rows.filter(
+        (r) =>
+          (SEVERITY_RANK[r.severity] ?? 0) >= floor &&
+          r.triageStatus !== "suppressed" &&
+          r.status !== "discovered" &&
+          r.status !== "false-positive",
+      );
       if (selected.length === 0) {
         console.log(chalk.gray(`No findings at or above severity '${opts.severityFloor ?? "medium"}' after triage filtering.`));
         return;
@@ -190,6 +207,13 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     if (targetTimeoutMs !== undefined && (!Number.isFinite(targetTimeoutMs) || targetTimeoutMs <= 0)) {
       throw new Error(`--target-timeout-ms must be a positive integer, got: ${opts.targetTimeoutMs}`);
     }
+    const reverifyRps = opts.reverifyRps ? Number(opts.reverifyRps) : undefined;
+    if (reverifyRps !== undefined && (!Number.isFinite(reverifyRps) || reverifyRps <= 0)) {
+      throw new Error(`--reverify-rps must be a positive number, got: ${opts.reverifyRps}`);
+    }
+    const scopeAllowlist = opts.scopeAllowlist
+      ? opts.scopeAllowlist.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
     const droppedDir = join(outputDir, "_dropped");
     console.log(chalk.red.bold("\n  ◆ pwnkit") + chalk.gray(` disclose — ${selected.length} finding${selected.length === 1 ? "" : "s"}`));
     console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`));
@@ -214,6 +238,60 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
       state: ResultState;
     }
     const results: FindingResult[] = [];
+
+    /**
+     * Route a finding into `_dropped/` with a reason file, log it, and push
+     * the entry into `results`. Shared between the canary/behavioural drop
+     * branch and the empty-PoC catch — both paths build identical
+     * BundleEntry shapes and emit identical console lines, so a single
+     * helper avoids the previous bug where the empty-poc branch hand-rolled
+     * its filename via `${id}-${sev}-empty-poc.md` and bypassed
+     * `droppedFilename()` (which would have used `dropSlug(entry)` derived
+     * from the canary/behavioural state).
+     */
+    function routeDroppedFinding(args: {
+      finding: Finding;
+      row: FindingRow;
+      patchStatus: ReverifyResult | undefined;
+      behaviouralReport: PocExecutionReport | undefined;
+      dropReason: string | undefined;
+      label: string;
+    }): void {
+      const { finding, row, patchStatus, behaviouralReport, dropReason, label } = args;
+      const droppedEntry: BundleEntry = {
+        finding,
+        filename: "",
+        primaryCwe: "",
+        cvssScore: 0,
+        patchStatus: patchStatus?.status,
+        behaviouralVerdict: behaviouralReport?.overallVerdict,
+        filingState: "drop",
+        dropReason,
+      };
+      if (!opts.dryRun) {
+        mkdirSync(droppedDir, { recursive: true });
+        const reasonPath = join(droppedDir, droppedFilename(droppedEntry));
+        const body = formatDroppedReason({
+          finding,
+          scanId,
+          patchStatus,
+          behaviouralReport,
+          reason: dropReason ?? "dropped",
+        });
+        writeFileSync(reasonPath, body, "utf8");
+      }
+      console.log(
+        `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(label)}`
+      );
+      results.push({
+        ...droppedEntry,
+        severity: row.severity,
+        title: row.title,
+        shotCount: 0,
+        state: "dropped",
+      });
+    }
+
     for (const row of selected) {
       const finding = rowToFinding(row);
       let patchStatus: ReverifyResult | undefined;
@@ -224,6 +302,8 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           baseUrl: opts.targetUrl,
           env: targetEnv,
           timeoutMs: targetTimeoutMs,
+          rpsPerHost: reverifyRps,
+          scopeAllowlist,
         };
         try {
           behaviouralReport = await executePocSteps(finding, target);
@@ -285,43 +365,20 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         patchStatus,
         behaviouralReport,
         dropFixed: !!opts.dropFixed,
+        keepUnrun: !!opts.keepUnrun,
       });
 
       // Route dropped findings into _dropped/ with a reason file. This catches
       // both code-level drops (canary-fixed) and behavioural drops (exploit
       // no longer fires) — the reason file makes the audit trail explicit.
       if (filingState === "drop") {
-        const droppedEntry: BundleEntry = {
+        routeDroppedFinding({
           finding,
-          filename: "",
-          primaryCwe: "",
-          cvssScore: 0,
-          patchStatus: patchStatus?.status,
-          behaviouralVerdict: behaviouralReport?.overallVerdict,
-          filingState,
+          row,
+          patchStatus,
+          behaviouralReport,
           dropReason,
-        };
-        if (!opts.dryRun) {
-          mkdirSync(droppedDir, { recursive: true });
-          const reasonPath = join(droppedDir, droppedFilename(droppedEntry));
-          const body = formatDroppedReason({
-            finding,
-            scanId,
-            patchStatus,
-            behaviouralReport,
-            reason: dropReason ?? "dropped",
-          });
-          writeFileSync(reasonPath, body, "utf8");
-        }
-        console.log(
-          `  ${chalk.gray("drop")}  ${chalk.dim((row.title + " …").slice(0, 64).padEnd(64))}  ${chalk.gray(dropReason ?? "dropped")}`
-        );
-        results.push({
-          ...droppedEntry,
-          severity: row.severity,
-          title: row.title,
-          shotCount: 0,
-          state: "dropped",
+          label: dropReason ?? "dropped",
         });
         continue;
       }
@@ -358,7 +415,33 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
         }
       }
       const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange, pocExecution: behaviouralReport };
-      const rendered = renderAdvisoryMarkdown(finding, ctx);
+      let rendered;
+      try {
+        rendered = renderAdvisoryMarkdown(finding, ctx);
+      } catch (err) {
+        // Empty-PoC drop. Re-route the finding through the dropped-reason
+        // path with `unverified-poc` as the explicit reason so the audit
+        // trail shows why we refused to draft.
+        if (err instanceof EmptyPocError) {
+          const { dropReason: emptyReason } = decideFilingState({
+            patchStatus,
+            behaviouralReport,
+            dropFixed: !!opts.dropFixed,
+            keepUnrun: !!opts.keepUnrun,
+            emptyPoc: true,
+          });
+          routeDroppedFinding({
+            finding,
+            row,
+            patchStatus,
+            behaviouralReport,
+            dropReason: emptyReason,
+            label: "empty-poc",
+          });
+          continue;
+        }
+        throw err;
+      }
       const path = join(outputDir, rendered.filename);
       let state: ResultState = "wrote";
       if (!opts.dryRun) {
@@ -425,6 +508,9 @@ export function registerDiscloseCommand(program: Command): void {
     .option("--target-url <url>", "Base URL the behavioural re-verify runtime dispatches http actions against (e.g. http://localhost:3108)")
     .option("--target-env <kv...>", "Repeated KEY=VALUE pairs added to the shell-action environment for behavioural re-verify")
     .option("--target-timeout-ms <ms>", "Per-step timeout for behavioural re-verify, in milliseconds (default 30000)")
+    .option("--keep-unrun", "Route `could_not_run` behavioural verdicts to needs-review instead of dropping them. Default-off because unverified PoCs should never auto-file.", false)
+    .option("--reverify-rps <n>", "Per-host requests-per-second cap for behavioural reverify (default 2). Honours 429 Retry-After.")
+    .option("--scope-allowlist <hosts>", "Comma-separated host allowlist for reverify. Supports `*.domain.com` wildcard (matches subdomains, NOT the apex). Out-of-scope http/shell steps fail closed.")
     .option("--dry-run", "Show what would be written without writing files", false)
     .action(async (findingId: string | undefined, opts: DiscloseOptions) => {
       await disclose(findingId, opts);

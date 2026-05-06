@@ -120,14 +120,31 @@ describe("decideFilingState", () => {
     expect(r.dropReason).toContain("exploit_broken");
   });
 
-  it("flags needs-review when behavioural verdict is could_not_run", () => {
+  it("drops could_not_run by default (advisory quality gate: unverified PoC)", () => {
     const r = decideFilingState({
       patchStatus: reverifyStillVulnerable(),
       behaviouralReport: execReport("could_not_run"),
       dropFixed: true,
     });
+    expect(r.filingState).toBe("drop");
+    expect(r.dropReason).toContain("unverified-poc");
+  });
+
+  it("flags could_not_run as needs-review when keepUnrun is on", () => {
+    const r = decideFilingState({
+      patchStatus: reverifyStillVulnerable(),
+      behaviouralReport: execReport("could_not_run"),
+      dropFixed: true,
+      keepUnrun: true,
+    });
     expect(r.filingState).toBe("needs-review");
     expect(r.dropReason).toBeUndefined();
+  });
+
+  it("drops on emptyPoc=true regardless of other inputs", () => {
+    const r = decideFilingState({ dropFixed: false, emptyPoc: true });
+    expect(r.filingState).toBe("drop");
+    expect(r.dropReason).toContain("unverified-poc");
   });
 
   it("canary-fixed wins over could_not_run (drop is more conservative)", () => {
