@@ -12,6 +12,7 @@ import { loadTemplates } from "@pwnkit/templates";
 import { createRuntime } from "./runtime/index.js";
 import { LlmApiRuntime } from "./runtime/llm-api.js";
 import type { ApiRuntimeDiagnostics } from "./runtime/llm-api.js";
+import { CliNativeRuntime } from "./runtime/cli-native.js";
 import { detectAvailableRuntimes } from "./runtime/registry.js";
 // DB lazy-loaded to avoid native module issues
 import { runAgentLoop } from "./agent/loop.js";
@@ -271,6 +272,11 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
 
   let selectedRuntimeType: "api" | "claude" | "codex" | "gemini" = "api";
   let useNative = false;
+  // Subscription-CLI mode: when claude is selected without an API key,
+  // we drive the native loop through the local CLI's session-resume
+  // protocol (see CliNativeRuntime). This unlocks Claude Max users who
+  // never set ANTHROPIC_API_KEY but have already run `claude login`.
+  let cliNativeRuntime: CliNativeRuntime | undefined;
 
   if (requestedRuntime === "api") {
     selectedRuntimeType = "api";
@@ -285,6 +291,20 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       // Codex and Gemini are experimental and limited to source-analysis workflows.
       if (availableCli.has("claude")) {
         selectedRuntimeType = "claude";
+        // No API key but Claude Code is installed — opt the native
+        // loop in via the CLI subscription path instead of falling
+        // back to the legacy text-based loop.
+        cliNativeRuntime = new CliNativeRuntime({
+          type: "claude",
+          timeout: config.timeout ?? 600_000,
+          model: config.model,
+        });
+        useNative = true;
+        emit({
+          type: "stage:start",
+          stage: "discovery",
+          message: "No API key found — running native agent loop through `claude` CLI (subscription mode).",
+        });
       } else if (availableCli.has("codex")) {
         selectedRuntimeType = "codex";
         emit({ type: "stage:start", stage: "discovery", message: "Warning: codex is experimental for live targets. Prefer runtime=api or install Claude Code CLI for full tool-loop support." });
@@ -294,12 +314,30 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       } else {
         selectedRuntimeType = "api";
       }
-      useNative = false;
     }
+  } else if (requestedRuntime === "claude" && !nativeApiAvailable) {
+    // Explicit `--runtime claude` with no API key → subscription mode.
+    selectedRuntimeType = "claude";
+    cliNativeRuntime = new CliNativeRuntime({
+      type: "claude",
+      timeout: config.timeout ?? 600_000,
+      model: config.model,
+    });
+    useNative = true;
+    emit({
+      type: "stage:start",
+      stage: "discovery",
+      message: "Running native agent loop through `claude` CLI (subscription mode).",
+    });
   } else {
     selectedRuntimeType = requestedRuntime;
     useNative = false;
   }
+
+  // The native-loop entry points all take a NativeRuntime. When the
+  // user is in subscription mode, swap the LLM-API runtime for the
+  // CLI-backed one. Everywhere else, the API runtime is still in use.
+  const nativeRuntime: NativeRuntime = cliNativeRuntime ?? nativeApiRuntime;
 
   const legacyRuntime = createRuntime({
     type: selectedRuntimeType,
@@ -533,7 +571,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     });
 
     const discoveryState = useNative
-      ? await runNativeDiscovery(nativeApiRuntime, db, config, scanId, emit, apiSpecPromptText, getPendingUserMessages)
+      ? await runNativeDiscovery(nativeRuntime, db, config, scanId, emit, apiSpecPromptText, getPendingUserMessages)
       : await runLegacyDiscovery(legacyRuntime, db, config, scanId, emit, dbPath, apiSpecPromptText);
 
     // Persist target profile
@@ -609,7 +647,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       const egatsResult = await runEGATSWithDefaults(
         config.target,
         scanId,
-        nativeApiRuntime,
+        nativeRuntime,
         db,
         {
           repoPath: config.repoPath,
@@ -642,7 +680,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       const raceResult = await raceWithDefaults(
         config.target,
         scanId,
-        nativeApiRuntime,
+        nativeRuntime,
         db,
         {
           maxConcurrency: config.maxConcurrency ?? 3,
@@ -676,7 +714,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       }
     } else {
       attackState = useNative
-        ? await runNativeAttack(nativeApiRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, opts.challengeHint, apiSpecPromptText, getPendingUserMessages)
+        ? await runNativeAttack(nativeRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, opts.challengeHint, apiSpecPromptText, getPendingUserMessages)
         : await runLegacyAttack(legacyRuntime, db, config, scanId, discoveryState.targetInfo, categories, maxAttackTurns, emit, dbPath, apiSpecPromptText);
     }
 
@@ -1441,7 +1479,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
           message: "All candidates rejected by consensus — skipping agentic verify.",
         });
       } else if (useNative) {
-        await runNativeVerify(nativeApiRuntime, db, config, scanId, consensusFiltered, emit);
+        await runNativeVerify(nativeRuntime, db, config, scanId, consensusFiltered, emit);
       } else {
         await runLegacyVerify(legacyRuntime, db, config, scanId, consensusFiltered, emit, dbPath);
       }
