@@ -5,7 +5,7 @@ description: Side-by-side comparison of pwnkit against other autonomous pentesti
 
 How pwnkit compares against other autonomous pentesting agents on the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Numbers are each project's public self-reports — cross-project scores are protocol-sensitive and shouldn't be treated as a matched-conditions leaderboard. Current as of April 2026.
 
-> **pwnkit status (April 2026):** the current retained artifact-backed XBOW tally is **99/104 aggregate**, with **74/104 black-box** and **79/104 white-box** recoverable from GitHub artifacts alone. Older public docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Results](/benchmark/) for the exact distinction and challenge-set mismatch.
+> **pwnkit status (May 2026):** the current retained artifact-backed XBOW tally is **103/104 = 99.0% aggregate**, with **97/104 = 93.3% black-box** (+1 flag ahead of KinoSec) and **101/104 = 97.1% white-box** (field-leading) recoverable from GitHub artifacts alone. Only XBEN-030 is unsolved in any mode. Older public docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Results](/benchmark/) for the exact distinction and challenge-set mismatch.
 
 For pwnkit's own score breakdown see [Results](/benchmark/); for the Shannon-specific gap analysis see [XBOW Analysis](/research/xbow-analysis/).
 
@@ -60,9 +60,9 @@ Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit h
 
 Implementation: `packages/core/src/triage/multi-modal.ts`.
 
-### Artifact-backed XBOW aggregate now reaches 99/104
+### Artifact-backed XBOW aggregate now reaches 103/104
 
-BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's retained artifact-backed aggregate is now **99/104**, but with a different methodology and challenge-set composition than the older **95/104 aggregate** mixed-publication line. The benchmark page is the canonical place where those distinctions are spelled out.
+BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's retained artifact-backed aggregate is now **103/104 = 99.0%** with only XBEN-030 unsolved in any mode, but with a different methodology and challenge-set composition than the older **95/104 aggregate** mixed-publication line. The benchmark page is the canonical place where those distinctions are spelled out.
 
 ## The meta-finding
 

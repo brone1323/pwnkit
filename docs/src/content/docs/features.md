@@ -164,11 +164,12 @@ is a no-op on npm-bench).
 
 ## Benchmarks
 
-- **XBOW retained artifact-backed aggregate:** **95.2% (99/104)** across the
-  current recoverable artifact window.
-- **XBOW retained artifact-backed black-box:** **71.2% (74/104)**.
+- **XBOW retained artifact-backed aggregate:** **99.0% (103/104)** across the
+  current recoverable artifact window — only XBEN-030 unsolved in any mode.
+- **XBOW retained artifact-backed black-box:** **93.3% (97/104)** (field-leading vs KinoSec's 92.3%).
+- **XBOW retained artifact-backed white-box:** **97.1% (101/104)** (field-leading).
 - **XBOW historical mixed local+CI publication:** **86.5% black-box (90/104)**
-  and **91.3% aggregate (95/104)**, tracked separately from the retained
+  and **91.3% aggregate (95 of 104)**, tracked separately from the retained
   artifact tally on the [Benchmark](/benchmark/) page.
 - **AI/LLM regression suite:** 10/10 on the self-authored suite covering
   prompt injection, jailbreaks, system-prompt extraction, PII leakage,
