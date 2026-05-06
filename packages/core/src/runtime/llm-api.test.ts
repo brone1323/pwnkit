@@ -440,9 +440,9 @@ describe("LlmApiRuntime response parsing", () => {
     (rt as any).wireApi = "responses";
     (rt as any).apiKey = "test";
 
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      text: async () => JSON.stringify({
+    const sseEvent = `data: ${JSON.stringify({
+      type: "response.completed",
+      response: {
         output: [
           {
             type: "function_call",
@@ -452,8 +452,18 @@ describe("LlmApiRuntime response parsing", () => {
           },
         ],
         usage: { input_tokens: 50, output_tokens: 20 },
+      },
+    })}\n\n`;
+
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sseEvent));
+          controller.close();
+        },
       }),
-    } as Response)));
+    } as unknown as Response)));
 
     const result = await rt.executeNative("sys", [
       { role: "user", content: [{ type: "text", text: "go" }] },
