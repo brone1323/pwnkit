@@ -40,6 +40,14 @@ export interface DeterministicReplayResult {
 
 export interface CliPathTraversalFixtureOptions {
   /**
+   * Command argv for the real CLI implementation under test. Arguments may
+   * contain these placeholders:
+   *   - {{apiUrl}} -> malicious local API base URL
+   *   - {{exportDir}} -> sandboxed export directory
+   *   - {{fixtureMode}} -> vulnerable or patched, for local test fixtures only
+   */
+  commandArgv?: string[];
+  /**
    * `vulnerable` writes returned file paths directly. `patched` rejects paths
    * that resolve outside the selected export directory and acts as the
    * negative control for the replay harness.
@@ -199,68 +207,16 @@ async function closeServer(server: Server): Promise<void> {
   });
 }
 
-function fixtureCliSource(): string {
-  return `#!/usr/bin/env node
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve, sep } from "node:path";
-
-function parseArgs(argv) {
-  const out = {};
-  for (let i = 0; i < argv.length; i += 2) {
-    const key = argv[i];
-    const value = argv[i + 1];
-    if (!key || !key.startsWith("--") || value === undefined) {
-      throw new Error("invalid args");
-    }
-    out[key.slice(2)] = value;
-  }
-  return out;
-}
-
-function isInside(root, candidate) {
-  return candidate === root || candidate.startsWith(root + sep);
-}
-
-const args = parseArgs(process.argv.slice(2));
-const api = args.api;
-const output = args.output;
-const mode = args.mode || "vulnerable";
-
-if (!api || !output) {
-  throw new Error("--api and --output are required");
-}
-
-const response = await fetch(new URL("/company/export", api));
-if (!response.ok) {
-  throw new Error("export API failed with " + response.status);
-}
-const body = await response.json();
-const root = resolve(output);
-await mkdir(root, { recursive: true });
-let blockedTraversal = false;
-
-for (const [name, content] of Object.entries(body.files || {})) {
-  const destination = resolve(root, name);
-  if (mode === "patched" && !isInside(root, destination)) {
-    console.error("blocked path traversal: " + name);
-    blockedTraversal = true;
-    continue;
-  }
-  await mkdir(dirname(destination), { recursive: true });
-  await writeFile(destination, String(content), "utf8");
-  console.log("wrote " + destination);
-}
-if (blockedTraversal) {
-  process.exitCode = 1;
-}
-`;
-}
-
-async function writeFixtureCli(harnessDir: string): Promise<string> {
-  const cliPath = join(harnessDir, "paperclip-export-fixture.mjs");
-  await mkdir(harnessDir, { recursive: true });
-  await writeFile(cliPath, fixtureCliSource(), { encoding: "utf8", mode: 0o755 });
-  return cliPath;
+function expandCommandArgv(
+  argv: string[],
+  replacements: { apiUrl: string; exportDir: string; fixtureMode: string },
+): string[] {
+  return argv.map((arg) =>
+    arg
+      .replaceAll("{{apiUrl}}", replacements.apiUrl)
+      .replaceAll("{{exportDir}}", replacements.exportDir)
+      .replaceAll("{{fixtureMode}}", replacements.fixtureMode),
+  );
 }
 
 function assertion(
@@ -370,11 +326,10 @@ function summaryFor(status: ReplayStatus): string {
 /**
  * Run the deterministic CLI path traversal replay from pwnkit#195.
  *
- * The fixture is intentionally local and synthetic: it starts a malicious API
- * server and runs a tiny Paperclip-style export CLI that writes returned file
- * entries to disk. In `vulnerable` mode the CLI lacks path containment and
- * reproduces the escape. In `patched` mode it rejects the same payload and the
- * result becomes `not_reproduced`.
+ * The fixture starts a malicious local API server and runs the caller-supplied
+ * CLI command against a sandboxed export directory. The harness itself never
+ * implements export behavior; the verdict comes from the CLI under test plus
+ * filesystem assertions over the sandbox.
  */
 export async function runCliPathTraversalReplayFixture(
   options: CliPathTraversalFixtureOptions = {},
@@ -388,7 +343,7 @@ export async function runCliPathTraversalReplayFixture(
     : await mkdtemp(join(tmpdir(), "pwnkit-verify-"));
   const exportDir = join(sandboxRoot, "export");
   const harnessDir = join(sandboxRoot, "harness");
-  const harnessRef = join(harnessDir, "paperclip-export-fixture.mjs");
+  const harnessRef = join(harnessDir, "harness.json");
   const stdoutRef = join(sandboxRoot, "stdout.log");
   const stderrRef = join(sandboxRoot, "stderr.log");
   const artifacts: Record<string, string> = {};
@@ -405,18 +360,35 @@ export async function runCliPathTraversalReplayFixture(
     await mkdir(exportDir, { recursive: true });
     const fixture = await startMaliciousExportServer();
     server = fixture.server;
-    const cliPath = await writeFixtureCli(harnessDir);
 
-    const argv = [
-      process.execPath,
-      cliPath,
-      "--api",
-      fixture.baseUrl,
-      "--output",
+    if (!options.commandArgv || options.commandArgv.length === 0) {
+      throw new Error(
+        "cli-path-traversal fixture requires commandArgv for the real CLI under test",
+      );
+    }
+    const argv = expandCommandArgv(options.commandArgv, {
+      apiUrl: fixture.baseUrl,
       exportDir,
-      "--mode",
       fixtureMode,
-    ];
+    });
+    await mkdir(harnessDir, { recursive: true });
+    await writeFile(
+      harnessRef,
+      JSON.stringify(
+        {
+          fixture: "cli-path-traversal",
+          fixtureMode,
+          commandArgv: options.commandArgv,
+          expandedArgv: argv,
+          apiUrl: fixture.baseUrl,
+          exportDir,
+        },
+        null,
+        2,
+      ) + "\n",
+      "utf8",
+    );
+
     const command = await runCommand(argv, {
       cwd: sandboxRoot,
       timeoutMs,

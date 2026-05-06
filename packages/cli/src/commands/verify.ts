@@ -304,6 +304,7 @@ interface VerifyOpts {
   bundle?: string;
   target?: string;
   fixture?: string;
+  fixtureCommand?: string;
   fixtureMode?: string;
   retainArtifacts?: boolean;
   artifactDir?: string;
@@ -328,6 +329,26 @@ function readJson<T>(path: string, kind: string): T {
       `failed to parse ${kind} as JSON (${abs}): ${err instanceof Error ? err.message : String(err)}`,
     );
   }
+}
+
+function parseFixtureCommand(raw: string | undefined): string[] | undefined {
+  if (!raw) return undefined;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (err) {
+    throw new Error(
+      `failed to parse --fixture-command as JSON argv array: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+  if (
+    !Array.isArray(parsed) ||
+    parsed.length === 0 ||
+    !parsed.every((item) => typeof item === "string" && item.length > 0)
+  ) {
+    throw new Error("--fixture-command must be a non-empty JSON array of strings");
+  }
+  return parsed;
 }
 
 // ── Main entry point ────────────────────────────────────────────────────────
@@ -378,6 +399,7 @@ export async function runVerify(opts: {
   findingPath?: string;
   targetPath?: string;
   fixture?: string;
+  fixtureCommand?: string[];
   fixtureMode?: string;
   retainArtifacts?: boolean;
   artifactDir?: string;
@@ -401,7 +423,11 @@ export async function runVerify(opts: {
           `unsupported --fixture-mode '${opts.fixtureMode}', expected 'vulnerable' or 'patched'`,
         );
       }
+      if (!opts.fixtureCommand || opts.fixtureCommand.length === 0) {
+        throw new Error("--fixture-command is required with --fixture");
+      }
       const result = await runCliPathTraversalReplayFixture({
+        commandArgv: opts.fixtureCommand,
         fixtureMode:
           opts.fixtureMode === "patched" ? "patched" : "vulnerable",
         retainArtifacts: opts.retainArtifacts,
@@ -486,6 +512,9 @@ async function verifyAction(opts: VerifyOpts): Promise<void> {
   if (opts.fixture && opts.finding) {
     throw new Error("--fixture and --finding are mutually exclusive");
   }
+  if (opts.fixtureCommand && !opts.fixture) {
+    throw new Error("--fixture-command is only supported with --fixture");
+  }
   if (opts.fixtureMode && !opts.fixture) {
     throw new Error("--fixture-mode is only supported with --fixture");
   }
@@ -498,11 +527,13 @@ async function verifyAction(opts: VerifyOpts): Promise<void> {
   if (opts.format && opts.format !== "json") {
     throw new Error(`unsupported --format '${opts.format}', only 'json' is supported`);
   }
+  const fixtureCommand = parseFixtureCommand(opts.fixtureCommand);
 
   const outcome = await runVerify({
     findingPath: opts.finding,
     targetPath: opts.target,
     fixture: opts.fixture,
+    fixtureCommand,
     fixtureMode: opts.fixtureMode,
     retainArtifacts: opts.retainArtifacts,
     artifactDir: opts.artifactDir,
@@ -544,13 +575,17 @@ export function registerVerifyCommand(program: Command): void {
       "Run a built-in deterministic replay fixture. Supported: cli-path-traversal.",
     )
     .option(
+      "--fixture-command <json>",
+      "JSON argv array for the CLI under test. Supports {{apiUrl}}, {{exportDir}}, and {{fixtureMode}} placeholders.",
+    )
+    .option(
       "--fixture-mode <mode>",
       "Fixture behavior for --fixture: vulnerable or patched.",
       "vulnerable",
     )
     .option(
       "--retain-artifacts",
-      "Keep the fixture sandbox, harness script, and stdout/stderr logs.",
+      "Keep the fixture sandbox, harness metadata, and stdout/stderr logs.",
       false,
     )
     .option(

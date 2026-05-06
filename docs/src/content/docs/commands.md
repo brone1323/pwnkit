@@ -394,24 +394,28 @@ an LLM.
 # Replay PoC steps from a finding JSON
 npx pwnkit-cli verify --finding finding.json
 
-# Run the deterministic CLI path traversal fixture
-npx pwnkit-cli verify --fixture cli-path-traversal
+# Run the deterministic CLI path traversal fixture against the CLI under test
+npx pwnkit-cli verify --fixture cli-path-traversal \
+  --fixture-command '["paperclip","company","export","--api","{{apiUrl}}","--output","{{exportDir}}"]'
 
-# Keep the sandbox, harness script, and stdout/stderr logs
-npx pwnkit-cli verify --fixture cli-path-traversal --retain-artifacts
+# Keep the sandbox, harness metadata, and stdout/stderr logs
+npx pwnkit-cli verify --fixture cli-path-traversal \
+  --fixture-command '["paperclip","company","export","--api","{{apiUrl}}","--output","{{exportDir}}"]' \
+  --retain-artifacts
 ```
 
-The `cli-path-traversal` fixture starts a malicious local API, runs a
-Paperclip-style export CLI against a temp export directory, and checks that a
-marker file escapes the selected export root while staying inside the sandbox.
-Use `--fixture-mode patched` as a negative control; it rejects `../` paths and
-should return `status: "not_reproduced"`.
+The `cli-path-traversal` fixture starts a malicious local API and runs the
+caller-supplied CLI command against a temp export directory. The harness does
+not implement export behavior itself; it only supplies `{{apiUrl}}`,
+`{{exportDir}}`, records stdout/stderr, and checks that a marker file escapes
+the selected export root while staying inside the sandbox.
 
 | Flag | Description | Default |
 |------|-------------|---------|
 | `--finding <path>` | Finding JSON with `pocSteps` to replay | |
 | `--target <path>` | Optional `PocExecutionTarget` JSON for PoC steps | |
 | `--fixture <name>` | Built-in deterministic fixture. Supported: `cli-path-traversal` | |
+| `--fixture-command <json>` | JSON argv array for the CLI under test. Supports `{{apiUrl}}`, `{{exportDir}}`, and `{{fixtureMode}}` placeholders | |
 | `--fixture-mode <mode>` | Fixture behavior: `vulnerable` or `patched` | `vulnerable` |
 | `--retain-artifacts` | Keep the fixture sandbox and log files | `false` |
 | `--artifact-dir <path>` | Use a specific fixture sandbox root | |
