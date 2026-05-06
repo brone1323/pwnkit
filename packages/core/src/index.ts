@@ -1,3 +1,10 @@
+// Programmatic scope ingestion (pwnkit#215). `loadScope` reads a JSON
+// scope file; `ScopePolicy` is the matcher used by every URL chokepoint
+// in the agent (validateTargetUrl + 5 fetch sites + shellExec URL
+// extraction + redirect-final-URL re-check in the crawler).
+export { loadScope, matchUrl, ScopePolicy, extractUrls } from "./scope/scope.js";
+export type { ScopeJson, ScopeMatch, ScopeRule } from "./scope/scope.js";
+
 export { scan } from "./scanner.js";
 export type { ScanEvent, ScanListener, ScanEventType } from "./scanner.js";
 export { agenticScan } from "./agentic-scanner.js";

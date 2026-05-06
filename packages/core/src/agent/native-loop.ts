@@ -9,6 +9,7 @@ import type {
 } from "../runtime/types.js";
 import type { AuthConfig } from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext, AgentRole } from "./types.js";
+import type { ScopePolicy } from "../scope/scope.js";
 import { ToolExecutor, getToolsForRole } from "./tools.js";
 import { features } from "./features.js";
 import { detectPlaybooks, buildPlaybookInjection } from "./playbooks.js";
@@ -95,6 +96,13 @@ export interface NativeAgentConfig {
   costCeilingUsd?: number;
   /** Optional model id used to price token usage against the ceiling. */
   costModel?: string;
+  /**
+   * Programmatic engagement scope (pwnkit#215). When set, every URL the
+   * agent touches is checked against this policy and out-of-scope URLs
+   * return as `ToolResult.error`. Same-origin checks remain enforced ON
+   * TOP of this; scope is additive, never substitutive.
+   */
+  scope?: ScopePolicy;
 }
 
 export interface NativeAgentLoopOptions {
@@ -177,6 +185,7 @@ export async function runNativeAgentLoop(
     scopePath: config.scopePath,
     persistFindings: db !== null,
     authConfig: config.authConfig,
+    scope: config.scope,
   };
 
   const executor = new ToolExecutor(toolCtx, db);

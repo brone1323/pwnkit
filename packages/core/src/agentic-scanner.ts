@@ -52,6 +52,7 @@ import { runSelfConsistencyVerify } from "./triage/verify-pipeline.js";
 import { generatePov } from "./triage/pov-gate.js";
 import { getCloudSinkConfig, postFinding, postFinalReport } from "./cloud-sink.js";
 import { eventBus } from "./events/bus.js";
+import { loadScope, type ScopePolicy } from "./scope/scope.js";
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -224,6 +225,23 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
   const { dbPath, onEvent, getPendingUserMessages, resumeScanId } = opts;
   const emit = onEvent ?? (() => {});
   const config = await normalizeScanConfig(opts.config);
+
+  // Programmatic scope ingestion (pwnkit#215). Load once at the top and
+  // pass the parsed `ScopePolicy` to every agent config below. The CLI
+  // is responsible for catching ENOENT / parse errors before this point;
+  // here we just propagate. Pre-validate the configured target so an
+  // out-of-scope `--target` fails the scan loudly instead of being
+  // refused silently by every tool call.
+  let scope: ScopePolicy | undefined;
+  if (config.scopeFile) {
+    scope = loadScope(config.scopeFile);
+    const verdict = scope.match(config.target);
+    if (!verdict.allowed) {
+      throw new Error(
+        `--target ${config.target} is out of scope per ${config.scopeFile}: ${verdict.reason}`,
+      );
+    }
+  }
 
   const db = await (async () => {
     try {
@@ -1676,6 +1694,7 @@ async function runNativeDiscovery(
       scanId,
       sessionId: db.getSession(scanId, "discovery")?.id,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -1895,6 +1914,7 @@ async function runNativeAttack(
       sessionId: db.getSession(scanId, "attack")?.id,
       retryCount: 0,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -1957,6 +1977,7 @@ async function runNativeAttack(
         scopePath: config.repoPath,
         retryCount: 1,
         authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
         costCeilingUsd: config.costCeilingUsd,
         costModel: config.model,
       },
@@ -2169,6 +2190,7 @@ async function runNativeVerify(
       scanId,
       sessionId: db.getSession(scanId, "verify")?.id,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2227,6 +2249,7 @@ async function runLegacyDiscovery(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
     },
     runtime,
     db,
@@ -2290,6 +2313,7 @@ async function runLegacyAttack(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
     },
     runtime,
     db,
@@ -2354,6 +2378,7 @@ async function runLegacyVerify(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
+      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
     },
     runtime,
     db,

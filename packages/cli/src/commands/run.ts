@@ -56,6 +56,8 @@ export interface RunOptions {
   costCeilingUsd?: number;
   /** Open the operator TUI after the run completes. */
   tui?: boolean;
+  /** Path to a JSON scope file (pwnkit#215). Threaded into ScanConfig.scopeFile. */
+  scopeFile?: string;
   sessionUiFactory?: (options: {
     target: string;
     depth: string;
@@ -256,6 +258,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
             race: opts.race,
             egats: opts.egats,
             costCeilingUsd: opts.costCeilingUsd,
+            scopeFile: opts.scopeFile,
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,
