@@ -153,6 +153,21 @@ describe("ScopePolicy — invalid input", () => {
     expect(() => ScopePolicy.fromJson({ in_scope: ["10.0.0.0/64"] })).toThrow();
   });
 
+  // pwnkit#218 review: a bare trailing slash used to fail open as /0.
+  // These cases lock in the strict-parse behaviour so a future refactor
+  // can't accidentally re-introduce the silent allow-all.
+  it("rejects a CIDR with an empty prefix (must not silently become /0)", () => {
+    expect(() => ScopePolicy.fromJson({ in_scope: ["10.0.0.0/"] })).toThrow();
+  });
+
+  it("rejects a CIDR with a non-numeric prefix", () => {
+    expect(() => ScopePolicy.fromJson({ in_scope: ["10.0.0.0/abc"] })).toThrow();
+  });
+
+  it("rejects a CIDR with multiple slashes", () => {
+    expect(() => ScopePolicy.fromJson({ in_scope: ["10.0.0.0/8/extra"] })).toThrow();
+  });
+
   it("treats a non-URL string as out-of-scope rather than crashing", () => {
     const p = ScopePolicy.fromJson({ in_scope: ["example.com"] });
     expect(p.match("not a url").allowed).toBe(false);

@@ -706,10 +706,11 @@ describe("ToolExecutor — scope enforcement (pwnkit#215)", () => {
   });
 
   it("http_request succeeds when both target and URL are in scope", async () => {
-    // We can't actually fetch in tests, but we can verify the scope
-    // gate didn't reject. The fetch will fail in a test environment
-    // either way — what we're checking is that the FAILURE MODE is the
-    // network layer, not the scope layer.
+    // pwnkit#218 review: stub `fetch` so this test exercises only the
+    // scope gate — the previous version relied on real DNS/network
+    // behaviour for `api.example.com` and could sit on http_request's
+    // 30s timeout before failing. The stub returns a minimal
+    // Response-like object that satisfies the tool's body/header reads.
     const { ScopePolicy } = await import("../scope/scope.js");
     const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
     const ctx: ToolContext = {
@@ -720,16 +721,31 @@ describe("ToolExecutor — scope enforcement (pwnkit#215)", () => {
       targetInfo: {},
       scope,
     };
-    const ex = new ToolExecutor(ctx, null);
-    const result = await ex.execute({
-      name: "http_request",
-      arguments: { url: "https://api.example.com/health" },
-    });
-    // Either it succeeded (unlikely in test) or it failed with a
-    // network/abort error — but it must NOT have failed with a scope
-    // error.
-    if (!result.success) {
-      expect(result.error).not.toMatch(/Scope violation/);
+    const fetchStub = vi.fn(async (_url: string) => ({
+      ok: true,
+      status: 200,
+      url: "https://api.example.com/health",
+      headers: new Headers({ "content-type": "text/plain" }),
+      text: async () => "ok",
+      json: async () => ({}),
+    }));
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const ex = new ToolExecutor(ctx, null);
+      const result = await ex.execute({
+        name: "http_request",
+        arguments: { url: "https://api.example.com/health" },
+      });
+      // Stubbed fetch always succeeds, so the scope gate is what we're
+      // really asserting here — but if a future refactor changes the
+      // failure shape, still assert it's NOT a scope error.
+      if (!result.success) {
+        expect(result.error).not.toMatch(/Scope violation/);
+      } else {
+        expect(fetchStub).toHaveBeenCalled();
+      }
+    } finally {
+      vi.unstubAllGlobals();
     }
   });
 

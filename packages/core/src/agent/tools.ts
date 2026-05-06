@@ -1748,8 +1748,26 @@ export class ToolExecutor {
             return { success: false, output: null, error: err instanceof Error ? err.message : `Invalid URL: ${rawNavUrl}` };
           }
           const response = await page.goto(url, { timeout: ACTION_TIMEOUT, waitUntil: "domcontentloaded" });
+          // Post-navigation scope re-check (pwnkit#218 review).
+          // `validateTargetUrl` only vets the requested URL; `page.goto`
+          // follows redirects, so an in-scope URL that 302s off-origin
+          // leaves the browser sitting on a foreign page that subsequent
+          // click/content/evaluate calls would then operate on. Compare
+          // the post-navigation URL against scope and refuse if it
+          // drifted off-host before returning success.
+          const finalUrl = page.url();
+          if (this.ctx.scope && finalUrl) {
+            const verdict = this.ctx.scope.match(finalUrl);
+            if (!verdict.allowed) {
+              return {
+                success: false,
+                output: null,
+                error: `navigate refused: redirected to out-of-scope URL '${finalUrl}' (${verdict.reason})`,
+              };
+            }
+          }
           result = {
-            url: page.url(),
+            url: finalUrl,
             status: response?.status() ?? null,
             title: await page.title(),
             dialogs: [...this._browserDialogs],
@@ -1871,6 +1889,10 @@ export class ToolExecutor {
         .map((n) => TOOL_DEFINITIONS[n])
         .filter((t): t is ToolDefinition => t !== undefined);
 
+      // pwnkit#218 review: propagate scope + auth to the spawned loop so
+      // the sub-agent's bash/http_request gates use the same policy as
+      // the parent. Without this, a parent scan locked to in-scope hosts
+      // could spawn a child that hits arbitrary URLs via bash/curl.
       const state = await runNativeAgentLoop({
         config: {
           role: "attack",
@@ -1879,6 +1901,8 @@ export class ToolExecutor {
           maxTurns,
           target: this.ctx.target,
           scanId: this.ctx.scanId + "-sub",
+          scope: this.ctx.scope,
+          authConfig: this.ctx.authConfig,
         },
         runtime: rt,
         db: null,
@@ -2372,6 +2396,20 @@ export class ToolExecutor {
         headers,
         body: init?.body,
       });
+      // Post-redirect scope check (pwnkit#218 review). `fetch` follows
+      // redirects by default, so an in-scope WordPress endpoint that
+      // 302s to a foreign host would otherwise complete against the
+      // foreign target and the body would be returned to the caller.
+      // Re-validate the final `res.url` against scope and refuse if it
+      // drifted off-host.
+      if (scope && res.url && res.url !== url) {
+        const verdict = scope.match(res.url);
+        if (!verdict.allowed) {
+          throw new Error(
+            `wp_fingerprint refused: redirect to out-of-scope URL '${res.url}' (${verdict.reason})`,
+          );
+        }
+      }
       return {
         ok: res.ok,
         status: res.status,

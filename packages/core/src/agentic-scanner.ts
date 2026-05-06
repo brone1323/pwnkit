@@ -235,6 +235,11 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
   let scope: ScopePolicy | undefined;
   if (config.scopeFile) {
     scope = loadScope(config.scopeFile);
+    // Seed the per-scan cache so every downstream helper reuses this
+    // exact policy instance instead of re-reading the JSON file. See
+    // `resolveScopeForConfig` for the TOCTOU rationale (pwnkit#218
+    // review).
+    scopePolicyCache.set(config, scope);
     const verdict = scope.match(config.target);
     if (!verdict.allowed) {
       throw new Error(
@@ -1664,6 +1669,35 @@ interface AgentOutput {
 
 // ── Native (Claude API) stage runners ──
 
+/**
+ * Per-scan cache of parsed scope policies (pwnkit#218 review). The first
+ * helper that needs a policy parses the JSON file once; every subsequent
+ * helper for the same `ScanConfig` reuses the same `ScopePolicy`
+ * instance.
+ *
+ * Why a WeakMap instead of a plain `Map` keyed by path: callers can
+ * construct multiple `ScanConfig`s pointing at the same scope file, and
+ * we want each top-level `agenticScan()` call to see a consistent
+ * snapshot — but we also don't want to leak parsed policies for the
+ * lifetime of the process. Tying lifetime to the `ScanConfig` object
+ * itself fixes both.
+ *
+ * Why this matters: without it, every stage helper called
+ * `loadScope(config.scopeFile)` again, which is a TOCTOU window. If the
+ * file changed mid-scan, later tool calls would run under a different
+ * policy than the one that admitted `--target` at scan start.
+ */
+const scopePolicyCache = new WeakMap<ScanConfig, ScopePolicy>();
+
+function resolveScopeForConfig(config: ScanConfig): ScopePolicy | undefined {
+  if (!config.scopeFile) return undefined;
+  const cached = scopePolicyCache.get(config);
+  if (cached) return cached;
+  const policy = loadScope(config.scopeFile);
+  scopePolicyCache.set(config, policy);
+  return policy;
+}
+
 async function runNativeDiscovery(
   runtime: NativeRuntime,
   db: any,
@@ -1694,7 +1728,7 @@ async function runNativeDiscovery(
       scanId,
       sessionId: db.getSession(scanId, "discovery")?.id,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -1914,7 +1948,7 @@ async function runNativeAttack(
       sessionId: db.getSession(scanId, "attack")?.id,
       retryCount: 0,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -1977,7 +2011,7 @@ async function runNativeAttack(
         scopePath: config.repoPath,
         retryCount: 1,
         authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+        scope: resolveScopeForConfig(config),
         costCeilingUsd: config.costCeilingUsd,
         costModel: config.model,
       },
@@ -2190,7 +2224,7 @@ async function runNativeVerify(
       scanId,
       sessionId: db.getSession(scanId, "verify")?.id,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2249,7 +2283,7 @@ async function runLegacyDiscovery(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
     },
     runtime,
     db,
@@ -2313,7 +2347,7 @@ async function runLegacyAttack(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
     },
     runtime,
     db,
@@ -2378,7 +2412,7 @@ async function runLegacyVerify(
       attachTargetToolsMcp: true,
       dbPath,
       authConfig: config.auth,
-      scope: config.scopeFile ? loadScope(config.scopeFile) : undefined,
+      scope: resolveScopeForConfig(config),
     },
     runtime,
     db,

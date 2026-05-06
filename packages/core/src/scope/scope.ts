@@ -174,10 +174,25 @@ function parseRule(raw: unknown): ParsedRule {
   // CIDR: anything with a slash. IPv4 only — we explicitly reject IPv6
   // because the spec deferred it and silently accepting "::/0" would be
   // a disaster.
+  //
+  // Parsing is intentionally strict (pwnkit#218 review): destructuring a
+  // bare `rule.split("/")` plus `Number()` accepts "10.0.0.0/" as /0 and
+  // silently drops extra segments in "10.0.0.0/8/anything". Both are
+  // operator typos that would fail open to "match every IPv4". We reject
+  // them up-front so the misconfiguration is visible at scope-load time.
   if (rule.includes("/")) {
-    const [ip, prefixStr] = rule.split("/");
+    const parts = rule.split("/");
+    if (parts.length !== 2) {
+      throw new Error(`Invalid CIDR '${raw}': expected exactly one '/'`);
+    }
+    const [ip, prefixStr] = parts;
+    if (!/^\d+$/.test(prefixStr)) {
+      throw new Error(
+        `Invalid CIDR prefix in '${raw}': must be a non-negative integer 0-32`,
+      );
+    }
     const prefix = Number(prefixStr);
-    if (!Number.isInteger(prefix) || prefix < 0 || prefix > 32) {
+    if (prefix < 0 || prefix > 32) {
       throw new Error(`Invalid CIDR prefix in '${raw}': must be 0-32`);
     }
     if (isIP(ip) !== 4) {
