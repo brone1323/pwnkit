@@ -10,7 +10,7 @@ Copy-paste recipes for the most common pwnkit scenarios. Every recipe assumes yo
 Point pwnkit at your OpenAPI 3.x / Swagger 2.0 document and it will seed the recon phase with every endpoint, parameter, and auth requirement — skipping the crawl entirely.
 
 ```bash
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://api.example.com \
   --api-spec ./openapi.yaml \
   --mode web \
@@ -28,7 +28,7 @@ export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
 export PWNKIT_FEATURE_WEB_SEARCH=1
 export PWNKIT_FEATURE_DYNAMIC_PLAYBOOKS=1
 
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://blog.example.com \
   --mode web \
   --depth deep \
@@ -47,16 +47,16 @@ export PWNKIT_DOCKER_BOOTSTRAP_TOOLS=1
 
 ```bash
 # Default npm audit (latest version)
-npx pwnkit-cli audit express
+pwnkit audit express
 
 # Pin a specific npm version
-npx pwnkit-cli audit express --version 4.18.2
+pwnkit audit express --version 4.18.2
 
 # Audit a PyPI package
-npx pwnkit-cli audit requests --ecosystem pypi
+pwnkit audit requests --ecosystem pypi
 
 # Deep audit with the Claude Code CLI runtime
-npx pwnkit-cli audit left-pad --depth deep --runtime claude
+pwnkit audit left-pad --depth deep --runtime claude
 ```
 
 The package is installed in a sandbox, scanned with semgrep, then reviewed by an AI agent that traces data flow and hunts for supply-chain issues.
@@ -73,7 +73,7 @@ export PWNKIT_FEATURE_TRIAGE_MEMORIES=1
 export PWNKIT_FEATURE_MULTIMODAL=1
 export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
 
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://example.com \
   --mode web \
   --depth deep \
@@ -88,7 +88,7 @@ See [Configuration — Feature flags](/configuration/#feature-flags) for what ea
 When a single linear attack plan keeps getting stuck, spawn 5 parallel strategies and let the fastest one win.
 
 ```bash
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://hard-target.example.com \
   --mode web \
   --race \
@@ -102,7 +102,7 @@ Push every confirmed finding to a GitHub repo as a labelled issue with evidence 
 ```bash
 export GITHUB_TOKEN="ghp_..."
 
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://example.com \
   --mode web \
   --export github:myorg/security-findings
@@ -114,21 +114,21 @@ Each finding becomes an issue labelled by severity (`sev:critical`, `sev:high`, 
 
 ```bash
 # HTML (auto-opens in browser and saves to a temp file)
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://example.com \
   --mode web \
   --depth deep \
   --format html
 
 # Markdown (printed to stdout; redirect to a file)
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://example.com \
   --mode web \
   --depth deep \
   --format md > example-pentest.md
 
 # PDF (auto-opens in your default viewer and saves to a temp file)
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://example.com \
   --mode web \
   --depth deep \
@@ -141,7 +141,7 @@ Both formats include an executive summary, a severity breakdown, per-finding evi
 
 ```bash
 # Inline
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://api.example.com \
   --api-spec ./openapi.yaml \
   --auth '{"type":"bearer","token":"eyJhbGciOi..."}'
@@ -151,7 +151,7 @@ cat > auth.json <<'EOF'
 {"type":"bearer","token":"eyJhbGciOi..."}
 EOF
 
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://api.example.com \
   --api-spec ./openapi.yaml \
   --auth ./auth.json

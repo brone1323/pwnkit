@@ -40,11 +40,11 @@ For deep dives, follow the linked pages.
 ### Authenticated scanning
 
 ```bash
-npx pwnkit-cli scan --target https://app.example.com \
+pwnkit scan --target https://app.example.com \
   --auth '{"type":"bearer","token":"eyJhbGciOi..."}'
 
 # Or point at a JSON file
-npx pwnkit-cli scan --target https://app.example.com --auth ./auth.json
+pwnkit scan --target https://app.example.com --auth ./auth.json
 ```
 
 Supported auth types: `bearer`, `cookie`, `basic`, `header`.
@@ -52,7 +52,7 @@ Supported auth types: `bearer`, `cookie`, `basic`, `header`.
 ### API spec import
 
 ```bash
-npx pwnkit-cli scan --target https://api.example.com \
+pwnkit scan --target https://api.example.com \
   --api-spec ./openapi.yaml
 ```
 
@@ -62,14 +62,14 @@ surface map instead of discovering everything from scratch.
 ### Export to GitHub Issues
 
 ```bash
-npx pwnkit-cli scan --target https://example.com \
+pwnkit scan --target https://example.com \
   --export github:my-org/my-repo
 ```
 
 ### Best-of-N strategy racing
 
 ```bash
-npx pwnkit-cli scan --target https://example.com --race
+pwnkit scan --target https://example.com --race
 ```
 
 Runs multiple attack strategies in parallel and keeps whichever one produces
@@ -78,7 +78,7 @@ a verified finding first.
 ### EGATS
 
 ```bash
-npx pwnkit-cli scan --target https://example.com --egats
+pwnkit scan --target https://example.com --egats
 ```
 
 Evidence-Gated Attack Tree Search: the agent maintains an explicit hypothesis

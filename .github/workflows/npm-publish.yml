@@ -27,15 +27,15 @@ jobs:
       - name: Enable pnpm
         run: corepack enable && corepack prepare pnpm@9 --activate
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+      - name: Build npm shim
+        # From v0.9.0 onwards the npm package is a tiny shim that prints
+        # install instructions for the self-contained binary and exits.
+        # The full release is shipped via GitHub Releases + install.sh.
+        run: node scripts/build-npm-shim.mjs
 
-      - name: Build
-        run: pnpm build
-
-      - name: Publish bundled CLI
+      - name: Publish shim
         env:
           DIST_TAG: ${{ inputs['dist-tag'] }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public --tag "$DIST_TAG"
-        working-directory: dist
+        working-directory: dist-npm

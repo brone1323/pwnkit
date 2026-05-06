@@ -1,5 +1,12 @@
-/** Approximate cost per 1M tokens by provider/model */
-const PRICING: Record<string, { input: number; output: number }> = {
+export interface ModelRates {
+  input: number;
+  output: number;
+  /** Cached-input rate ($/1M). Falls back to `input` if absent. */
+  cachedInput?: number;
+}
+
+/** Approximate cost per 1M tokens by provider/model. */
+const PRICING: Record<string, ModelRates> = {
   // OpenAI
   "gpt-5.4": { input: 2.50, output: 10.00 },
   "gpt-4o": { input: 2.50, output: 10.00 },
@@ -11,10 +18,10 @@ const PRICING: Record<string, { input: number; output: number }> = {
   "o3-mini": { input: 1.10, output: 4.40 },
   "o4-mini": { input: 1.10, output: 4.40 },
   // Anthropic
-  "claude-opus-4-7": { input: 5.00, output: 25.00 },
-  "claude-opus-4-6": { input: 15.00, output: 75.00 },
-  "claude-sonnet-4-6": { input: 3.00, output: 15.00 },
-  "claude-haiku-4-5": { input: 0.80, output: 4.00 },
+  "claude-opus-4-7": { input: 5.00, output: 25.00, cachedInput: 0.50 },
+  "claude-opus-4-6": { input: 15.00, output: 75.00, cachedInput: 1.50 },
+  "claude-sonnet-4-6": { input: 3.00, output: 15.00, cachedInput: 0.30 },
+  "claude-haiku-4-5": { input: 0.80, output: 4.00, cachedInput: 0.08 },
   // Google
   "gemini-2.5-pro": { input: 1.25, output: 10.00 },
   "gemini-2.5-flash": { input: 0.15, output: 0.60 },
@@ -28,29 +35,56 @@ const PRICING: Record<string, { input: number; output: number }> = {
   // Mistral
   "mistral-large": { input: 2.00, output: 6.00 },
   "mistral-small": { input: 0.10, output: 0.30 },
+  // Z.AI (open-weight, hosted) — see provos.org "Finding Zero-Days with Any Model" (Apr 2026)
+  "glm-5.1": { input: 1.40, output: 4.40, cachedInput: 0.26 },
+  "glm-4.5": { input: 0.60, output: 2.20, cachedInput: 0.11 },
   default: { input: 3.00, output: 15.00 },
 };
 
 /** Known vendor prefixes to strip (e.g. "openai/gpt-4o" -> "gpt-4o") */
 function normalizeModel(model: string): string {
-  const prefixes = ["openai/", "anthropic/", "google/", "deepseek/", "meta/", "mistral/"];
+  const prefixes = [
+    "openai/",
+    "anthropic/",
+    "google/",
+    "deepseek/",
+    "meta/",
+    "mistral/",
+    "z-ai/",
+    "zai/",
+    "openrouter/",
+  ];
   for (const p of prefixes) {
     if (model.startsWith(p)) return model.slice(p.length);
   }
   return model;
 }
 
-export function estimateCost(
-  usage: { inputTokens: number; outputTokens: number },
-  model?: string,
-): number {
+export function getRates(model?: string): ModelRates {
   const key = model ? normalizeModel(model) : "";
-  const rates = PRICING[key] ?? (() => {
+  const rates = PRICING[key];
+  if (!rates) {
     if (model) console.warn(`[pwnkit] Unknown model for cost estimation: ${model}`);
     return PRICING.default;
-  })();
+  }
+  return rates;
+}
+
+export function estimateCost(
+  usage: {
+    inputTokens: number;
+    outputTokens: number;
+    cachedInputTokens?: number;
+  },
+  model?: string,
+): number {
+  const rates = getRates(model);
+  const cachedInputRate = rates.cachedInput ?? rates.input;
+  const cached = usage.cachedInputTokens ?? 0;
+  const uncachedInput = Math.max(0, usage.inputTokens - cached);
   return (
-    (usage.inputTokens / 1_000_000) * rates.input +
+    (uncachedInput / 1_000_000) * rates.input +
+    (cached / 1_000_000) * cachedInputRate +
     (usage.outputTokens / 1_000_000) * rates.output
   );
 }

@@ -3,7 +3,7 @@ title: Commands
 description: Complete reference for all pwnkit CLI commands.
 ---
 
-All commands are available via `npx pwnkit-cli <command>`. You can also skip the subcommand and let auto-detect figure it out (see [Getting Started](/getting-started/)).
+All commands are available via `pwnkit <command>`. You can also skip the subcommand and let auto-detect figure it out (see [Getting Started](/getting-started/)).
 
 ## scan
 
@@ -11,36 +11,36 @@ Probe AI/LLM apps, web apps, APIs, or MCP servers for vulnerabilities.
 
 ```bash
 # Scan an LLM API
-npx pwnkit-cli scan --target https://api.example.com/chat
+pwnkit scan --target https://api.example.com/chat
 
 # Scan a traditional web app
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 
 # Deep scan with Claude Code CLI
-npx pwnkit-cli scan --target https://api.example.com/chat --depth deep --runtime claude
+pwnkit scan --target https://api.example.com/chat --depth deep --runtime claude
 
 # Authenticated scan using a bearer token
-npx pwnkit-cli scan --target https://api.example.com \
+pwnkit scan --target https://api.example.com \
   --auth '{"type":"bearer","token":"eyJhbGciOi..."}'
 
 # Scan an API with an OpenAPI spec pre-loaded
-npx pwnkit-cli scan --target https://api.example.com --api-spec ./openapi.yaml
+pwnkit scan --target https://api.example.com --api-spec ./openapi.yaml
 
 # Run 5 attack strategies in parallel — first to succeed wins
-npx pwnkit-cli scan --target https://example.com --mode web --race
+pwnkit scan --target https://example.com --mode web --race
 
 # Evidence-Gated Attack Tree Search (EGATS)
-npx pwnkit-cli scan --target https://example.com --mode web --egats
+pwnkit scan --target https://example.com --mode web --egats
 
 # Abort cleanly if the scan exceeds a USD ceiling
-npx pwnkit-cli scan --target https://example.com --mode web --cost-ceiling 5
+pwnkit scan --target https://example.com --mode web --cost-ceiling 5
 
 # Export findings to GitHub Issues
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --export github:myorg/myrepo
 
 # Generate an HTML report (auto-opens in browser)
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --format html
 ```
 
@@ -93,7 +93,7 @@ The `--auth` flag accepts either an inline JSON string or a path to a JSON file.
 Point `--api-spec` at an OpenAPI 3.x or Swagger 2.0 document (JSON or YAML). pwnkit will parse the spec, extract all endpoints with their parameter schemas and auth requirements, and seed the recon phase with that knowledge so the agent starts pentesting with full endpoint awareness instead of having to crawl.
 
 ```bash
-npx pwnkit-cli scan --target https://api.example.com --api-spec ./openapi.yaml
+pwnkit scan --target https://api.example.com --api-spec ./openapi.yaml
 ```
 
 ### `--race` — best-of-N strategy racing
@@ -109,7 +109,7 @@ EGATS performs a beam search over a tree of attack hypotheses, pruning branches 
 Set a hard per-scan USD ceiling:
 
 ```bash
-npx pwnkit-cli scan --target https://example.com --mode web --cost-ceiling 5
+pwnkit scan --target https://example.com --mode web --cost-ceiling 5
 ```
 
 If cumulative estimated spend exceeds the ceiling, pwnkit:
@@ -129,12 +129,12 @@ Pushes every confirmed finding to a GitHub repo as an issue, with severity label
 Install and security-audit a package with static analysis and AI review.
 
 ```bash
-npx pwnkit-cli audit express --version 4.18.2
-npx pwnkit-cli audit requests --ecosystem pypi
-npx pwnkit-cli audit serde --ecosystem cargo
-npx pwnkit-cli audit alpine:3.20 --ecosystem oci
-npx pwnkit-cli audit react --depth deep --runtime claude
-npx pwnkit-cli audit left-pad --format html
+pwnkit audit express --version 4.18.2
+pwnkit audit requests --ecosystem pypi
+pwnkit audit serde --ecosystem cargo
+pwnkit audit alpine:3.20 --ecosystem oci
+pwnkit audit react --depth deep --runtime claude
+pwnkit audit left-pad --format html
 ```
 
 The package is installed in a sandbox, scanned with semgrep, and then reviewed by an AI agent that traces data flow and looks for supply-chain vulnerabilities.
@@ -162,13 +162,13 @@ Deep source code security review of a local repo or GitHub URL.
 
 ```bash
 # Review a local directory
-npx pwnkit-cli review ./my-ai-app
+pwnkit review ./my-ai-app
 
 # Review a GitHub repo (cloned automatically)
-npx pwnkit-cli review https://github.com/user/repo
+pwnkit review https://github.com/user/repo
 
 # Diff-aware review against a base branch
-npx pwnkit-cli review ./my-repo --diff-base origin/main --changed-only
+pwnkit review ./my-repo --diff-base origin/main --changed-only
 ```
 
 **Key flags:**
@@ -194,13 +194,13 @@ Import kernel crash reports and optionally verify them against attached reproduc
 
 ```bash
 # Parse one crash report into findings
-npx pwnkit-cli ingest ./crashes/report.log
+pwnkit ingest ./crashes/report.log
 
 # Parse a directory of syzbot-style reports and reproducers
-npx pwnkit-cli ingest ./crashes --output json
+pwnkit ingest ./crashes --output json
 
 # Validate reports against attached reproducers
-npx pwnkit-cli ingest ./crashes --verify --output json
+pwnkit ingest ./crashes --verify --output json
 ```
 
 For directory ingest, reproducers are attached by matching filename prefix:
@@ -311,7 +311,7 @@ Enable memory injection into the verify pipeline with `PWNKIT_FEATURE_TRIAGE_MEM
 Resume a persisted review or audit scan by its scan ID.
 
 ```bash
-npx pwnkit-cli resume <scan-id>
+pwnkit resume <scan-id>
 ```
 
 Useful when a long-running deep scan was interrupted or when you want to continue where a previous run left off.
@@ -321,8 +321,8 @@ Useful when a long-running deep scan was interrupted or when you want to continu
 Open the local verification workbench for board-based triage, evidence review, and scan provenance.
 
 ```bash
-npx pwnkit-cli dashboard
-npx pwnkit-cli dashboard --port 48123
+pwnkit dashboard
+pwnkit dashboard --port 48123
 ```
 
 The dashboard provides a Kanban-style board for triaging findings, reviewing evidence, and tracking active scans. It runs entirely locally.
@@ -341,8 +341,8 @@ The dashboard provides a Kanban-style board for triaging findings, reviewing evi
 Browse past scans with status, depth, findings count, and duration.
 
 ```bash
-npx pwnkit-cli history
-npx pwnkit-cli history --limit 20
+pwnkit history
+pwnkit history --limit 20
 ```
 
 | Flag | Description | Default |
@@ -355,21 +355,21 @@ Query, filter, and inspect verified findings across all scans. Findings are pers
 
 ```bash
 # List all findings
-npx pwnkit-cli findings list
+pwnkit findings list
 
 # Filter by severity
-npx pwnkit-cli findings list --severity critical
+pwnkit findings list --severity critical
 
 # Filter by category and status
-npx pwnkit-cli findings list --category prompt-injection --status confirmed
+pwnkit findings list --category prompt-injection --status confirmed
 
 # Inspect a specific finding with full evidence
-npx pwnkit-cli findings show NF-001
+pwnkit findings show NF-001
 
 # Triage findings
-npx pwnkit-cli findings accept <finding-id> --note "confirmed and tracked"
-npx pwnkit-cli findings suppress <finding-id> --note "known test fixture"
-npx pwnkit-cli findings reopen <finding-id>
+pwnkit findings accept <finding-id> --note "confirmed and tracked"
+pwnkit findings suppress <finding-id> --note "known test fixture"
+pwnkit findings reopen <finding-id>
 ```
 
 **Finding lifecycle:** `discovered` -> `verified` -> `confirmed` -> `scored` -> `reported` (or `false-positive` if verification fails).

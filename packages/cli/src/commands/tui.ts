@@ -1,4 +1,5 @@
 import type { Command } from "commander";
+import chalk from "chalk";
 
 type TuiOptions = {
   dbPath?: string;
@@ -9,7 +10,7 @@ export function registerTuiCommand(program: Command): void {
   program
     .command("tui")
     .alias("watch")
-    .description("Open a local terminal operator UI for runs, findings, queue state, workers, and evidence")
+    .description("Open the operator mission control TUI (Bun-only)")
     .option("--db-path <path>", "Path to SQLite database")
     .option("--refresh-ms <n>", "Refresh interval in milliseconds", "4000")
     .action(async (opts: TuiOptions) => {
@@ -21,7 +22,17 @@ export function registerTuiCommand(program: Command): void {
         return;
       }
 
-      const { showOperatorTui } = await import("../ui/Tui.js");
-      await showOperatorTui({ dbPath: opts.dbPath, refreshMs });
+      // Node fallback: the legacy Ink mission control was removed in v0.9.0.
+      // OpenTUI needs Bun's runtime, so point users at the binary install.
+      console.log("");
+      console.log(`  ${chalk.bold("pwnkit tui")} — operator mission control needs Bun.`);
+      console.log("");
+      console.log(`  ${chalk.dim("Install the standalone binary (Bun runtime baked in):")}`);
+      console.log(`    curl -fsSL https://raw.githubusercontent.com/PwnKit-Labs/pwnkit/main/install.sh | bash`);
+      console.log("");
+      console.log(`  ${chalk.dim("Or via Bun directly:")}`);
+      console.log(`    bun add -g pwnkit-cli  &&  pwnkit-cli tui`);
+      console.log("");
+      process.exit(1);
     });
 }

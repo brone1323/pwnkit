@@ -69,40 +69,32 @@ If you use Azure OpenAI instead, also pass `AZURE_OPENAI_BASE_URL` and `AZURE_OP
 
 The image ships with Node 20, Playwright/Chromium, and the standard pentest toolbox (sqlmap, nmap, nikto, gobuster, ffuf, hydra, john, …) preinstalled.
 
-### npx / bunx
+### Once installed
 
 ```bash
 # Scan an AI / LLM endpoint
-npx pwnkit-cli scan --target https://example.com/api/chat
+pwnkit scan --target https://example.com/api/chat
 
 # Pentest a web app
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 
 # White-box scan with source code access
-npx pwnkit-cli scan --target https://example.com --repo ./source
+pwnkit scan --target https://example.com --repo ./source
 
 # Audit a package
-npx pwnkit-cli audit lodash
+pwnkit audit lodash
 
 # Review source code
-npx pwnkit-cli review ./my-app
+pwnkit review ./my-app
 
 # Import and verify kernel crash reports
-npx pwnkit-cli ingest ./kernel-crashes --verify --output json
+pwnkit ingest ./kernel-crashes --verify --output json
 
 # Auto-detect — just give it a target
-npx pwnkit-cli https://example.com
+pwnkit https://example.com
 ```
 
-Prefer [Bun](https://bun.sh)? Swap `npx` for `bunx` — same commands, same flags, zero-install, noticeably faster cold start. pwnkit-cli is pure-JS with a WASM SQLite core, so there are no native bindings to rebuild on either runtime.
-
-Global install:
-
-```bash
-npm i -g pwnkit-cli
-# or
-bun add -g pwnkit-cli
-```
+> **Heads up**: `npx pwnkit-cli` and `npm i -g pwnkit-cli` no longer ship the engine itself — from v0.9.0 the npm package is a tiny redirect that points at `install.sh`. The full TUI (OpenTUI mission control + live scan view) needs Bun's runtime, and shipping a single self-contained binary is simpler than asking users to install Bun first. Run `curl -fsSL .../install.sh | bash` (above) instead.
 
 ## What It Does
 

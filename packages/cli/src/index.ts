@@ -4,7 +4,6 @@ import { Command } from "commander";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
 import { maybeSubscribeCloudEventSink } from "@pwnkit/core";
-import type { HomeSelection } from "./tui/run.js";
 
 // Subscribe the cloud-event sink before any subcommand runs. Idempotent
 // + env-gated (PWNKIT_CLOUD_EVENTS=1): the sink writes one
@@ -66,7 +65,12 @@ registerIngestCommand(program);
 registerDiscloseCommand(program);
 registerVerifyCommand(program);
 
-// ── Interactive menu (Ink) ──
+// ── Interactive menu ──
+//
+// Under Bun, launches the OpenTUI home (`@opentui/react`-based mission
+// control). Under Node, the interactive menu was Ink-based and was
+// removed in v0.9.0 — print install instructions for the standalone
+// binary and exit so the user gets the full TUI experience.
 async function showInteractiveMenu(): Promise<void> {
   const { isBunRuntime } = await import("./tui/runtime.js");
   if (isBunRuntime()) {
@@ -75,84 +79,22 @@ async function showInteractiveMenu(): Promise<void> {
     return;
   }
 
-  const selection = await (await import("./ui/Menu.js")).showInkMenu() as HomeSelection | null;
-  if (!selection) return;
-  const { action, target } = selection;
-
-  if (action === "history") {
-    process.argv = [process.argv[0], process.argv[1], "history"];
-    await program.parseAsync();
-    return;
-  }
-
-  if (action === "findings") {
-    process.argv = [process.argv[0], process.argv[1], "findings"];
-    await program.parseAsync();
-    return;
-  }
-
-  if (action === "doctor") {
-    process.argv = [process.argv[0], process.argv[1], "doctor"];
-    await program.parseAsync();
-    return;
-  }
-
-  if (action === "replay") {
-    process.argv = [process.argv[0], process.argv[1], "replay"];
-    await program.parseAsync();
-    return;
-  }
-
-  if (action === "tui") {
-    process.argv = [process.argv[0], process.argv[1], "tui"];
-    await program.parseAsync();
-    return;
-  }
-
-  if (!target) return;
-
-  if (action === "scan") {
-    process.argv = [
-      process.argv[0],
-      process.argv[1],
-      "scan",
-      "--target",
-      target,
-      "--depth",
-      selection.depth ?? "default",
-      "--runtime",
-      selection.runtime ?? "auto",
-    ];
-    if (selection.mode && selection.mode !== "auto") {
-      process.argv.push("--mode", selection.mode);
-    }
-  } else if (action === "audit") {
-    process.argv = [
-      process.argv[0],
-      process.argv[1],
-      "audit",
-      target,
-      "--depth",
-      selection.depth ?? "default",
-      "--runtime",
-      selection.runtime ?? "auto",
-      "--ecosystem",
-      selection.ecosystem ?? "npm",
-    ];
-  } else if (action === "review") {
-    process.argv = [
-      process.argv[0],
-      process.argv[1],
-      "review",
-      target,
-      "--depth",
-      selection.depth ?? "default",
-      "--runtime",
-      selection.runtime ?? "auto",
-    ];
-  }
-
-  await program.parseAsync();
+  console.log("");
+  console.log(`  ${chalk.bold("pwnkit")} ${chalk.dim(`v${VERSION}`)}`);
+  console.log("");
+  console.log(`  ${chalk.dim("From v0.9.0 onwards, pwnkit ships as a self-contained binary.")}`);
+  console.log(`  ${chalk.dim("The full TUI (mission control + live scan view) needs Bun's runtime.")}`);
+  console.log("");
+  console.log(`  ${chalk.bold("Install")} (single curl, no Node / Bun required):`);
+  console.log(`    curl -fsSL https://raw.githubusercontent.com/PwnKit-Labs/pwnkit/main/install.sh | bash`);
+  console.log("");
+  console.log(`  ${chalk.dim("Or via Bun:")}`);
+  console.log(`    bun add -g pwnkit-cli`);
+  console.log("");
+  console.log(`  ${chalk.dim("After install, run:")}`);
+  console.log(`    pwnkit scan --target https://example.com`);
+  console.log(`    pwnkit --help`);
+  console.log("");
 }
 
 // ── Entry point ──

@@ -3,24 +3,21 @@ title: Getting Started
 description: Install pwnkit, set up your API key, and run your first scan.
 ---
 
-pwnkit is a general-purpose autonomous pentesting framework. It scans AI/LLM apps, web applications, REST/OpenAPI APIs, package ecosystems, and source code using an agentic pipeline that discovers, attacks, verifies, and reports — with blind verification to kill false positives. It ships as an npm package. You can run it directly with `npx` or install it globally.
+pwnkit is a general-purpose autonomous pentesting framework. It scans AI/LLM apps, web applications, REST/OpenAPI APIs, package ecosystems, and source code using an agentic pipeline that discovers, attacks, verifies, and reports — with blind verification to kill false positives.
 
 ## Installation
 
+From v0.9.0 onwards, pwnkit ships as a self-contained binary with the Bun runtime baked in — no Node, no Bun, no `node_modules` to fetch:
+
 ```bash
-# Run directly (no install)
-npx pwnkit-cli scan --target https://your-app.com/api/chat
-
-# Or with Bun for a noticeably faster cold start (~10x)
-bunx pwnkit-cli scan --target https://your-app.com/api/chat
-
-# Or install globally
-npm i -g pwnkit-cli
-# or
-bun add -g pwnkit-cli
+curl -fsSL https://raw.githubusercontent.com/PwnKit-Labs/pwnkit/main/install.sh | bash
 ```
 
-**Requirements:** Node.js 18+ (tested through Node 25) or Bun. Since v0.7.1, pwnkit-cli ships with **zero native modules** — the SQLite persistence layer runs on a pure-WASM build, so there are no prebuilds to fetch and no `NODE_MODULE_VERSION` ABI mismatches between Node releases. Same binary runs on every Node version and on Bun without rebuilding. For development from source, pnpm 9+ is required.
+This drops a single binary (~75-130 MB depending on platform) into `~/.pwnkit/bin/pwnkit`. Set `PWNKIT_INSTALL_DIR=/usr/local/bin` to change the location, `PWNKIT_VERSION=vX.Y.Z` to pin a version.
+
+Supported platforms: **macOS arm64**, **Linux x64**, **Linux arm64**. Windows users: download `pwnkit-windows-x64.exe` directly from the [latest release](https://github.com/PwnKit-Labs/pwnkit/releases/latest). Intel Mac users: install [Bun](https://bun.sh) and compile from source (`scripts/bun-compile.sh`).
+
+> **Why a binary?** The full TUI (mission control + live scan view) is built on OpenTUI, which needs Bun's runtime. Shipping one self-contained binary is simpler than asking users to install Bun first. The npm package (`pwnkit-cli`) still exists but is now a redirect that prints these install instructions and exits.
 
 ## Set up an API key
 
@@ -44,7 +41,7 @@ See [API Keys](/api-keys/) for full details on supported providers.
 ### Scan an LLM API
 
 ```bash
-npx pwnkit-cli scan --target https://your-app.com/api/chat
+pwnkit scan --target https://your-app.com/api/chat
 ```
 
 This discovers the attack surface, launches targeted attacks (prompt injection, jailbreaks, data exfiltration), verifies every finding, and generates a report — typically in under 5 minutes.
@@ -52,7 +49,7 @@ This discovers the attack surface, launches targeted attacks (prompt injection, 
 ### Scan a web application
 
 ```bash
-npx pwnkit-cli scan --target https://your-app.com --mode web
+pwnkit scan --target https://your-app.com --mode web
 ```
 
 Runs autonomous pentesting against a web application using a shell-first approach. The agent gets `bash` as its primary tool and uses curl, python3, bash pipelines, and standard pentesting utilities to probe for CORS misconfigurations, exposed files, SSRF, XSS, SQL injection, SSTI, and other traditional web vulnerabilities. See [Architecture](/architecture/) for why shell-first beats structured tools.
@@ -60,10 +57,10 @@ Runs autonomous pentesting against a web application using a shell-first approac
 ### Audit a package ecosystem target
 
 ```bash
-npx pwnkit-cli audit lodash
-npx pwnkit-cli audit requests --ecosystem pypi
-npx pwnkit-cli audit serde --ecosystem cargo
-npx pwnkit-cli audit alpine:3.20 --ecosystem oci
+pwnkit audit lodash
+pwnkit audit requests --ecosystem pypi
+pwnkit audit serde --ecosystem cargo
+pwnkit audit alpine:3.20 --ecosystem oci
 ```
 
 Installs the target in a sandbox, runs ecosystem-specific prep plus static analysis, and performs an AI-powered code review.
@@ -72,10 +69,10 @@ Installs the target in a sandbox, runs ecosystem-specific prep plus static analy
 
 ```bash
 # Local directory
-npx pwnkit-cli review ./my-app
+pwnkit review ./my-app
 
 # GitHub URL (clones automatically)
-npx pwnkit-cli review https://github.com/user/repo
+pwnkit review https://github.com/user/repo
 ```
 
 ### Auto-detect
@@ -102,10 +99,10 @@ Control how thorough the scan is:
 
 ```bash
 # Quick scan for CI
-npx pwnkit-cli scan --target https://api.example.com/chat --depth quick
+pwnkit scan --target https://api.example.com/chat --depth quick
 
 # Deep audit before launch
-npx pwnkit-cli scan --target https://api.example.com/chat --depth deep
+pwnkit scan --target https://api.example.com/chat --depth deep
 ```
 
 ## Common scenarios
@@ -115,7 +112,7 @@ npx pwnkit-cli scan --target https://api.example.com/chat --depth deep
 Point pwnkit at an OpenAPI 3.x or Swagger 2.0 document and it will pre-load every endpoint, parameter schema, and auth requirement before attacking — no crawl phase needed.
 
 ```bash
-npx pwnkit-cli scan \
+pwnkit scan \
   --target https://api.example.com \
   --api-spec ./openapi.yaml \
   --mode web
@@ -127,19 +124,19 @@ Use `--auth` to pass credentials. Four types are supported: `bearer`, `cookie`, 
 
 ```bash
 # Bearer token (OAuth / JWT)
-npx pwnkit-cli scan --target https://app.example.com \
+pwnkit scan --target https://app.example.com \
   --auth '{"type":"bearer","token":"eyJhbGciOi..."}'
 
 # Session cookie
-npx pwnkit-cli scan --target https://app.example.com \
+pwnkit scan --target https://app.example.com \
   --auth '{"type":"cookie","value":"session=abc123"}'
 
 # Custom header (API key)
-npx pwnkit-cli scan --target https://api.example.com \
+pwnkit scan --target https://api.example.com \
   --auth '{"type":"header","name":"X-API-Key","value":"sk_live_..."}'
 
 # Or load from a file to avoid leaking to shell history
-npx pwnkit-cli scan --target https://app.example.com --auth ./auth.json
+pwnkit scan --target https://app.example.com --auth ./auth.json
 ```
 
 ### Multi-model ensemble via OpenRouter
@@ -150,11 +147,11 @@ Set `OPENROUTER_API_KEY` and pass `--model` to mix models across runs. OpenRoute
 export OPENROUTER_API_KEY="sk-or-..."
 
 # Use Claude Sonnet for hard targets
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --model anthropic/claude-sonnet-4-5
 
 # Cheap and fast for CI
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --model deepseek/deepseek-chat --depth quick
 ```
 
@@ -163,7 +160,7 @@ npx pwnkit-cli scan --target https://example.com --mode web \
 Spawn 5 attack agents in parallel and let the fastest one win. Great for hard targets where a linear attack plan gets stuck.
 
 ```bash
-npx pwnkit-cli scan --target https://example.com --mode web --race
+pwnkit scan --target https://example.com --mode web --race
 ```
 
 ### Kali Docker executor
@@ -172,7 +169,7 @@ Enable `PWNKIT_FEATURE_DOCKER_EXECUTOR=1` to run every bash command inside a con
 
 ```bash
 export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
-npx pwnkit-cli scan --target https://example.com --mode web --verbose
+pwnkit scan --target https://example.com --mode web --verbose
 ```
 
 Advanced overrides:
@@ -199,7 +196,7 @@ Push every confirmed finding to a GitHub repo as a labelled issue with evidence 
 
 ```bash
 export GITHUB_TOKEN="ghp_..."
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --export github:myorg/myrepo
 ```
 
@@ -207,17 +204,17 @@ npx pwnkit-cli scan --target https://example.com --mode web \
 
 ```bash
 # HTML (auto-opens in browser)
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --depth deep \
   --format html
 
 # Markdown (printed to stdout; pipe to a file)
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --depth deep \
   --format md > example-pentest.md
 
 # PDF (auto-opens in your default viewer and saves to a temp file)
-npx pwnkit-cli scan --target https://example.com --mode web \
+pwnkit scan --target https://example.com --mode web \
   --depth deep \
   --format pdf
 ```
