@@ -353,7 +353,7 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           }
         }
       }
-      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange };
+      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange, pocExecution: behaviouralReport };
       const rendered = renderAdvisoryMarkdown(finding, ctx);
       const path = join(outputDir, rendered.filename);
       let state: ResultState = "wrote";

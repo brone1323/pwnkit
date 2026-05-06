@@ -374,6 +374,13 @@ export class pwnkitDB {
     if (!colNames.has("verificationSpec")) {
       this.sqlite.exec("ALTER TABLE findings ADD COLUMN verificationSpec TEXT");
     }
+    // pwnkit#171 — captured PoC execution report. JSON-stringified
+    // PocExecutionReport written by `disclose --target-url …` when the
+    // behavioural re-verify runtime ran the step graph against a live
+    // target. Optional/additive.
+    if (!colNames.has("pocExecution")) {
+      this.sqlite.exec("ALTER TABLE findings ADD COLUMN pocExecution TEXT");
+    }
     this.sqlite.exec("UPDATE findings SET fingerprint = id WHERE fingerprint IS NULL OR fingerprint = ''");
     this.sqlite.exec("UPDATE findings SET triageStatus = 'new' WHERE triageStatus IS NULL OR triageStatus = ''");
     this.sqlite.exec(`
@@ -1180,6 +1187,13 @@ export class pwnkitDB {
     const verificationSpecJson = finding.verificationSpec
       ? JSON.stringify(finding.verificationSpec)
       : null;
+    // Backfill prose evidence from pocSteps for findings that only carry the
+    // structured form, so legacy advisory templates / dashboards still see
+    // request/response/analysis text. The structured pocSteps remain canonical.
+    const derivedEvidence = deriveEvidenceFromPocSteps(finding);
+    const evidenceRequest = finding.evidence.request || derivedEvidence.request;
+    const evidenceResponse = finding.evidence.response || derivedEvidence.response;
+    const evidenceAnalysis = finding.evidence.analysis ?? derivedEvidence.analysis ?? null;
     this.db
       .insert(schema.findings)
       .values({
@@ -1201,9 +1215,9 @@ export class pwnkitDB {
         confidence: finding.confidence ?? null,
         cvssVector: finding.cvssVector ?? null,
         cvssScore: finding.cvssScore ?? null,
-        evidenceRequest: finding.evidence.request,
-        evidenceResponse: finding.evidence.response,
-        evidenceAnalysis: finding.evidence.analysis ?? null,
+        evidenceRequest,
+        evidenceResponse,
+        evidenceAnalysis,
         layerVerdicts: layerVerdictsJson,
         pocSteps: pocStepsJson,
         verificationSpec: verificationSpecJson,
@@ -1228,9 +1242,9 @@ export class pwnkitDB {
           confidence: finding.confidence ?? null,
           cvssVector: finding.cvssVector ?? null,
           cvssScore: finding.cvssScore ?? null,
-          evidenceRequest: finding.evidence.request,
-          evidenceResponse: finding.evidence.response,
-          evidenceAnalysis: finding.evidence.analysis ?? null,
+          evidenceRequest,
+          evidenceResponse,
+          evidenceAnalysis,
           layerVerdicts: layerVerdictsJson,
           pocSteps: pocStepsJson,
           verificationSpec: verificationSpecJson,
@@ -1314,6 +1328,15 @@ export class pwnkitDB {
       .where(eq(schema.findings.id, findingId))
       .run();
     if (finding?.fingerprint) this.syncFindingGraph(finding.scanId, finding.fingerprint);
+  }
+
+  saveFindingPocExecution(findingId: string, execution: unknown): void {
+    const serialized = JSON.stringify(execution);
+    this.db
+      .update(schema.findings)
+      .set({ pocExecution: serialized })
+      .where(eq(schema.findings.id, findingId))
+      .run();
   }
 
   updateFindingTriageByFingerprint(
@@ -1987,6 +2010,46 @@ function buildFindingFingerprint(target: string, finding: Finding): string {
   return createHash("sha256").update(key).digest("hex").slice(0, 24);
 }
 
+/**
+ * When a finding only carries `pocSteps` and no prose evidence, derive the
+ * legacy `evidence.{request,response,analysis}` strings from the step graph
+ * so older readers (markdown advisory templates that pre-date pocSteps,
+ * dashboards that haven't been updated) still see something useful. The
+ * structured `pocSteps` field remains the canonical form — this is purely
+ * for backwards compatibility on the read path.
+ */
+function deriveEvidenceFromPocSteps(finding: Finding): { request: string; response: string; analysis?: string } {
+  if (!finding.pocSteps || finding.pocSteps.length === 0) {
+    return { request: "", response: "", analysis: undefined };
+  }
+
+  const requestParts: string[] = [];
+  const responseParts: string[] = [];
+  const analysisParts: string[] = [];
+
+  for (const step of finding.pocSteps) {
+    const prefix = `[${step.kind}] ${step.summary}`;
+    if (step.action.type === "shell") {
+      requestParts.push(`${prefix}\n$ ${step.action.cmd}`);
+    } else if (step.action.type === "http") {
+      requestParts.push(`${prefix}\n${step.action.method.toUpperCase()} ${step.action.url}`);
+    } else if (step.action.type === "docker") {
+      requestParts.push(`${prefix}\ndocker run ${step.action.image} ${step.action.args.join(" ")}`.trim());
+    } else {
+      responseParts.push(`${prefix}\n${step.action.text}`);
+    }
+    if (step.expect) {
+      analysisParts.push(`- ${step.id}: expect ${step.expect.type}`);
+    }
+  }
+
+  return {
+    request: requestParts.join("\n\n"),
+    response: responseParts.join("\n\n"),
+    analysis: analysisParts.length > 0 ? `PoC step expectations:\n${analysisParts.join("\n")}` : undefined,
+  };
+}
+
 // ── Raw SQL for table creation (idempotent, used on init) ──
 
 const SCHEMA_TABLES_SQL = `
@@ -2037,6 +2100,7 @@ CREATE TABLE IF NOT EXISTS findings (
   evidenceAnalysis TEXT,
   pocSteps TEXT,
   verificationSpec TEXT,
+  pocExecution TEXT,
   timestamp INTEGER NOT NULL
 );
 
