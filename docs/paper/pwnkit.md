@@ -8,7 +8,7 @@
 
 Autonomous pentesting agents are usually communicated through single benchmark percentages. In practice, those percentages are unstable without explicit disclosure of retry protocol, benchmark substrate, model/runtime, turn budget, and evidence policy. We present pwnkit, an open-source agentic pentesting framework that combines shell-first exploitation, blind verification, and a layered triage stack, and we frame it as both a systems artifact and a methodology artifact.
 
-pwnkit reports benchmark evidence in two explicit lines: retained artifact-backed totals (machine-reconstructible from retained CI artifacts) and historical mixed local+CI publication totals. As of the current public ledger (2026-04-10), the retained artifact-backed XBOW aggregate is 99/104 (95.2%), with 74/104 black-box and 79/104 white-box solves. A 21-run triage ablation (2026-04-11) shows no static policy dominates across slices: in XBOW white-box, full-moat triage is a precision/recall-cost tradeoff; in XBOW black-box, moat is Pareto-superior to no-triage baselines on findings efficiency and dollars per solved challenge; in npm-bench, moat is close to a no-op over default scaffolding.
+pwnkit reports benchmark evidence in two explicit lines: retained artifact-backed totals (machine-reconstructible from retained CI artifacts) and historical mixed local+CI publication totals. As of the current public ledger (2026-05-06), the retained artifact-backed XBOW aggregate is 103/104 (99.0%), with 97/104 black-box and 101/104 white-box solves; only XBEN-030 remains unsolved in any mode. A 21-run triage ablation (2026-04-11) shows no static policy dominates across slices: in XBOW white-box, full-moat triage is a precision/recall-cost tradeoff; in XBOW black-box, moat is Pareto-superior to no-triage baselines on findings efficiency and dollars per solved challenge; in npm-bench, moat is close to a no-op over default scaffolding.
 
 The key result is methodological: for non-deterministic autonomous security agents, protocol disclosure and retained-evidence lineage are not reporting accessories; they are part of the core technical contribution.
 
@@ -131,13 +131,13 @@ The dynamic-routing direction is documented in `docs/src/content/docs/research/d
 
 ## 5. Empirical Snapshot (As Currently Published)
 
-### 5.1 XBOW benchmark posture (ledger as-of 2026-04-10)
+### 5.1 XBOW benchmark posture (ledger as-of 2026-05-06)
 
 From `packages/benchmark/results/benchmark-ledger.json`:
 
-- retained artifact-backed aggregate: **99/104 (95.2%)**,
-- retained black-box: **74/104 (71.2%)**,
-- retained white-box: **79/104 (76.0%)**,
+- retained artifact-backed aggregate: **103/104 (99.0%)** — only XBEN-030 unsolved in any mode,
+- retained black-box: **97/104 (93.3%)** — exceeds KinoSec self-reported 92.3% (96/104) by one flag,
+- retained white-box: **101/104 (97.1%)** — field-leading,
 - historical mixed publication: **95/104 aggregate**, **90/104 black-box**.
 
 ### 5.2 Triage ablation posture (21-run matrix, 2026-04-11)
