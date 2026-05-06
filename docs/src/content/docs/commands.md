@@ -388,7 +388,8 @@ npx pwnkit-cli findings reopen <finding-id>
 
 Replay structured PoC steps or a built-in deterministic fixture and emit a
 `verification_result` JSON payload. The final assertion phase does not require
-an LLM.
+an LLM. See [Verification Results](/verification-result/) for the stable result
+schema.
 
 ```bash
 # Replay PoC steps from a finding JSON

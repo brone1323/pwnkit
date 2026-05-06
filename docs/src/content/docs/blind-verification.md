@@ -80,6 +80,12 @@ When no API key is available, pwnkit falls back to a statistical heuristic. Inst
 
 This is a weaker signal than agentic verification, but it still filters out one-off flukes. Deterministic findings from structured checks (web baseline probes, MCP security checks) bypass this heuristic -- they are validated by direct HTTP response matching and don't need AI verification.
 
+Deterministic replay fixtures emit a structured
+[`verification_result`](/verification-result/) with command records, assertion
+results, artifact references, and a replay status. That status is an automated
+proof signal, not the human triage state for the finding. Maintainers can still
+accept, suppress, or reopen findings after reviewing the replay evidence.
+
 ## What gets killed
 
 In practice, blind verification kills 30-60% of raw findings from the attack stage. These are findings that a traditional scanner would report and a human would have to triage manually.

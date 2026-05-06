@@ -63,6 +63,7 @@ export default defineConfig({
             { label: "Agent Loop", slug: "agent-loop" },
             { label: "Finding Triage", slug: "triage" },
             { label: "Blind Verification", slug: "blind-verification" },
+            { label: "Verification Results", slug: "verification-result" },
             { label: "Adversarial Evals", slug: "adversarial-evals" },
           ],
         },
