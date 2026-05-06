@@ -411,6 +411,10 @@ export async function runVerify(opts: {
       return { result, exitCode: exitCodeForStatus(result.status) };
     }
 
+    if (opts.fixtureMode) {
+      throw new Error("--fixture-mode is only supported with --fixture");
+    }
+
     if (!opts.findingPath) {
       throw new Error("missing required flag: --finding <path>");
     }
@@ -481,6 +485,9 @@ async function verifyAction(opts: VerifyOpts): Promise<void> {
   }
   if (opts.fixture && opts.finding) {
     throw new Error("--fixture and --finding are mutually exclusive");
+  }
+  if (opts.fixtureMode && !opts.fixture) {
+    throw new Error("--fixture-mode is only supported with --fixture");
   }
   if ((opts.retainArtifacts || opts.artifactDir) && !opts.fixture) {
     throw new Error("--retain-artifacts / --artifact-dir are only supported with --fixture");

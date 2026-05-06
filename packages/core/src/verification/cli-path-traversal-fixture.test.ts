@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runCliPathTraversalReplayFixture } from "./cli-path-traversal-fixture.js";
@@ -35,7 +35,7 @@ describe("runCliPathTraversalReplayFixture", () => {
     });
 
     expect(result.status).toBe("not_reproduced");
-    expect(result.commands[0].exit_code).toBe(0);
+    expect(result.commands[0].exit_code).toBe(1);
     expect(result.commands[0].stderr_excerpt).toContain("blocked path traversal");
     expect(result.assertions.find((a) => a.kind === "filesystem_exists")?.passed).toBe(false);
     expect(result.assertions.find((a) => a.kind === "path_outside_export_root")?.passed).toBe(false);
@@ -59,6 +59,29 @@ describe("runCliPathTraversalReplayFixture", () => {
       expect(existsSync(result.artifacts.harness_ref)).toBe(true);
       expect(existsSync(result.artifacts.stdout_ref)).toBe(true);
       expect(existsSync(result.artifacts.stderr_ref)).toBe(true);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+
+  it("returns artifact refs on setup errors when artifact retention is requested", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "pwnkit-fixture-error-"));
+    try {
+      writeFileSync(join(sandbox, "export"), "not a directory", "utf8");
+
+      const result = await runCliPathTraversalReplayFixture({
+        artifactDir: sandbox,
+        retainArtifacts: true,
+        engineVersion: "test",
+      });
+
+      expect(result.status).toBe("error");
+      expect(result.commands).toEqual([]);
+      expect(result.artifacts.sandbox_ref).toBe(sandbox);
+      expect(result.artifacts.export_ref).toBe(join(sandbox, "export"));
+      expect(result.artifacts.harness_ref).toBe(join(sandbox, "harness", "paperclip-export-fixture.mjs"));
+      expect(result.artifacts.stdout_ref).toBe(join(sandbox, "stdout.log"));
+      expect(result.artifacts.stderr_ref).toBe(join(sandbox, "stderr.log"));
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

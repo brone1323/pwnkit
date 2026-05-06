@@ -374,6 +374,19 @@ describe("runVerify", () => {
     expect(existsSync(outcome.result.artifacts.stderr_ref)).toBe(true);
     expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
   });
+
+  it("rejects --fixture-mode when --fixture is not set", async () => {
+    const findingPath = writeFinding(makeFinding());
+    const outcome = await runVerify({
+      findingPath,
+      fixtureMode: "patched",
+    });
+
+    expect(outcome.exitCode).toBe(3);
+    expect(outcome.result.status).toBe("error");
+    expect(outcome.result.error_reason).toBe("--fixture-mode is only supported with --fixture");
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
 });
 
 // ── Workspace isolation tests (CodeRabbit #194 — cwd safety) ────────────────

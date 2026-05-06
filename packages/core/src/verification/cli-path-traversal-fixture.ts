@@ -237,16 +237,21 @@ if (!response.ok) {
 const body = await response.json();
 const root = resolve(output);
 await mkdir(root, { recursive: true });
+let blockedTraversal = false;
 
 for (const [name, content] of Object.entries(body.files || {})) {
   const destination = resolve(root, name);
   if (mode === "patched" && !isInside(root, destination)) {
     console.error("blocked path traversal: " + name);
+    blockedTraversal = true;
     continue;
   }
   await mkdir(dirname(destination), { recursive: true });
   await writeFile(destination, String(content), "utf8");
   console.log("wrote " + destination);
+}
+if (blockedTraversal) {
+  process.exitCode = 1;
 }
 `;
 }
@@ -329,10 +334,6 @@ function resultStatus(args: {
   command: CapturedCommand;
   assertions: ReplayAssertion[];
 }): ReplayStatus {
-  if (args.command.error && args.command.exitCode === null) return "error";
-  if (args.command.timedOut) return "error";
-  if (args.command.exitCode !== 0) return "error";
-
   const required = new Set([
     "filesystem_exists",
     "filesystem_not_exists",
@@ -340,10 +341,17 @@ function resultStatus(args: {
     "path_inside_sandbox",
     "no_home_profile_touch",
   ]);
-  const reproduced = args.assertions
-    .filter((a) => required.has(a.kind))
-    .every((a) => a.passed);
-  return reproduced ? "reproduced" : "not_reproduced";
+  const filesystemAssertions = args.assertions.filter((a) => required.has(a.kind));
+  if (filesystemAssertions.length > 0) {
+    return filesystemAssertions.every((a) => a.passed)
+      ? "reproduced"
+      : "not_reproduced";
+  }
+
+  if (args.command.error && args.command.exitCode === null) return "error";
+  if (args.command.timedOut) return "error";
+  if (args.command.exitCode !== 0) return "error";
+  return "inconclusive";
 }
 
 function summaryFor(status: ReplayStatus): string {
@@ -380,9 +388,17 @@ export async function runCliPathTraversalReplayFixture(
     : await mkdtemp(join(tmpdir(), "pwnkit-verify-"));
   const exportDir = join(sandboxRoot, "export");
   const harnessDir = join(sandboxRoot, "harness");
+  const harnessRef = join(harnessDir, "paperclip-export-fixture.mjs");
   const stdoutRef = join(sandboxRoot, "stdout.log");
   const stderrRef = join(sandboxRoot, "stderr.log");
   const artifacts: Record<string, string> = {};
+  if (retainArtifacts) {
+    artifacts.sandbox_ref = sandboxRoot;
+    artifacts.harness_ref = harnessRef;
+    artifacts.stdout_ref = stdoutRef;
+    artifacts.stderr_ref = stderrRef;
+    artifacts.export_ref = exportDir;
+  }
   let server: Server | undefined;
 
   try {
@@ -427,14 +443,6 @@ export async function runCliPathTraversalReplayFixture(
       assertions.unshift(
         assertion("command_exit_zero", true, "fixture command exited 0"),
       );
-    }
-
-    if (retainArtifacts) {
-      artifacts.sandbox_ref = sandboxRoot;
-      artifacts.harness_ref = cliPath;
-      artifacts.stdout_ref = stdoutRef;
-      artifacts.stderr_ref = stderrRef;
-      artifacts.export_ref = exportDir;
     }
 
     const status = resultStatus({ command, assertions });
