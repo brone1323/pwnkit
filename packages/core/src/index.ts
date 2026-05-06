@@ -65,6 +65,18 @@ export type {
 export { raceStrategies, raceWithDefaults, DEFAULT_STRATEGIES } from "./racing.js";
 export type { AttackStrategy, RaceConfig, RaceResult, StrategyResult } from "./racing.js";
 
+// Per-host rate limiter (#214)
+export {
+  TokenBucket,
+  RateLimiter,
+  parseRateLimitFlag,
+  parseRetryAfter,
+} from "./scope/rate-limit.js";
+export type {
+  HostRateConfig,
+  RateLimiterConfig,
+} from "./scope/rate-limit.js";
+
 export type { DBScan, DBFinding, DBTarget, DBAttackResult } from "./db/schema.js";
 
 // API spec parser

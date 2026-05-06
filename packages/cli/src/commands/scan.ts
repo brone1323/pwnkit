@@ -65,6 +65,10 @@ export function registerScanCommand(program: Command): void {
     .option("--race", "Enable best-of-N strategy racing: run multiple attack strategies in parallel", false)
     .option("--egats", "Enable EGATS (Evidence-Gated Attack Tree Search): beam-search over a hypothesis tree", false)
     .option("--cost-ceiling <usd>", "Hard per-scan USD cost ceiling. Aborts cleanly with partial findings if exceeded. Overrides PWNKIT_COST_CEILING_USD.")
+    .option(
+      "--rate-limit <spec>",
+      "Per-host requests-per-second cap for outbound scan traffic. Plain number (e.g. '5') sets the default rps; comma-separated form 'api.example.com=5,*.example.com=3:6,2' allows per-host overrides and a fallback default. Default is 5 rps when unset. Each host carries an independent token bucket; 429 responses honour Retry-After (with a conservative 60s floor).",
+    )
     .option("--tui", "Open the local terminal UI after the scan completes", false)
     .option(
       "--features <list>",
@@ -224,6 +228,19 @@ export function registerScanCommand(program: Command): void {
         costCeilingUsd = parsed;
       }
 
+      // --rate-limit: validate the spec at start-of-scan rather than
+      // discovering a typo five hours into a deep scan.
+      const rateLimit = opts.rateLimit as string | undefined;
+      if (rateLimit !== undefined && rateLimit !== "") {
+        try {
+          const { parseRateLimitFlag } = await import("@pwnkit/core");
+          parseRateLimitFlag(rateLimit);
+        } catch (err) {
+          console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+          process.exit(2);
+        }
+      }
+
       await runUnified({
         target: opts.target,
         targetType: "url",
@@ -243,6 +260,7 @@ export function registerScanCommand(program: Command): void {
         race: opts.race as boolean | undefined,
         egats: opts.egats as boolean | undefined,
         costCeilingUsd,
+        rateLimit,
         tui: opts.tui as boolean,
         scopeFile,
       });

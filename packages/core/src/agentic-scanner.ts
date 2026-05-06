@@ -54,6 +54,29 @@ import { generatePov } from "./triage/pov-gate.js";
 import { getCloudSinkConfig, postFinding, postFinalReport } from "./cloud-sink.js";
 import { eventBus } from "./events/bus.js";
 import { loadScope, type ScopePolicy } from "./scope/scope.js";
+import { RateLimiter, parseRateLimitFlag } from "./scope/rate-limit.js";
+
+/**
+ * Per-scan rate-limiter cache (#214). The limiter is stateful — buckets
+ * track per-host token availability and 429 cool-offs across the entire
+ * scan — so we build one instance keyed on the ScanConfig object and
+ * thread it into every agent loop and every stage that fetches.
+ *
+ * Default 5 rps when the operator did not pass `--rate-limit`. The
+ * issue body is explicit on this: the primitive should default
+ * conservative even without an explicit operator flag, so an
+ * unconfigured `pwnkit scan` can't accidentally hammer a target.
+ */
+const RATE_LIMITER_CACHE = new WeakMap<ScanConfig, RateLimiter>();
+function getOrCreateRateLimiter(config: ScanConfig): RateLimiter {
+  let rl = RATE_LIMITER_CACHE.get(config);
+  if (!rl) {
+    const cfg = parseRateLimitFlag(config.rateLimit ?? "", 5);
+    rl = new RateLimiter(cfg);
+    RATE_LIMITER_CACHE.set(config, rl);
+  }
+  return rl;
+}
 
 export interface AgenticScanOptions {
   config: ScanConfig;
@@ -142,6 +165,12 @@ async function normalizeScanConfig(config: ScanConfig): Promise<ScanConfig> {
   if (!config.target.startsWith("http://") && !config.target.startsWith("https://")) return config;
 
   try {
+    // #214: rate-limit even the one-shot mode-auto-detect probe. The
+    // limiter is built (and cached on `config`) here so subsequent
+    // stages share the same per-host bucket state — a target that 429s
+    // on the first probe stays parked across the whole scan.
+    const limiter = getOrCreateRateLimiter(config);
+    await limiter.acquire(config.target);
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), Math.min(config.timeout ?? 30_000, 8_000));
     try {
@@ -152,6 +181,7 @@ async function normalizeScanConfig(config: ScanConfig): Promise<ScanConfig> {
         },
         signal: controller.signal,
       });
+      limiter.noteResponse(config.target, response);
       const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
       const body = await response.text();
 
@@ -1773,6 +1803,7 @@ async function runNativeDiscovery(
       sessionId: db.getSession(scanId, "discovery")?.id,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -1993,6 +2024,7 @@ async function runNativeAttack(
       retryCount: 0,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2056,6 +2088,7 @@ async function runNativeAttack(
         retryCount: 1,
         authConfig: config.auth,
         scope: resolveScopeForConfig(config),
+        rateLimiter: getOrCreateRateLimiter(config),
         costCeilingUsd: config.costCeilingUsd,
         costModel: config.model,
       },
@@ -2269,6 +2302,7 @@ async function runNativeVerify(
       sessionId: db.getSession(scanId, "verify")?.id,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2328,6 +2362,7 @@ async function runLegacyDiscovery(
       dbPath,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
     },
     runtime,
     db,
@@ -2392,6 +2427,7 @@ async function runLegacyAttack(
       dbPath,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
     },
     runtime,
     db,
@@ -2457,6 +2493,7 @@ async function runLegacyVerify(
       dbPath,
       authConfig: config.auth,
       scope: resolveScopeForConfig(config),
+      rateLimiter: getOrCreateRateLimiter(config),
     },
     runtime,
     db,

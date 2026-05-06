@@ -54,6 +54,8 @@ export interface RunOptions {
   egats?: boolean;
   /** Hard per-scan USD cost ceiling. Aborts cleanly with partial findings if exceeded. */
   costCeilingUsd?: number;
+  /** Per-host rate-limit spec (#214). Plain "5" or "host=rps,host2=rps:burst,default". */
+  rateLimit?: string;
   /** Open the operator TUI after the run completes. */
   tui?: boolean;
   /** Path to a JSON scope file (pwnkit#215). Threaded into ScanConfig.scopeFile. */
@@ -263,6 +265,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
             egats: opts.egats,
             costCeilingUsd: opts.costCeilingUsd,
             scopeFile: opts.scopeFile,
+            rateLimit: opts.rateLimit,
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,
