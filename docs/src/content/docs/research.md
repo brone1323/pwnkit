@@ -51,6 +51,10 @@ The 45 handcrafted features exposed by `extractFeatures()` and how they fit into
 
 Dated, archival records of specific experiments. Kept for auditability — not necessarily current guidance.
 
+### [2026-05-06 HackerOne Program Audit](/research/2026-05-06-h1-ai-readiness/)
+
+Aggregate analysis of 590 HackerOne programs scored on automation policy, scope shape, and Safe Harbor status. Where AI pentest agents can actually operate under the May 2026 CoC update, and a platform-side misconfiguration that affects 23 paid programs.
+
 ### [2026-04-11 Triage Ablation Results](/research/2026-04-11-ablation/)
 
 The 21-profile triage ablation with batch-1 and batch-2 numbers, methodology notes, and links to raw run artifacts.
