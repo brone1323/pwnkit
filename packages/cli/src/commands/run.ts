@@ -60,6 +60,8 @@ export interface RunOptions {
   tui?: boolean;
   /** Path to a JSON scope file (pwnkit#215). Threaded into ScanConfig.scopeFile. */
   scopeFile?: string;
+  /** Opt-out for the scanner-binary suppression gate (pwnkit#217). Threaded into ScanConfig.allowScanners. */
+  allowScanners?: boolean;
   sessionUiFactory?: (options: {
     target: string;
     depth: string;
@@ -266,6 +268,7 @@ export async function runUnified(opts: RunOptions): Promise<void> {
             costCeilingUsd: opts.costCeilingUsd,
             scopeFile: opts.scopeFile,
             rateLimit: opts.rateLimit,
+            allowScanners: opts.allowScanners,
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,

@@ -74,6 +74,16 @@ export interface AgentConfig {
    * See `scope/rate-limit.ts` (#214).
    */
   rateLimiter?: RateLimiter;
+  /**
+   * Generic-scanner-traffic suppression opt-out (pwnkit#217). When
+   * scope is loaded the agent refuses to spawn `sqlmap`, `nikto`,
+   * `gobuster`, `dirb`, `wfuzz`, `ffuf`, and the noisy `nmap -sV` /
+   * `nmap -A` modes — those binaries fingerprint themselves on the
+   * wire and most coordinated-disclosure programs forbid them. Setting
+   * this to `true` disables that gate (use only when the engagement
+   * explicitly permits generic-scanner traffic).
+   */
+  allowScanners?: boolean;
 }
 
 // ── Agent State ──
@@ -107,4 +117,9 @@ export interface ToolContext {
   scope?: ScopePolicy;
   /** Per-host rate limiter; see AgentConfig.rateLimiter. */
   rateLimiter?: RateLimiter;
+  /**
+   * See `AgentConfig.allowScanners`. Opt-out for the scanner-binary
+   * suppression gate (pwnkit#217). Only consulted when `scope` is set.
+   */
+  allowScanners?: boolean;
 }

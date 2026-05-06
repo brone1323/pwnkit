@@ -41,6 +41,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
     persistFindings: db !== null,
     scope: config.scope,
     rateLimiter: config.rateLimiter,
+    allowScanners: config.allowScanners,
   };
 
   const executor = new ToolExecutor(toolCtx, db);

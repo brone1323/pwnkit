@@ -60,6 +60,7 @@ export function registerScanCommand(program: Command): void {
     .option("--repo <path>", "Source code path for white-box scanning (read code before attacking)")
     .option("--auth <json>", "Auth credentials as JSON string or path to JSON file (types: bearer, cookie, basic, header)")
     .option("--scope <path>", "Path to a JSON scope file ({in_scope, out_of_scope} arrays of host / *.domain / cidr rules). Out-of-scope URLs return as ToolResult.error at every fetch site. See pwnkit#215.")
+    .option("--allow-scanners", "Disable the generic-scanner suppression gate (pwnkit#217). When --scope is set, the agent refuses to spawn sqlmap/nikto/gobuster/dirb/wfuzz/ffuf/`nmap -sV`/`nmap -A` by default; pass this flag only when the engagement explicitly permits generic-scanner traffic.", false)
     .option("--api-spec <path>", "Path to OpenAPI 3.x / Swagger 2.0 spec file (JSON or YAML) for pre-loaded endpoint knowledge")
     .option("--export <target>", "Export findings to issue tracker (e.g. github:owner/repo)")
     .option("--race", "Enable best-of-N strategy racing: run multiple attack strategies in parallel", false)
@@ -263,6 +264,7 @@ export function registerScanCommand(program: Command): void {
         rateLimit,
         tui: opts.tui as boolean,
         scopeFile,
+        allowScanners: opts.allowScanners as boolean | undefined,
       });
     });
 }
