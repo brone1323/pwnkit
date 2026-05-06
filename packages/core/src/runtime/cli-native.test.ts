@@ -387,6 +387,82 @@ describe("CliNativeRuntime — claude subscription mode", () => {
     expect(onUsage).toHaveBeenCalledWith({ inputTokens: 7, outputTokens: 3 });
   });
 
+  it("auto-clears cached session id when a resume turn exits non-zero (no infinite stale-resume loop)", async () => {
+    // Turn 1 — establishes a session id.
+    spawnMock.mockImplementationOnce(() =>
+      makeFakeChild({
+        stdoutLines: [
+          JSON.stringify({ type: "system", subtype: "init", session_id: "stale-id" }),
+          JSON.stringify({
+            type: "assistant",
+            session_id: "stale-id",
+            message: {
+              content: [{ type: "tool_use", id: "tu_a", name: "http_request", input: {} }],
+            },
+          }),
+          JSON.stringify({ type: "result", stop_reason: "tool_use" }),
+        ],
+        exitCode: 0,
+      }),
+    );
+    // Turn 2 — `--resume stale-id` fails because Claude Code lost the
+    // session server-side. CliNativeRuntime must drop the cached id.
+    spawnMock.mockImplementationOnce(() =>
+      makeFakeChild({
+        stdoutLines: [],
+        stderr: "Error: session not found\n",
+        exitCode: 1,
+      }),
+    );
+    // Turn 3 — should NOT re-send `--resume stale-id`; it should start
+    // a fresh session with `--system-prompt` instead.
+    spawnMock.mockImplementationOnce(() =>
+      makeFakeChild({
+        stdoutLines: [
+          JSON.stringify({ type: "system", subtype: "init", session_id: "fresh-id" }),
+          JSON.stringify({ type: "result", stop_reason: "end_turn" }),
+        ],
+        exitCode: 0,
+      }),
+    );
+
+    const rt = new CliNativeRuntime({ type: "claude", timeout: 5000 });
+    await rt.executeNative(
+      "sys",
+      [{ role: "user", content: [{ type: "text", text: "go" }] }],
+      [],
+    );
+    const r2 = await rt.executeNative(
+      "sys",
+      [
+        { role: "user", content: [{ type: "text", text: "go" }] },
+        {
+          role: "assistant",
+          content: [{ type: "tool_use", id: "tu_a", name: "http_request", input: {} }],
+        },
+        {
+          role: "user",
+          content: [{ type: "tool_result", tool_use_id: "tu_a", content: "200" }],
+        },
+      ],
+      [],
+    );
+    expect(r2.stopReason).toBe("error");
+
+    await rt.executeNative(
+      "sys",
+      [{ role: "user", content: [{ type: "text", text: "retry" }] }],
+      [],
+    );
+
+    expect(spawnMock).toHaveBeenCalledTimes(3);
+    const args3 = spawnMock.mock.calls[2]![1] as string[];
+    // After the failed resume, the next call must start fresh, not
+    // replay `--resume stale-id`.
+    expect(args3).not.toContain("--resume");
+    expect(args3).toContain("--system-prompt");
+  });
+
   it("resetSession() clears the cached session id so the next turn starts fresh", async () => {
     spawnMock.mockImplementation(() =>
       makeFakeChild({

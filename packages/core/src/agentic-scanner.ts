@@ -315,8 +315,12 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
         selectedRuntimeType = "api";
       }
     }
-  } else if (requestedRuntime === "claude" && !nativeApiAvailable) {
-    // Explicit `--runtime claude` with no API key → subscription mode.
+  } else if (requestedRuntime === "claude") {
+    // Explicit `--runtime claude` always picks the CLI native loop,
+    // regardless of whether ANTHROPIC_API_KEY is set. The flag is the
+    // user's explicit opt-in to the subscription path; falling through
+    // to the legacy text loop on the basis of an env var that happens
+    // to be present would silently subvert that intent.
     selectedRuntimeType = "claude";
     cliNativeRuntime = new CliNativeRuntime({
       type: "claude",
@@ -327,7 +331,9 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
     emit({
       type: "stage:start",
       stage: "discovery",
-      message: "Running native agent loop through `claude` CLI (subscription mode).",
+      message: nativeApiAvailable
+        ? "Explicit --runtime claude: running native agent loop through `claude` CLI (subscription mode); ANTHROPIC_API_KEY ignored."
+        : "Running native agent loop through `claude` CLI (subscription mode).",
     });
   } else {
     selectedRuntimeType = requestedRuntime;
@@ -1280,12 +1286,12 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       // is enabled and we have a native runtime.
       if (
         features.povGate
-        && nativeApiRuntime
+        && (nativeApiAvailable || cliNativeRuntime)
         && finding.triageStatus !== "accepted"
       ) {
         const povStart = Date.now();
         try {
-          const pov = await generatePov(finding, config.target, nativeApiRuntime, 5);
+          const pov = await generatePov(finding, config.target, nativeRuntime, 5);
           db.logEvent?.({
             scanId,
             stage: "verify",
@@ -1372,7 +1378,7 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
           verdict: "skip",
           reason: !features.povGate
             ? "PWNKIT_FEATURE_POV_GATE=0"
-            : !nativeApiRuntime
+            : !(nativeApiAvailable || cliNativeRuntime)
               ? "no native runtime available"
               : "already accepted by upstream layer",
           startedAt: Date.now(),
@@ -1413,14 +1419,14 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       // verify queue and marked as false positives — this is the cheapest
       // remaining FP-reduction knob in the pipeline (~15% in research).
       let consensusFiltered = verifyCandidates;
-      if (features.selfConsistencyVerify && nativeApiRuntime) {
+      if (features.selfConsistencyVerify && (nativeApiAvailable || cliNativeRuntime)) {
         const survivors: Finding[] = [];
         for (const finding of verifyCandidates) {
           try {
             const consensus = await runSelfConsistencyVerify(
               finding,
               config.target,
-              nativeApiRuntime,
+              nativeRuntime,
               { numRuns: 3, temperature: 0.7, earlyStopThreshold: 0.8 },
             );
             db.logEvent?.({

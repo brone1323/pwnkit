@@ -81,6 +81,8 @@ export class CliNativeRuntime implements NativeRuntime {
   async isAvailable(): Promise<boolean> {
     return new Promise((resolve) => {
       const proc = spawn(this.command, ["--version"], {
+        cwd: this.config.cwd ?? process.cwd(),
+        env: { ...process.env, ...this.config.env },
         stdio: ["ignore", "pipe", "pipe"],
       });
       const timer = setTimeout(() => {
@@ -238,6 +240,9 @@ export class CliNativeRuntime implements NativeRuntime {
 
       proc.on("error", (err) => {
         clearTimeout(timer);
+        // Spawn-level failure also invalidates any cached session id —
+        // see the `close` handlers below for the same rationale.
+        this.sessionId = undefined;
         resolve({
           content: [{ type: "text", text: "" }],
           stopReason: "error",
@@ -250,6 +255,11 @@ export class CliNativeRuntime implements NativeRuntime {
         clearTimeout(timer);
 
         if (timedOut) {
+          // A timed-out resume often means Claude Code lost the session
+          // server-side (idle eviction, restart, expiry). Drop the cached
+          // id so the next call falls back to a fresh `--system-prompt`
+          // invocation instead of looping on `--resume <stale_id>`.
+          this.sessionId = undefined;
           resolve({
             content: content.length > 0 ? content : [{ type: "text", text: "" }],
             stopReason: "error",
@@ -264,6 +274,11 @@ export class CliNativeRuntime implements NativeRuntime {
           // Surface any auth / login hint Claude Code dumped to stderr.
           // Common modes: "Please run claude login", "session expired".
           const hint = extractAuthHint(stderrBuf);
+          // Same rationale as the timeout path: a non-zero exit on a
+          // resume usually means the server-side session is gone. Clear
+          // the cached id so we don't wedge the native loop replaying
+          // `--resume` against an id Claude Code no longer recognises.
+          this.sessionId = undefined;
           resolve({
             content: [{ type: "text", text: "" }],
             stopReason: "error",
