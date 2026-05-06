@@ -57,7 +57,7 @@ The raw data underlying this post is private competitive intel and is not republ
 | Gold Standard Safe Harbor adopted | 171 | 29.0% |
 | Open-scope declared | 56 | 9.5% |
 
-A few things stand out before we even get to AI policy. The paid/VDP split is roughly 50/50, which contradicts a common assumption that "most HackerOne programs pay." Half of the visible inventory is unpaid. Submission-state `paused` accounts for nearly a quarter — programs that exist on paper but cannot currently receive reports. Gold Standard Safe Harbor adoption sits at 29% almost five years after the GSSH wording was published; the supermajority of programs still rely on bespoke legal language with weaker researcher protections.
+A few things stand out before we even get to AI policy. The paid/VDP split is roughly 50/50, contradicting the common assumption that "most HackerOne programs pay." Submission-state `paused` accounts for nearly a quarter — programs that exist on paper but cannot currently receive reports. Gold Standard Safe Harbor adoption sits at 29%; the supermajority of programs still rely on bespoke legal language with weaker researcher protections.
 
 ```mermaid
 xychart-beta
@@ -91,24 +91,27 @@ pie showData
 | `silent` (policy makes no statement either way) | 259 | 43.9% |
 | `allowed-with-rate-limit` (policy explicitly permits automation) | **2** | **0.3%** |
 
-Two programs out of 590 explicitly allow automation. That is the upper bound on "deploy-anywhere" surface for an AI pentest agent under the current HackerOne CoC interpretation. Everything else requires either reading the policy markdown carefully (often ambiguous) or accepting some level of contractual risk.
+Two programs out of 590 explicitly allow automation. That is the upper bound on "deploy-anywhere" surface for an AI pentest agent under the current HackerOne CoC interpretation. Everything else requires reading the policy markdown carefully or accepting some level of contractual risk.
 
-The `silent` bucket is the most interesting. 44% of programs simply do not address the question. Under the May 2026 CoC update, silence is *not* implicit consent — the platform-level rules still apply, and any researcher operating an automated tool against a silent program is one report-quality complaint away from a Final Warning. In practice the silent bucket is "AI-tolerable but not AI-explicit," and the operational risk depends entirely on whether your reports look hand-crafted enough to pass triage.
+The `silent` bucket is the most interesting. Under the May 2026 CoC update, silence is *not* implicit consent — the platform-level rules still apply, and any researcher operating an automated tool against a silent program is one report-quality complaint away from a Final Warning. In practice the silent bucket is "AI-tolerable but not AI-explicit," and the operational risk depends on whether your reports look hand-crafted enough to pass triage.
 
 ### A finding on the platform itself
 
 > **23 of 292 paid programmes (7.9%)** advertise bounties on the front page but return **zero usable in-scope assets** through the structured-scopes API endpoint. A scope-aware tool that follows the API contract will skip them entirely; a scope-blind tool that scrapes policy text will hit them and likely violate program rules. The asymmetry penalises the honest case.
 
-While iterating the scope-fetch loop we noticed something we did not expect: **23 paid bounty programmes return zero programmatically usable in-scope assets via the structured-scopes endpoint.** The breakdown:
-
-- 17 return `data: []` — an empty array.
-- 6 return only `OTHER`-type assets — no URL, no WILDCARD, no IP range, no executable.
-
-These are paid programmes. They are advertising bounties on the front page. But if a researcher uses the API the way the API documentation says to use it, the returned scope is unusable for any automated workflow. The actual scope is buried in the policy markdown, in human-language form, parseable only by reading. We are not naming the programmes, but the count is reproducible from any researcher account against the same endpoints.
-
-This is, as far as we can tell, a HackerOne-side misconfiguration rather than a deliberate choice. Programmes in this state effectively shadow-ban automation tooling: an honest agent that respects the structured-scopes API will skip them, while a less-careful tool that scrapes the policy text and guesses will not. The asymmetry penalises the honest case. We will be filing this as a feedback item to HackerOne.
+The breakdown of the 23: 17 return `data: []`, 6 return only `OTHER`-type assets (no URL, no WILDCARD, no IP range). The actual scope is buried in policy markdown, parseable only by reading — so an honest agent that respects the API skips, while a less-careful tool guesses and submits. We are not naming the programmes, but the count is reproducible from any researcher account against the same endpoints. We will be filing this as a feedback item to HackerOne.
 
 ### Scoring distribution
+
+```mermaid
+xychart-beta
+  title "H1 readiness score distribution (n=590, bin=10)"
+  x-axis ["0-9", "10-19", "20-29", "30-39", "40-49", "50-59", "60-69", "70-79", "80-89", "90-100"]
+  y-axis "Programs in bin" 0 --> 200
+  bar [172, 24, 40, 49, 61, 83, 87, 53, 19, 2]
+```
+
+*Caption: readiness binned by tens. Heavily left-skewed — 172 programmes (29%) score under 10, only 21 (3.6%) clear 80, and just 2 reach 90+. The bottom bin is VDPs, paused programmes, and explicit bans compounding rather than overlapping.*
 
 | Score band | Count | % of 590 |
 |------------|-------|----------|
@@ -122,7 +125,37 @@ This is, as far as we can tell, a HackerOne-side misconfiguration rather than a 
 | 10–19 | 24 | 4.1% |
 | <10 | 172 | 29.2% |
 
-21 programmes (3.6% of total) clear the ≥80 bar where automation policy is explicit-or-tolerant, scope is web-shaped, bounty is paid, and submission is open. Adding the 70–79 band brings the total to 74 (12.5%). Most of the long tail is either VDP-only, paused, dominated by non-web assets, or carrying explicit anti-automation language.
+21 programmes clear the ≥80 bar (paid + open + web-shaped + automation explicit-or-tolerant). Adding the 70–79 band brings the total to 74 (12.5%). Most of the long tail is either VDP-only, paused, non-web, or carries explicit anti-automation language.
+
+### The funnel
+
+```mermaid
+sankey-beta
+
+590 directory,455 open submissions,455
+590 directory,135 paused or invite-only,135
+455 open submissions,231 paid and open,231
+455 open submissions,224 VDP or unpaid,224
+231 paid and open,172 paid open and not banned,172
+231 paid and open,59 paid but automation banned,59
+172 paid open and not banned,21 score 80 or higher,21
+172 paid open and not banned,151 score below 80,151
+21 score 80 or higher,1 explicit allow at top,1
+21 score 80 or higher,20 silent or cautious at top,20
+```
+
+*Caption: 590 → 455 open → 231 paid → 172 not-banned → 21 score 80+ → 1 explicit-allow. Five filters in sequence remove 99.8% of the directory; each one is a real check a careful tool would apply pre-submission.*
+
+### Gold Standard Safe Harbor coverage
+
+```mermaid
+pie showData
+  title Gold Standard Safe Harbor adoption (n=590)
+  "Adopted" : 171
+  "Not adopted" : 419
+```
+
+*Caption: 29% baseline GSSH adoption — but 20 of the 21 programmes scoring 80+ are GSSH, making it the strongest single predictor of readiness in the dataset.*
 
 ## What this means for AI agents
 
@@ -154,9 +187,7 @@ We have not yet submitted a report from pwnkit through the disclose pipeline. We
 
 ## Closer
 
-AI agents in bug bounty are a real category, and the leaderboard chase has been a useful forcing function for measuring raw capability. But raw capability is now the easy half of the problem. The harder half is operating inside a written conduct framework, against scope APIs that do not always work, on a platform where 99.7% of programmes are not explicitly permissioned for automation, with a penalty matrix where one bad report costs a Final Warning and three cost a permanent ban.
-
-Reproducibility, redaction, and scope discipline are the moat now — not raw bug-finding capability. The agent that finds the bug *and* reports it inside the rules will outlast the agent that just finds the bug. We expect the next eighteen months of the autonomous-pentest category to be decided on the second half of that sentence, not the first.
+The leaderboard chase has been a useful forcing function for measuring raw capability — but raw capability is now the easy half. The harder half is operating inside a written conduct framework, against scope APIs that do not always work, on a platform where 99.7% of programmes are not explicitly permissioned for automation. Reproducibility, redaction, and scope discipline are the moat now. The agent that finds the bug *and* reports it inside the rules will outlast the agent that just finds the bug. We expect the next eighteen months of the autonomous-pentest category to be decided on the second half of that sentence, not the first.
 
 ## Sources
 
