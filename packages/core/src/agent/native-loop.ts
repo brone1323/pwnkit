@@ -307,6 +307,11 @@ export async function runNativeAgentLoop(
     let streamedThinkingText = "";
     let streamedUsageInputTokens: number | undefined;
     let streamedUsageOutputTokens: number | undefined;
+    // Per-turn monotonic counter for `delta` bus events. Resets at the top
+    // of every turn so a downstream consumer can detect dropped chunks
+    // within a single LLM call without having to track turn boundaries
+    // separately. Bumped on every `onDelta` invocation regardless of scope.
+    let deltaSeq = 0;
 
     // Bus event: planner invocation. `tokens_est` is cumulative input
     // tokens going INTO this call — the actual response usage lands on
@@ -345,6 +350,32 @@ export async function runNativeAgentLoop(
             inputTokens: cumulativeUsage.inputTokens,
             outputTokens: cumulativeUsage.outputTokens,
             estimatedCostUsd: estimateCost(cumulativeUsage, config.costModel),
+          });
+        },
+        // Token-level streaming for the cloud dashboard's Live Trace
+        // panel. Each chunk arriving from the LLM SDK fans out as a
+        // `delta` bus event — the cloud sink turns those into
+        // PWNKIT_EVENT_DELTA stdout lines, which the worker-controller
+        // relays to the orchestrator for SSE delivery to the dashboard.
+        //
+        // Gating: same env flag as every other cloud-bound event
+        // (`PWNKIT_CLOUD_EVENTS=1`). When that flag is unset, no sink
+        // is subscribed and `eventBus.emit` is a no-op — a wasted
+        // closure call per chunk but no allocations beyond that. We
+        // chose not to add a separate `PWNKIT_CLOUD_DELTA_STREAM` flag
+        // because (a) any operator opting in to cloud events already
+        // wants the richest possible trace, and (b) one flag is one
+        // less foot-gun in the helm chart. See the report for the
+        // call-out to revisit this if cloud bandwidth becomes a
+        // bottleneck.
+        onDelta: (scope, text) => {
+          if (!text) return;
+          eventBus.emit("delta", {
+            turn: state.turnCount,
+            role: config.role,
+            scope,
+            text,
+            seq: deltaSeq++,
           });
         },
       },

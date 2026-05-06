@@ -440,9 +440,9 @@ describe("LlmApiRuntime response parsing", () => {
     (rt as any).wireApi = "responses";
     (rt as any).apiKey = "test";
 
-    vi.stubGlobal("fetch", vi.fn(async () => ({
-      ok: true,
-      text: async () => JSON.stringify({
+    const sseEvent = `data: ${JSON.stringify({
+      type: "response.completed",
+      response: {
         output: [
           {
             type: "function_call",
@@ -452,8 +452,18 @@ describe("LlmApiRuntime response parsing", () => {
           },
         ],
         usage: { input_tokens: 50, output_tokens: 20 },
+      },
+    })}\n\n`;
+
+    vi.stubGlobal("fetch", vi.fn(async () => ({
+      ok: true,
+      body: new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(sseEvent));
+          controller.close();
+        },
       }),
-    } as Response)));
+    } as unknown as Response)));
 
     const result = await rt.executeNative("sys", [
       { role: "user", content: [{ type: "text", text: "go" }] },
@@ -525,6 +535,140 @@ describe("LlmApiRuntime response parsing", () => {
     expect(result.stopReason).toBe("error");
     expect(result.error).toContain("400");
   });
+});
+
+// ── Token-level streaming via onDelta (NEW) ──────────────────────────────
+
+describe("LlmApiRuntime Azure responses streaming → onDelta", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * Build a fake `Response` whose body streams the given SSE chunks. Mimics
+   * Azure's Responses API SSE wire format: each chunk arrives as
+   *
+   *   data: {"type":"…","delta":"…"}\n\n
+   *
+   * `consumeResponsesStream` parses on the `\n\n` boundary so we coalesce
+   * each event into one boundary.
+   */
+  function fakeSseResponse(events: Array<Record<string, unknown>>): Response {
+    const encoder = new TextEncoder();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const ev of events) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(ev)}\n\n`));
+        }
+        controller.close();
+      },
+    });
+    return new Response(body, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  it(
+    "[NEW] forwards response.output_text.delta chunks to onDelta with scope=assistant_response",
+    async () => {
+      const rt = new LlmApiRuntime({ type: "api", timeout: 5000, apiKey: "test" });
+      (rt as any).provider = "azure";
+      (rt as any).wireApi = "responses";
+      (rt as any).apiKey = "test";
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeSseResponse([
+            { type: "response.output_text.delta", delta: "Hel" },
+            { type: "response.output_text.delta", delta: "lo " },
+            { type: "response.output_text.delta", delta: "world" },
+            {
+              type: "response.completed",
+              response: {
+                output: [
+                  {
+                    type: "message",
+                    content: [{ type: "output_text", text: "Hello world" }],
+                  },
+                ],
+                usage: { input_tokens: 5, output_tokens: 3 },
+              },
+            },
+          ]),
+        ),
+      );
+
+      const deltas: Array<{ scope: string; text: string }> = [];
+      const result = await rt.executeNative(
+        "sys",
+        [{ role: "user", content: [{ type: "text", text: "say hi" }] }],
+        [],
+        {
+          onDelta: (scope, text) => {
+            deltas.push({ scope, text });
+          },
+        },
+      );
+
+      expect(deltas).toEqual([
+        { scope: "assistant_response", text: "Hel" },
+        { scope: "assistant_response", text: "lo " },
+        { scope: "assistant_response", text: "world" },
+      ]);
+      expect(result.stopReason).toBe("end_turn");
+      expect(
+        result.content.find((b) => b.type === "text" && b.text === "Hello world"),
+      ).toBeTruthy();
+    },
+  );
+
+  it(
+    "[NEW] forwards response.reasoning_summary_text.delta chunks to onDelta with scope=reasoning",
+    async () => {
+      const rt = new LlmApiRuntime({ type: "api", timeout: 5000, apiKey: "test" });
+      (rt as any).provider = "azure";
+      (rt as any).wireApi = "responses";
+      (rt as any).apiKey = "test";
+
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () =>
+          fakeSseResponse([
+            { type: "response.reasoning_summary_text.delta", delta: "Step 1: " },
+            { type: "response.reasoning_summary_text.delta", delta: "look at /admin" },
+            {
+              type: "response.completed",
+              response: {
+                output: [],
+                usage: { input_tokens: 5, output_tokens: 2 },
+              },
+            },
+          ]),
+        ),
+      );
+
+      const deltas: Array<{ scope: string; text: string }> = [];
+      await rt.executeNative(
+        "sys",
+        [{ role: "user", content: [{ type: "text", text: "go" }] }],
+        [],
+        {
+          onDelta: (scope, text) => {
+            deltas.push({ scope, text });
+          },
+        },
+      );
+
+      // Both reasoning chunks must arrive; order preserved.
+      expect(deltas).toEqual([
+        { scope: "reasoning", text: "Step 1: " },
+        { scope: "reasoning", text: "look at /admin" },
+      ]);
+    },
+  );
 });
 
 // ── Live Azure Integration (only runs when AZURE_OPENAI_API_KEY is set) ──

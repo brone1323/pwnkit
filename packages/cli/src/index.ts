@@ -3,6 +3,7 @@
 import { Command } from "commander";
 import chalk from "chalk";
 import { VERSION } from "@pwnkit/shared";
+import { maybeSubscribeCloudEventSink } from "@pwnkit/core";
 import type { HomeSelection } from "./tui/run.js";
 import {
   registerScanCommand,
@@ -26,6 +27,12 @@ import {
 import { detectAndRoute } from "./routing.js";
 import { preloadBanner } from "./ui/banner.js";
 
+// Opt-in cloud event relay. When PWNKIT_CLOUD_EVENTS=1 the scanner's
+// EventBus fans out PWNKIT_EVENT_<TYPE> lines to stdout, which the
+// pwnkit-cloud worker-controller parses. OFF by default so interactive
+// CLI runs keep a clean stdout.
+maybeSubscribeCloudEventSink();
+
 // Start loading cfonts in the background so it's ready when the banner prints
 void preloadBanner();
 
@@ -34,7 +41,11 @@ const program = new Command();
 program
   .name("pwnkit-cli")
   .description("Fully autonomous agentic pentesting framework")
-  .version(VERSION);
+  // Custom flag so the global `--version` doesn't shadow subcommand
+  // options named `--version` (e.g. `pwnkit audit pkg --version 1.2.3`
+  // from the cloud worker-controller). `-V` and `--pwnkit-version`
+  // still print the CLI's own version.
+  .version(VERSION, "-V, --pwnkit-version", "print pwnkit CLI version");
 
 registerScanCommand(program);
 registerResumeCommand(program);

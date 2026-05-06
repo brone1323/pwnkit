@@ -1,5 +1,31 @@
 export { scan } from "./scanner.js";
 export type { ScanEvent, ScanListener, ScanEventType } from "./scanner.js";
+
+// Pluggable event bus + sinks (Option C of the pwnkit event-flow refactor).
+// The legacy ScanListener above is preserved via `scanListenerSink()`.
+export {
+  eventBus,
+  cloudEventSink,
+  scanListenerSink,
+  maybeSubscribeCloudEventSink,
+} from "./events/bus.js";
+export type {
+  EventSink,
+  EventType,
+  PwnkitEvent,
+  EventPayloadFor,
+  StepStartedPayload,
+  StepCompletedPayload,
+  FindingIngestedPayload,
+  CostUpdatePayload,
+  ScanCompletedPayload,
+  AgentTurnStartedPayload,
+  AgentTurnCompletedPayload,
+  ToolCallStartedPayload,
+  ToolCallCompletedPayload,
+  LlmPlannerInvokedPayload,
+  ReasoningSummaryPayload,
+} from "./events/bus.js";
 export { agenticScan } from "./agentic-scanner.js";
 export type { AgenticScanOptions } from "./agentic-scanner.js";
 export { createScanContext, addFinding, addAttackResult, finalize } from "./context.js";
@@ -133,5 +159,5 @@ export { verifyKernelCrash, compileAndRunReproducer, matchCrashSignature, valida
 export type { KernelOracleResult, ReproducerResult, CrashSignatureMatch, ConsistencyResult } from "./triage/kernel-oracle.js";
 
 // Disclosure bundle assembly (finding → GHSA-ready advisory markdown)
-export { suggestCwesForCategory, formatCweSection, suggestCvss, renderAdvisoryMarkdown, renderExploitScreenshot, isFreezeAvailable, composeExploitSession, verifyAgainstRef, extractFileRefs, formatPatchStatusSection, detectVersionRange, formatVersionRangeLine } from "./disclose/index.js";
-export type { CweEntry, CvssSuggestion, AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory, ScreenshotResult, ScreenshotOptions, PatchStatus, FileRef, ReverifyResult, ReverifyOptions, VersionRangeResult, VersionRangeOptions } from "./disclose/index.js";
+export { suggestCwesForCategory, formatCweSection, suggestCvss, renderAdvisoryMarkdown, renderExploitScreenshot, isFreezeAvailable, composeExploitSession, renderExecutionStepScreenshots, composeStepSession, verifyAgainstRef, extractFileRefs, formatPatchStatusSection, detectVersionRange, formatVersionRangeLine, extractSiblingFix, executePocSteps } from "./disclose/index.js";
+export type { CweEntry, CvssSuggestion, AdvisoryContext, AdvisoryScreenshot, RenderedAdvisory, ScreenshotResult, StepScreenshotResult, ScreenshotOptions, PatchStatus, FileRef, ReverifyResult, ReverifyOptions, VersionRangeResult, VersionRangeOptions, SiblingFixCandidate, PocExecutionTarget, PocStepResult, PocExecutionResult, PocPredicateState } from "./disclose/index.js";

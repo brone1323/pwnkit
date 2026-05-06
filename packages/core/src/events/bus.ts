@@ -50,6 +50,14 @@ import type { ScanEvent, ScanListener } from "../scanner.js";
 //   agent_turn_started, agent_turn_completed,
 //   tool_call_started, tool_call_completed,
 //   llm_planner_invoked, reasoning_summary
+//
+// M6 (live-trace token streaming):
+//
+//   delta — token-level chunks streamed straight from the LLM SDK while
+//   a turn is still in flight. Cloud's worker-controller relays these to
+//   the orchestrator which fans them out via SSE so the dashboard can
+//   render a ChatGPT-style typing effect instead of waiting for the
+//   coarse `agent_turn_completed` payload at the end of the turn.
 
 export interface StepStartedPayload {
   step: string;
@@ -146,6 +154,38 @@ export interface ReasoningSummaryPayload {
   summary: string;
 }
 
+/**
+ * Token-level streaming payload — emitted once per chunk arriving from the
+ * LLM SDK so the dashboard's Live Trace panel can render a typewriter-style
+ * stream in near real time, instead of waiting for the full response of an
+ * `agent_turn_completed`.
+ *
+ *   - `turn` correlates the delta to the agent turn it belongs to (matches
+ *     the `turn` field on `agent_turn_started` / `tool_call_*` /
+ *     `reasoning_summary`).
+ *   - `role` mirrors the planner role (`recon`, `attack`, etc.) when the
+ *     emitter knows it; optional so non-loop callers can omit it.
+ *   - `scope` distinguishes assistant-visible output from the model's
+ *     hidden chain-of-thought reasoning — the dashboard renders these in
+ *     two different lanes.
+ *   - `text` is the raw delta string from the SDK (NOT cumulative) — sinks
+ *     that want to display the running concat are expected to accumulate
+ *     locally.
+ *   - `seq` is a monotonic per-turn counter so a downstream consumer can
+ *     detect dropped or out-of-order chunks. It resets at every turn.
+ *
+ * High volume: a multi-thousand-token answer can produce hundreds of
+ * deltas, so the cloud sink should be the only consumer in production.
+ * Local CLI runs leave `PWNKIT_CLOUD_EVENTS` unset and pay zero cost.
+ */
+export interface DeltaPayload {
+  turn: number;
+  role?: string;
+  scope: "assistant_response" | "reasoning";
+  text: string;
+  seq: number;
+}
+
 /** Discriminated union of all events flowing through the bus. */
 export type PwnkitEvent =
   | { type: "step_started"; payload: StepStartedPayload }
@@ -158,7 +198,8 @@ export type PwnkitEvent =
   | { type: "tool_call_started"; payload: ToolCallStartedPayload }
   | { type: "tool_call_completed"; payload: ToolCallCompletedPayload }
   | { type: "llm_planner_invoked"; payload: LlmPlannerInvokedPayload }
-  | { type: "reasoning_summary"; payload: ReasoningSummaryPayload };
+  | { type: "reasoning_summary"; payload: ReasoningSummaryPayload }
+  | { type: "delta"; payload: DeltaPayload };
 
 /** Narrow the event type string to the known vocabulary. */
 export type EventType = PwnkitEvent["type"];
@@ -349,4 +390,23 @@ export function maybeSubscribeCloudEventSink(): void {
 /** Test-only: reset the idempotency flag. */
 export function _resetCloudSinkSubscriptionForTests(): void {
   cloudSinkSubscribed = false;
+}
+
+/**
+ * Hot-path predicate for high-frequency emitters (token deltas).
+ *
+ * The runtime calls this to decide whether to even ASSEMBLE a delta event
+ * — wiring up `onDelta` callbacks adds a per-chunk allocation and a JSON
+ * string concatenation, and the model can produce hundreds of chunks per
+ * turn. When no cloud sink is subscribed, every emit() call would be a
+ * no-op anyway, so we skip the work entirely and keep local CLI runs free.
+ *
+ * Returns true iff `maybeSubscribeCloudEventSink()` has actually attached
+ * the cloud sink this process — i.e. the operator opted in via
+ * `PWNKIT_CLOUD_EVENTS=1`. Test sinks subscribed by hand also count
+ * (they bump `eventBus.size`), so test scaffolding can flip this on
+ * without depending on env vars.
+ */
+export function isCloudEventSinkActive(): boolean {
+  return cloudSinkSubscribed || eventBus.size > 0;
 }

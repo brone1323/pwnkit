@@ -10,6 +10,9 @@ import type { ToolContext } from "./types.js";
 import type { pwnkitDB } from "@pwnkit/db";
 import type { Runtime } from "../runtime/types.js";
 import type { Finding, TargetInfo } from "@pwnkit/shared";
+import { eventBus } from "../events/bus.js";
+import { estimateCost } from "./cost.js";
+import { toolCallPreview } from "./tool-preview.js";
 
 export interface AgentLoopOptions {
   config: AgentConfig;
@@ -126,9 +129,36 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
 
   // ── Main loop ──
 
+  // Cumulative token usage across all turns — the legacy Runtime interface
+  // returns per-call usage on each RuntimeResult, so we tally here and emit
+  // a cost_update after every successful call.
+  const totalUsage = { inputTokens: 0, outputTokens: 0 };
+
   try {
   while (!state.done && state.turnCount < config.maxTurns) {
     state.turnCount++;
+    const turnStartedAt = Date.now();
+    // Mutable — tagged by the break paths / error branch inside the body,
+    // then read in the finally to stamp agent_turn_completed.
+    let turnExitReason: "continue" | "finished" | "max_turns" | "error" | "cost_ceiling" | "early_stop" = "continue";
+
+    // Bus event: agent turn boundary start. Mirrors the richer
+    // instrumentation on runNativeAgentLoop so downstream sinks see a
+    // unified event vocabulary regardless of which loop is active.
+    eventBus.emit("agent_turn_started", {
+      turn: state.turnCount,
+      max_turns: config.maxTurns,
+      role: config.role,
+    });
+
+    try {
+    // Bus event: planner invocation. `tokens_est` is the cumulative
+    // input-tokens-so-far going INTO this call.
+    eventBus.emit("llm_planner_invoked", {
+      turn: state.turnCount,
+      tokens_est: totalUsage.inputTokens,
+      role: config.role,
+    });
 
     // Build the full conversation as a single prompt for the runtime
     const prompt = serializeConversation(state.messages);
@@ -146,6 +176,20 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
           }
         : undefined,
     });
+
+    // Bus event: cost_update — accumulates cumulative token usage and
+    // translates into an estimated USD cost. Fired whenever the runtime
+    // returns per-call usage (not all adapters set `usage`).
+    if (result.usage) {
+      totalUsage.inputTokens += result.usage.inputTokens;
+      totalUsage.outputTokens += result.usage.outputTokens;
+      eventBus.emit("cost_update", {
+        cost_usd: estimateCost(totalUsage),
+        input_tokens: totalUsage.inputTokens,
+        output_tokens: totalUsage.outputTokens,
+        turn: state.turnCount,
+      });
+    }
 
     if (result.error && !result.output) {
       state.messages.push({
@@ -232,8 +276,52 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
     consecutiveNoToolTurns = 0;
     const toolResults: Array<{ name: string; result: { success: boolean; output: unknown; error?: string } }> = [];
     for (const call of toolCalls) {
+      // Bus event: tool_call_started.
+      let argsPreview: string;
+      try {
+        argsPreview = toolCallPreview(call).slice(0, 200);
+      } catch {
+        argsPreview = call.name;
+      }
+      eventBus.emit("tool_call_started", {
+        tool: call.name,
+        turn: state.turnCount,
+        args_preview: argsPreview,
+      });
+
+      const toolStartedAt = Date.now();
       const toolResult = await executor.execute(call);
       toolResults.push({ name: call.name, result: toolResult });
+
+      // Bus event: tool_call_completed.
+      eventBus.emit("tool_call_completed", {
+        tool: call.name,
+        turn: state.turnCount,
+        duration_ms: Date.now() - toolStartedAt,
+        status: toolResult.success ? "ok" : "error",
+        ...(toolResult.success ? {} : { error: toolResult.error ?? "unknown" }),
+      });
+
+      // Bus event: finding_ingested — fires whenever the agent successfully
+      // saves a finding so downstream sinks see it at creation time.
+      if (call.name === "save_finding" && toolResult.success) {
+        const f = toolResult.output as Record<string, unknown> | undefined;
+        const input = call.arguments as Record<string, unknown>;
+        // ToolExecutor.saveFinding returns `{ findingId, message }`, but
+        // some adapters may surface `id` directly — handle both.
+        const findingId =
+          typeof f?.findingId === "string"
+            ? (f.findingId as string)
+            : typeof f?.id === "string"
+              ? (f.id as string)
+              : undefined;
+        eventBus.emit("finding_ingested", {
+          finding_id: findingId,
+          severity: typeof input.severity === "string" ? input.severity : undefined,
+          title: typeof input.title === "string" ? input.title : undefined,
+          category: typeof input.category === "string" ? input.category : undefined,
+        });
+      }
 
       // Check if agent called done
       if (call.name === "done" && toolResult.success) {
@@ -273,6 +361,23 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
 
     if (db && state.turnCount % 2 === 0) {
       persistSession(db, state, config, sessionId, "running");
+    }
+    } finally {
+      // Bus event: agent turn boundary end. Exit reason is inferred from
+      // state flags set by the various break paths inside the body.
+      if (state.done) {
+        turnExitReason = "finished";
+      } else if (state.summary.startsWith("Error:")) {
+        turnExitReason = "error";
+      } else if (state.turnCount >= config.maxTurns) {
+        turnExitReason = "max_turns";
+      }
+      eventBus.emit("agent_turn_completed", {
+        turn: state.turnCount,
+        duration_ms: Date.now() - turnStartedAt,
+        reason: turnExitReason,
+        role: config.role,
+      });
     }
   }
 

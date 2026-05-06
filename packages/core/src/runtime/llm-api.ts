@@ -133,8 +133,23 @@ export function __resetAzureRegionCacheForTests(): void {
   azureRegionCache.clear();
 }
 
-/** Tracks which endpoints we've already printed a startup banner for. */
-const loggedProviderStartup = new Set<string>();
+/**
+ * Tracks which endpoints we've already printed a startup banner for.
+ *
+ * Stashed on `globalThis` under a `Symbol.for` key so the guard survives
+ * module re-evaluation. pnpm monorepos can occasionally resolve this
+ * module from more than one path (source vs compiled, different dep
+ * hoisting), which hands each importer its own module-local `Set` —
+ * the banner then fires once per importer instead of once per process.
+ * Keying on a shared global process-wide Set closes that hole.
+ */
+const PROVIDER_BANNER_KEY = Symbol.for("pwnkit.core.loggedProviderStartup");
+type GlobalWithBannerGuard = typeof globalThis & { [PROVIDER_BANNER_KEY]?: Set<string> };
+const loggedProviderStartup: Set<string> = ((): Set<string> => {
+  const g = globalThis as GlobalWithBannerGuard;
+  if (!g[PROVIDER_BANNER_KEY]) g[PROVIDER_BANNER_KEY] = new Set<string>();
+  return g[PROVIDER_BANNER_KEY];
+})();
 
 function appendNativeTrace(record: Record<string, unknown>): void {
   const file = process.env.PWNKIT_TRACE_NATIVE_RESPONSES;
@@ -457,6 +472,18 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
     return `${this.baseUrl}/v1/messages`;
   }
 
+  /**
+   * Chat-completions param name for the token cap. Newer OpenAI model
+   * families (gpt-5.*, o1/o2/o3) rejected the legacy `max_tokens` field
+   * and require `max_completion_tokens`. Older models still accept the
+   * legacy name, so we flip based on model prefix.
+   */
+  private get maxTokensParamKey(): "max_tokens" | "max_completion_tokens" {
+    return /^gpt-5|^o[1-3](?:[-_]|$)/i.test(this.model)
+      ? "max_completion_tokens"
+      : "max_tokens";
+  }
+
   /** Friendly provider name for error messages. */
   private get providerLabel(): string {
     switch (this.provider) {
@@ -578,7 +605,7 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
           headers: this.buildHeaders(),
           body: JSON.stringify({
             model: this.model,
-            max_tokens: 8192,
+            [this.maxTokensParamKey]: 8192,
             messages,
           }),
           signal: controller.signal,
@@ -725,20 +752,46 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
         chatMessages.push({ role: "system", content: system });
 
         for (const m of messages) {
+          // Batch all tool_use blocks from the same message into a
+          // single assistant message with a tool_calls array. gpt-5+
+          // strictly validates that every assistant with tool_calls is
+          // immediately followed by tool responses for each call id —
+          // splitting one turn into multiple assistant messages breaks
+          // that invariant and produces a 400 from Azure.
+          type ToolCall = {
+            id: string;
+            type: "function";
+            function: { name: string; arguments: string };
+          };
+          const pendingToolCalls: ToolCall[] = [];
+          let pendingAssistantText: string | null = null;
+          const flushAssistant = (): void => {
+            if (pendingToolCalls.length === 0 && pendingAssistantText === null) return;
+            const msg: Record<string, unknown> = { role: "assistant" };
+            if (pendingAssistantText !== null) msg.content = pendingAssistantText;
+            else msg.content = null;
+            if (pendingToolCalls.length > 0) msg.tool_calls = pendingToolCalls.slice();
+            chatMessages.push(msg);
+            pendingToolCalls.length = 0;
+            pendingAssistantText = null;
+          };
+
           for (const block of m.content) {
             if (block.type === "text") {
-              chatMessages.push({ role: m.role, content: block.text });
+              if (m.role === "assistant") {
+                pendingAssistantText = (pendingAssistantText ?? "") + block.text;
+              } else {
+                flushAssistant();
+                chatMessages.push({ role: m.role, content: block.text });
+              }
             } else if (block.type === "tool_use") {
-              chatMessages.push({
-                role: "assistant",
-                content: null,
-                tool_calls: [{
-                  id: block.id,
-                  type: "function",
-                  function: { name: block.name, arguments: JSON.stringify(block.input) },
-                }],
+              pendingToolCalls.push({
+                id: block.id,
+                type: "function",
+                function: { name: block.name, arguments: JSON.stringify(block.input) },
               });
             } else if (block.type === "tool_result") {
+              flushAssistant();
               chatMessages.push({
                 role: "tool",
                 tool_call_id: block.tool_use_id,
@@ -746,11 +799,15 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
               });
             }
           }
+          // End-of-message flush so a turn that ends with tool_use
+          // blocks emits one assistant message with the full tool_calls
+          // array before the next turn's tool_results land.
+          flushAssistant();
         }
 
         const body: Record<string, unknown> = {
           model: this.model,
-          max_tokens: 8192,
+          [this.maxTokensParamKey]: 8192,
           messages: chatMessages,
         };
 
@@ -1153,6 +1210,14 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
           if (delta) {
             thinkingText += delta;
             emitThinking(false);
+            // Token-level delta for the dashboard live trace. We forward
+            // the raw chunk verbatim — the upper layer (native-loop)
+            // decides whether to relay it to the cloud event bus. Note
+            // this fires alongside the heuristic `onThinking` callback,
+            // which is intentional: `onThinking` is debounced and
+            // delivers a cumulative snapshot for legacy consumers, while
+            // `onDelta` is the un-debounced raw stream for live trace.
+            callbacks?.onDelta?.("reasoning", delta);
           }
           continue;
         }
@@ -1166,6 +1231,24 @@ export class LlmApiRuntime implements Runtime, NativeRuntime {
           if (text.trim()) {
             thinkingText = text;
             emitThinking(true);
+          }
+          continue;
+        }
+
+        // Assistant-visible response text deltas. Azure's Responses API
+        // wraps these in a single SSE event type per chunk:
+        //
+        //   { "type": "response.output_text.delta", "delta": "Hello",
+        //     "item_id": "msg_…", "content_index": 0, "output_index": 0 }
+        //
+        // We don't accumulate here — the final text comes from the
+        // `response.completed` payload further down (consumed by
+        // downstream parsing). The delta is forwarded raw so the
+        // dashboard can render a typewriter stream.
+        if (type === "response.output_text.delta") {
+          const delta = typeof event.delta === "string" ? event.delta : "";
+          if (delta) {
+            callbacks?.onDelta?.("assistant_response", delta);
           }
           continue;
         }

@@ -75,6 +75,23 @@ export interface NativeRuntimeResult {
 export interface NativeStreamCallbacks {
   onThinking?: (text: string) => void;
   onUsage?: (usage: { inputTokens: number; outputTokens: number }) => void;
+  /**
+   * Token-level delta callback — fires once per chunk arriving from the
+   * provider's streaming SDK. `scope` distinguishes the assistant's
+   * visible response text from the model's hidden reasoning summary
+   * (Azure Responses API surfaces both via separate SSE events). `text`
+   * is the raw delta — NOT cumulative — so consumers should accumulate
+   * locally if they want a running concat.
+   *
+   * Currently only wired for the Azure `responses` wire API; the
+   * `chat_completions` path issues a non-streaming POST and surfaces the
+   * full response in one piece. Anthropic's Messages API has its own
+   * stream format that this hook does not cover yet.
+   */
+  onDelta?: (
+    scope: "assistant_response" | "reasoning",
+    text: string,
+  ) => void;
 }
 
 export interface NativeRuntime {

@@ -6,6 +6,7 @@ import { isIP } from "node:net";
 import type { Finding, AttackResult, TargetInfo } from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.js";
 import { sendPrompt, extractResponseText } from "../http.js";
+import { derivePocStepsFromEvidence } from "../poc-steps.js";
 import { buildAuthHeaders } from "./prompts.js";
 import type { pwnkitDB } from "@pwnkit/db";
 import { features as featureFlags } from "./features.js";
@@ -132,6 +133,7 @@ export const TOOL_DEFINITIONS: Record<string, ToolDefinition> = {
       evidence_request: { type: "string", description: "The request/prompt that triggered the vuln" },
       evidence_response: { type: "string", description: "The response showing the vulnerability" },
       evidence_analysis: { type: "string", description: "Your analysis of why this is a vulnerability" },
+      poc_steps: { type: "object", description: "Optional structured PoC step graph" },
     },
     required: ["title", "severity", "category", "evidence_request", "evidence_response"],
   },
@@ -1336,6 +1338,13 @@ export class ToolExecutor {
   }
 
   private saveFinding(args: Record<string, unknown>): ToolResult {
+    const evidence = {
+      request: (args.evidence_request as string) ?? "",
+      response: (args.evidence_response as string) ?? "",
+      analysis: args.evidence_analysis as string | undefined,
+    };
+    const explicitPocSteps = Array.isArray(args.poc_steps) ? args.poc_steps as Finding["pocSteps"] : undefined;
+    const derivedPocSteps = derivePocStepsFromEvidence(evidence);
     const finding: Finding = {
       id: randomUUID(),
       templateId: (args.template_id as string) ?? "manual",
@@ -1344,11 +1353,12 @@ export class ToolExecutor {
       severity: (args.severity as Finding["severity"]) ?? "medium",
       category: (args.category as Finding["category"]) ?? "prompt-injection",
       status: "discovered",
-      evidence: {
-        request: (args.evidence_request as string) ?? "",
-        response: (args.evidence_response as string) ?? "",
-        analysis: args.evidence_analysis as string | undefined,
-      },
+      evidence,
+      ...((explicitPocSteps && explicitPocSteps.length > 0)
+        ? { pocSteps: explicitPocSteps }
+        : derivedPocSteps.length > 0
+          ? { pocSteps: derivedPocSteps }
+          : {}),
       timestamp: Date.now(),
     };
 

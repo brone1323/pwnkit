@@ -9,6 +9,7 @@ import { runSourceAnalysis } from "./stages/source-analysis.js";
 import { runAttacks } from "./stages/attack.js";
 import { runVerification } from "./stages/verify.js";
 import { generateReport } from "./stages/report.js";
+import { eventBus } from "./events/bus.js";
 // Lazy-load DB to avoid native module issues when DB isn't needed
 let _db: any = null;
 
@@ -67,7 +68,15 @@ export async function scan(
   onEvent?: ScanListener,
   dbPath?: string
 ): Promise<ScanReport> {
-  const emit = onEvent ?? (() => {});
+  const baseEmit = onEvent ?? (() => {});
+  // Wrap the user-provided ScanListener so every legacy `ScanEvent`
+  // also fans out to the pluggable event bus (cloud relay, dashboard
+  // tracer, test spies, …). The mapping preserves the legacy shape
+  // 1:1 — the external ScanListener API is unchanged.
+  const emit: ScanListener = (event) => {
+    baseEmit(event);
+    relayScanEventToBus(event);
+  };
   const ctx: ScanContext = createScanContext(config);
 
   // Initialize DB for persistence (optional — graceful fallback if native module unavailable)
@@ -211,6 +220,15 @@ export async function scan(
     db.completeScan(scanId, reportResult.data.summary as unknown as Record<string, unknown>);
   }
 
+  // Bus event: canonical scan_completed — picked up by the cloud relay
+  // so the worker-controller can transition the pod to done, and by any
+  // dashboard tracer that wants to render the final frame.
+  eventBus.emit("scan_completed", {
+    exit_reason: "completed",
+    findings: verifyResult.data.findings.length,
+    duration_ms: reportResult.durationMs,
+  });
+
   return reportResult.data;
   } finally {
     if (db) {
@@ -218,5 +236,50 @@ export async function scan(
       // Reset the singleton so subsequent scans open a fresh connection
       _db = null;
     }
+  }
+}
+
+/**
+ * Map a legacy `ScanEvent` onto the richer bus vocabulary. This preserves
+ * the existing ScanListener API 1:1 while letting bus sinks (cloud relay,
+ * dashboard tracer) observe the same stage/finding/usage signal.
+ */
+function relayScanEventToBus(event: ScanEvent): void {
+  switch (event.type) {
+    case "stage:start":
+      eventBus.emit("step_started", {
+        step: event.stage ?? "unknown",
+      });
+      return;
+    case "stage:end":
+      eventBus.emit("step_completed", {
+        step: event.stage ?? "unknown",
+        message: event.message,
+      });
+      return;
+    case "finding": {
+      const f = (event.data ?? {}) as Record<string, unknown>;
+      eventBus.emit("finding_ingested", {
+        finding_id: typeof f.id === "string" ? f.id : undefined,
+        severity: typeof f.severity === "string" ? f.severity : undefined,
+        title: typeof f.title === "string" ? f.title : undefined,
+        category: typeof f.category === "string" ? f.category : undefined,
+      });
+      return;
+    }
+    case "usage": {
+      const u = (event.data ?? {}) as Record<string, unknown>;
+      eventBus.emit("cost_update", {
+        cost_usd: typeof u.estimatedCostUsd === "number" ? u.estimatedCostUsd : undefined,
+        input_tokens: typeof u.inputTokens === "number" ? u.inputTokens : undefined,
+        output_tokens: typeof u.outputTokens === "number" ? u.outputTokens : undefined,
+        turn: typeof u.turn === "number" ? u.turn : undefined,
+      });
+      return;
+    }
+    default:
+      // thinking / attack:* / verify:result / error / user:injected have no
+      // current cloud-side consumer — intentionally dropped by the relay.
+      return;
   }
 }
