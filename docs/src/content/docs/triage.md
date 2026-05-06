@@ -153,7 +153,7 @@ cross-checks every finding against foxguard's SARIF output.
 
 ```bash
 export PWNKIT_FEATURE_MULTIMODAL=1
-npx pwnkit-cli scan --target https://example.com --repo ./source
+pwnkit scan --target https://example.com --repo ./source
 ```
 
 This is the opensoar-hq trinity validation pattern: pwnkit detects,

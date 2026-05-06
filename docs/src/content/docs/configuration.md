@@ -50,8 +50,8 @@ npm i -g @google/gemini-cli
 Then use them:
 
 ```bash
-npx pwnkit-cli scan --target https://api.example.com/chat --runtime claude
-npx pwnkit-cli review ./my-repo --runtime codex --depth deep
+pwnkit scan --target https://api.example.com/chat --runtime claude
+pwnkit review ./my-repo --runtime codex --depth deep
 ```
 
 ## Scan modes
@@ -67,10 +67,10 @@ The `--mode` flag controls what kind of target is being scanned.
 
 ```bash
 # LLM API scan (default)
-npx pwnkit-cli scan --target https://api.example.com/chat
+pwnkit scan --target https://api.example.com/chat
 
 # Web app scan
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 ```
 
 ## Depth settings
@@ -84,9 +84,9 @@ The `--depth` flag controls how thorough the scan is.
 | `deep` | ~150 | ~10 min | Pre-launch audits, thorough review |
 
 ```bash
-npx pwnkit-cli scan --target https://api.example.com/chat --depth quick
-npx pwnkit-cli audit express --depth deep
-npx pwnkit-cli review ./my-repo --depth deep --runtime claude
+pwnkit scan --target https://api.example.com/chat --depth quick
+pwnkit audit express --depth deep
+pwnkit review ./my-repo --depth deep --runtime claude
 ```
 
 ## Output formats
@@ -117,7 +117,7 @@ In CI (GitHub Action), set `format: sarif` to populate the Security tab:
 For PR workflows, review only changed files against a base branch:
 
 ```bash
-npx pwnkit-cli review ./my-repo --diff-base origin/main --changed-only
+pwnkit review ./my-repo --diff-base origin/main --changed-only
 ```
 
 This is particularly useful in CI to avoid scanning the entire codebase on every PR.
@@ -127,7 +127,7 @@ This is particularly useful in CI to avoid scanning the entire codebase on every
 Use `--verbose` to see the animated attack replay and detailed agent reasoning:
 
 ```bash
-npx pwnkit-cli scan --target https://api.example.com/chat --verbose
+pwnkit scan --target https://api.example.com/chat --verbose
 ```
 
 ## Feature flags
@@ -192,14 +192,14 @@ You can bound API spend per scan, audit, or review:
 
 ```bash
 export PWNKIT_COST_CEILING_USD=5
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 ```
 
 Or override it per command:
 
 ```bash
-npx pwnkit-cli audit lodash --cost-ceiling 2
-npx pwnkit-cli review ./my-repo --cost-ceiling 10
+pwnkit audit lodash --cost-ceiling 2
+pwnkit review ./my-repo --cost-ceiling 10
 ```
 
 If the ceiling is exceeded, pwnkit preserves partial findings and exits with code `4`.
@@ -256,7 +256,7 @@ export PWNKIT_FEATURE_POV_GATE=1
 export PWNKIT_FEATURE_TRIAGE_MEMORIES=1
 export PWNKIT_FEATURE_MULTIMODAL=1
 
-npx pwnkit-cli scan --target https://example.com --mode web --depth deep
+pwnkit scan --target https://example.com --mode web --depth deep
 ```
 
 ### Example: Kali toolchain + web search
@@ -265,7 +265,7 @@ npx pwnkit-cli scan --target https://example.com --mode web --depth deep
 export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
 export PWNKIT_FEATURE_WEB_SEARCH=1
 
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 ```
 
 ### Example: raw Kali fallback
@@ -275,5 +275,5 @@ export PWNKIT_FEATURE_DOCKER_EXECUTOR=1
 export PWNKIT_DOCKER_IMAGE=kalilinux/kali-rolling
 export PWNKIT_DOCKER_BOOTSTRAP_TOOLS=1
 
-npx pwnkit-cli scan --target https://example.com --mode web
+pwnkit scan --target https://example.com --mode web
 ```

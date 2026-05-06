@@ -117,7 +117,7 @@ The vulnerability was hardcoded SSH credentials (base64 encoded in app.py). No w
 
 **This is the strongest evidence that white-box access dramatically changes the score ceiling.** Shannon's 96.15% advantage over KinoSec's 92.3% is largely explained by source access.
 
-Usage: `npx pwnkit-cli scan --target http://target --repo ./source`
+Usage: `pwnkit scan --target http://target --repo ./source`
 
 ## White-box vs black-box: head-to-head on impossible challenges
 
@@ -131,7 +131,7 @@ Usage: `npx pwnkit-cli scan --target http://target --repo ./source`
 
 **White-box clearly lifts the ceiling, but the exact per-challenge receipts now need to be read through the benchmark ledger rather than older prose snapshots.** Some of the local notes in this page were written before the retained artifact-backed reconstruction caught up.
 
-Usage: `npx pwnkit-cli scan --target http://target --repo ./source`
+Usage: `pwnkit scan --target http://target --repo ./source`
 
 CI runs both modes independently with a dropdown selector.
 

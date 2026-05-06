@@ -89,13 +89,13 @@ If you prefer not to use API keys at all, you can use the CLI runtimes instead. 
 
 ```bash
 # Use Claude Code CLI (requires Claude subscription)
-npx pwnkit-cli scan --target https://api.example.com/chat --runtime claude
+pwnkit scan --target https://api.example.com/chat --runtime claude
 
 # Use Codex CLI
-npx pwnkit-cli review ./my-repo --runtime codex
+pwnkit review ./my-repo --runtime codex
 
 # Use Gemini CLI
-npx pwnkit-cli review ./my-repo --runtime gemini
+pwnkit review ./my-repo --runtime gemini
 ```
 
 No API key environment variable is needed for CLI runtimes — authentication is handled by the respective CLI tool.

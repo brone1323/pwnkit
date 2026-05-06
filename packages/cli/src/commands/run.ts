@@ -229,8 +229,12 @@ export async function runUnified(opts: RunOptions): Promise<void> {
           model: opts.model,
         });
       } else {
-        const { renderScanUI } = await import("../ui/renderScan.js");
-        inkUI = renderScanUI({ version: VERSION, target, depth, mode });
+        // Node fallback: plain stdout streaming (one tagged line per scan
+        // event). The full TUI is OpenTUI under Bun — install via
+        // `curl -fsSL .../install.sh | bash` (standalone binary) or
+        // `bun add -g pwnkit-cli` to get it.
+        const { renderScanStream } = await import("../ui/scan-stream.js");
+        inkUI = renderScanStream({ version: VERSION, target, depth, mode });
       }
     }
     eventHandler = inkUI.onEvent;
@@ -318,10 +322,14 @@ export async function runUnified(opts: RunOptions): Promise<void> {
     }
 
     if (opts.tui && process.stdout.isTTY && process.stdin.isTTY) {
-      const { showOperatorTui } = await import("../ui/Tui.js");
-      await showOperatorTui({
-        dbPath: opts.dbPath,
-      });
+      // The post-scan operator TUI was Ink-based; in v0.9.0 we shipped
+      // binary-only and dropped Ink. Tell the user where to find the
+      // OpenTUI replacement and continue (don't fail the scan).
+      console.log("");
+      console.log(chalk.gray("  --tui post-scan view is no longer bundled in the npm package."));
+      console.log(chalk.gray("  Install the standalone binary for the full OpenTUI experience:"));
+      console.log(chalk.gray("    curl -fsSL https://raw.githubusercontent.com/PwnKit-Labs/pwnkit/main/install.sh | bash"));
+      console.log("");
     }
 
     let exitCode = 0;

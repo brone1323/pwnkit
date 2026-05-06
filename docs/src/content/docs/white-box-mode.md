@@ -12,7 +12,7 @@ This is the same general approach used by top white-box benchmark agents such as
 Pass the `--repo` flag alongside your target:
 
 ```bash
-npx pwnkit-cli scan --target http://localhost:8080 --repo ./my-app
+pwnkit scan --target http://localhost:8080 --repo ./my-app
 ```
 
 The `--repo` path should point to the root of the application source code -- the same code running behind the target URL. This can be a local checkout, a cloned repository, or a mounted volume in CI.
