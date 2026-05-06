@@ -42,6 +42,8 @@ export interface DBFinding {
   evidenceRequest: string;
   evidenceResponse: string;
   evidenceAnalysis: string | null;
+  pocSteps: string | null;
+  pocExecution: string | null;
   timestamp: number;
 }
 
@@ -98,6 +100,8 @@ CREATE TABLE IF NOT EXISTS findings (
   evidenceRequest TEXT NOT NULL,
   evidenceResponse TEXT NOT NULL,
   evidenceAnalysis TEXT,
+  pocSteps TEXT,
+  pocExecution TEXT,
   timestamp INTEGER NOT NULL
 );
 

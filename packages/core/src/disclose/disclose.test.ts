@@ -86,6 +86,32 @@ describe("renderAdvisoryMarkdown", () => {
     expect(markdown).toContain('"status":"reachable"');
   });
 
+  it("renders a stepwise PoC block when pocSteps are present", () => {
+    const finding = baseFinding({
+      pocSteps: [
+        {
+          id: "setup-1",
+          kind: "setup",
+          summary: "Start local target",
+          action: { type: "shell", cmd: "docker run target:latest" },
+          expect: { type: "exit-zero" },
+        },
+        {
+          id: "exploit-1",
+          kind: "exploit",
+          summary: "Trigger vulnerable endpoint",
+          action: { type: "http", method: "POST", url: "/adapters/install" },
+          expect: { type: "http-status", status: [200, 201] },
+        },
+      ],
+    });
+    const { markdown } = renderAdvisoryMarkdown(finding);
+    expect(markdown).toContain("**Step graph:**");
+    expect(markdown).toContain("Start local target");
+    expect(markdown).toContain("Trigger vulnerable endpoint");
+    expect(markdown).toContain("Expected result: `exit-zero`");
+  });
+
   it("embeds the primary CWE ID in the CWE section", () => {
     const finding = baseFinding({ category: "path-traversal" });
     const { markdown, primaryCwe } = renderAdvisoryMarkdown(finding);
@@ -113,6 +139,37 @@ describe("renderAdvisoryMarkdown", () => {
     expect(markdown).toContain("Allowlist hostnames.");
     expect(markdown).toContain("1. Resolve hostname before fetching.");
     expect(markdown).toContain("ssrfSafeAgent");
+  });
+
+  it("renders extracted sibling fix snippet when explicit remediation code is absent", () => {
+    const finding = baseFinding({ remediation: undefined });
+    const { markdown } = renderAdvisoryMarkdown(finding, {
+      siblingFix: {
+        fileRef: { file: "server/src/routes/plugins.ts", line: 1270 },
+        snippet: "router.post('/plugins/:pluginId/install', assertInstanceAdmin, installPlugin);",
+        language: "ts",
+        confidence: 0.9,
+        rationale: "mentions correct pattern",
+      },
+    });
+    expect(markdown).toContain("Correct pattern already present in the repo at `server/src/routes/plugins.ts:1270`");
+    expect(markdown).toContain("assertInstanceAdmin");
+  });
+
+  it("renders behavioural execution verdict in patch status when poc execution exists", () => {
+    const finding = baseFinding();
+    const { markdown } = renderAdvisoryMarkdown(finding, {
+      pocExecution: {
+        findingId: finding.id,
+        executedAt: new Date().toISOString(),
+        target: { baseUrl: "http://localhost:3000" },
+        steps: [],
+        stillExploitable: false,
+        summary: "Executed 2 steps: exploit no longer reproducible.",
+      },
+    });
+    expect(markdown).toContain("Behavioral check: exploit no longer reproducible");
+    expect(markdown).toContain("Executed 2 steps");
   });
 
   it("emits a stable filename slug prefixed by severity rank + severity label (no doubling)", () => {

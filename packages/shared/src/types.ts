@@ -228,6 +228,29 @@ export interface LayerVerdict {
   changedSeverity?: { from: Severity; to: Severity };
 }
 
+export type PocStepKind = "setup" | "auth" | "prerequisite" | "exploit" | "verify";
+
+export type PocStepAction =
+  | { type: "shell"; cmd: string; cwd?: string }
+  | { type: "http"; method: string; url: string; headers?: Record<string, string>; body?: string }
+  | { type: "docker"; image: string; args: string[] }
+  | { type: "note"; text: string };
+
+export type PocStepExpectation =
+  | { type: "exit-zero" }
+  | { type: "http-status"; status: number | number[] }
+  | { type: "body-contains"; text: string }
+  | { type: "body-matches"; pattern: string }
+  | { type: "file-exists"; path: string };
+
+export interface PocStep {
+  kind: PocStepKind;
+  summary: string;
+  action: PocStepAction;
+  expect?: PocStepExpectation;
+  id: string;
+}
+
 export interface Finding {
   id: string;
   templateId: string;
@@ -251,6 +274,7 @@ export interface Finding {
   cvssVector?: string; // CVSS vector string
   cvssScore?: number; // CVSS numeric score (0–10)
   remediation?: FindingRemediation;
+  pocSteps?: PocStep[];
   timestamp: number;
 }
 

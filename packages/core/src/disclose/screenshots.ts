@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
 import type { Finding } from "@pwnkit/shared";
+import type { PocExecutionResult, PocStepResult } from "./poc-runtime.js";
 
 export interface ScreenshotResult {
   alt: string;
@@ -9,6 +10,10 @@ export interface ScreenshotResult {
   relativePath: string;
   caption: string;
   sessionText: string;
+}
+
+export interface StepScreenshotResult extends ScreenshotResult {
+  stepId: string;
 }
 
 export interface ScreenshotOptions {
@@ -88,13 +93,38 @@ export function composeExploitSession(finding: Finding): string {
   return lines.join("\n");
 }
 
-/**
- * Render a single screenshot from the finding's evidence. Returns null when
- * freeze is unavailable or rendering fails — callers should treat that as a
- * graceful skip, not an error.
- */
-export function renderExploitScreenshot(
-  finding: Finding,
+export function composeStepSession(step: PocStepResult): string {
+  const lines: string[] = [];
+  lines.push(`$ # PoC step: ${step.stepId} (${step.kind})`);
+  lines.push(`$ # Predicate: ${step.predicate}${step.predicateReason ? ` — ${step.predicateReason}` : ""}`);
+  lines.push("");
+
+  if (step.raw && typeof step.raw === "object") {
+    const raw = step.raw as Record<string, unknown>;
+    const cmd = typeof raw.cmd === "string" ? raw.cmd : undefined;
+    const req = raw.request as Record<string, unknown> | undefined;
+    if (cmd) {
+      lines.push(`$ ${cmd}`);
+      lines.push("");
+    } else if (req && typeof req.method === "string" && typeof req.url === "string") {
+      lines.push(`$ ${String(req.method).toUpperCase()} ${String(req.url)}`);
+      lines.push("");
+    }
+  }
+
+  if (step.stdout?.trim()) lines.push(step.stdout.trim(), "");
+  if (step.httpBody?.trim()) lines.push(step.httpBody.trim(), "");
+  if (step.stderr?.trim()) {
+    lines.push("# STDERR:");
+    lines.push(step.stderr.trim(), "");
+  }
+
+  return lines.join("\n").trimEnd() + "\n";
+}
+
+function renderSessionScreenshot(
+  sessionText: string,
+  baseName: string,
   options: ScreenshotOptions,
 ): ScreenshotResult | null {
   const opts = { ...DEFAULT_OPTS, ...options };
@@ -102,11 +132,8 @@ export function renderExploitScreenshot(
   if (!available) return null;
 
   mkdirSync(opts.outputDir, { recursive: true });
-
-  const slug = slugify(`${finding.severity}-${finding.id.slice(0, 8)}-${finding.title}`);
-  const sessionText = composeExploitSession(finding);
-  const sessionFile = join(opts.outputDir, `${slug}.session.txt`);
-  const pngPath = join(opts.outputDir, `${slug}.png`);
+  const sessionFile = join(opts.outputDir, `${baseName}.session.txt`);
+  const pngPath = join(opts.outputDir, `${baseName}.png`);
   writeFileSync(sessionFile, sessionText, "utf8");
 
   try {
@@ -137,10 +164,46 @@ export function renderExploitScreenshot(
     : pngPath;
 
   return {
-    alt: `exploit-${slug}`,
+    alt: baseName,
     path: pngPath,
     relativePath,
-    caption: finding.title,
+    caption: baseName,
     sessionText,
   };
+}
+
+/**
+ * Render a single screenshot from the finding's evidence. Returns null when
+ * freeze is unavailable or rendering fails — callers should treat that as a
+ * graceful skip, not an error.
+ */
+export function renderExploitScreenshot(
+  finding: Finding,
+  options: ScreenshotOptions,
+): ScreenshotResult | null {
+  const slug = slugify(`${finding.severity}-${finding.id.slice(0, 8)}-${finding.title}`);
+  const sessionText = composeExploitSession(finding);
+  const rendered = renderSessionScreenshot(sessionText, slug, options);
+  if (!rendered) return null;
+  return { ...rendered, alt: `exploit-${slug}`, caption: finding.title };
+}
+
+export function renderExecutionStepScreenshots(
+  finding: Finding,
+  execution: PocExecutionResult,
+  options: ScreenshotOptions,
+): StepScreenshotResult[] {
+  const out: StepScreenshotResult[] = [];
+  for (const step of execution.steps) {
+    const slug = slugify(`${finding.severity}-${finding.id.slice(0, 8)}-${step.stepId}`);
+    const rendered = renderSessionScreenshot(composeStepSession(step), slug, options);
+    if (!rendered) continue;
+    out.push({
+      ...rendered,
+      stepId: step.stepId,
+      alt: `step-${step.stepId}`,
+      caption: `${step.kind}: ${step.stepId}`,
+    });
+  }
+  return out;
 }

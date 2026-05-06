@@ -3,18 +3,22 @@ import { writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { resolve, join } from "node:path";
 import { homedir } from "node:os";
 import chalk from "chalk";
-import type { Finding, AttackCategory, Severity, Evidence, FindingStatus } from "@pwnkit/shared";
+import type { Finding, AttackCategory, Severity, Evidence, FindingStatus, PocStep } from "@pwnkit/shared";
 import {
   renderAdvisoryMarkdown,
   renderExploitScreenshot,
+  renderExecutionStepScreenshots,
   isFreezeAvailable,
   verifyAgainstRef,
   detectVersionRange,
+  extractSiblingFix,
+  executePocSteps,
   type AdvisoryContext,
   type AdvisoryScreenshot,
   type ReverifyResult,
   type VersionRangeResult,
   type PatchStatus,
+  type PocExecutionResult,
 } from "@pwnkit/core";
 
 interface DiscloseOptions {
@@ -27,6 +31,8 @@ interface DiscloseOptions {
   repo?: string;
   ref?: string;
   dropFixed?: boolean;
+  targetUrl?: string;
+  targetEnv?: string;
 }
 
 const STATUS_COLOUR: Record<PatchStatus, (s: string) => string> = {
@@ -53,8 +59,34 @@ interface FindingRow {
   evidenceRequest: string;
   evidenceResponse: string;
   evidenceAnalysis?: string | null;
+  pocSteps?: string | null;
   cvssVector?: string | null;
   cvssScore?: number | null;
+}
+
+function parsePocSteps(raw?: string | null): PocStep[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed as PocStep[] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function parseTargetEnv(raw?: string): Record<string, string> | undefined {
+  if (!raw) return undefined;
+  const out: Record<string, string> = {};
+  for (const part of raw.split(",")) {
+    const trimmed = part.trim();
+    if (!trimmed) continue;
+    const idx = trimmed.indexOf("=");
+    if (idx <= 0) continue;
+    const key = trimmed.slice(0, idx).trim();
+    const value = trimmed.slice(idx + 1).trim();
+    if (key) out[key] = value;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 const SEVERITY_RANK: Record<string, number> = {
@@ -66,6 +98,7 @@ const SEVERITY_RANK: Record<string, number> = {
 };
 
 function rowToFinding(row: FindingRow): Finding {
+  const pocSteps = parsePocSteps(row.pocSteps);
   const evidence: Evidence = {
     request: row.evidenceRequest,
     response: row.evidenceResponse,
@@ -80,6 +113,7 @@ function rowToFinding(row: FindingRow): Finding {
     category: row.category as AttackCategory,
     status: row.status as FindingStatus,
     evidence,
+    ...(pocSteps ? { pocSteps } : {}),
     fingerprint: row.fingerprint ?? undefined,
     timestamp: row.timestamp,
   };
@@ -133,6 +167,8 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
 
     const freezeOn = !opts.noScreenshots && !opts.dryRun && isFreezeAvailable();
     const reverifyOn = !!opts.repo;
+    const executionOn = !!(opts.targetUrl || opts.targetEnv);
+    const targetEnv = parseTargetEnv(opts.targetEnv);
     const droppedDir = join(outputDir, "_dropped");
     console.log(chalk.red.bold("\n  ◆ pwnkit") + chalk.gray(` disclose — ${selected.length} finding${selected.length === 1 ? "" : "s"}`));
     console.log(chalk.gray(`  output: ${outputDir}${opts.dryRun ? " (dry-run — nothing written)" : ""}`));
@@ -142,6 +178,12 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
     } else {
       console.log(chalk.gray(`  reverify:    disabled (pass --repo to enable)`));
     }
+    if (executionOn) {
+      const envCount = Object.keys(targetEnv ?? {}).length;
+      console.log(chalk.gray(`  execution:   ${opts.targetUrl ?? "(no base URL)"}${envCount > 0 ? ` + ${envCount} env` : ""}`));
+    } else {
+      console.log(chalk.gray("  execution:   disabled (pass --target-url and/or --target-env)"));
+    }
     console.log("");
 
     type ResultState = "wrote" | "skipped-exists" | "dropped";
@@ -150,6 +192,8 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
       const finding = rowToFinding(row);
       let patchStatus: ReverifyResult | undefined;
       let versionRange: VersionRangeResult | undefined;
+      let siblingFix: AdvisoryContext["siblingFix"];
+      let pocExecution: PocExecutionResult | undefined;
       if (reverifyOn) {
         try {
           patchStatus = verifyAgainstRef(finding, { repoPath: opts.repo!, ref: opts.ref, checkout: !!opts.ref });
@@ -160,6 +204,30 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
           versionRange = detectVersionRange(finding, { repoPath: opts.repo! });
         } catch (err) {
           console.log(chalk.red(`  version-range failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+        }
+        if (!finding.remediation?.codeExample?.after) {
+          try {
+            siblingFix = extractSiblingFix(finding, { repoPath: opts.repo! }) ?? undefined;
+          } catch (err) {
+            console.log(chalk.red(`  sibling-fix failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
+          }
+        }
+      }
+
+      if (executionOn && finding.pocSteps && finding.pocSteps.length > 0) {
+        try {
+          pocExecution = await executePocSteps(finding, {
+            baseUrl: opts.targetUrl,
+            env: targetEnv,
+            cwd: opts.repo,
+          });
+          db.saveFindingPocExecution(finding.id, pocExecution);
+          if (!opts.dryRun) {
+            const executionPath = join(outputDir, `${finding.id.slice(0, 8)}.execution.json`);
+            writeFileSync(executionPath, JSON.stringify(pocExecution, null, 2), "utf8");
+          }
+        } catch (err) {
+          console.log(chalk.red(`  poc-exec failed on ${row.id.slice(0, 8)}: ${err instanceof Error ? err.message : String(err)}`));
         }
       }
 
@@ -198,13 +266,22 @@ async function disclose(findingId: string | undefined, opts: DiscloseOptions): P
       const screenshots: AdvisoryScreenshot[] = [];
       let wroteShot = false;
       if (freezeOn) {
-        const shot = renderExploitScreenshot(finding, { outputDir: imagesDir, markdownDir: outputDir });
-        if (shot) {
-          screenshots.push({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 });
-          wroteShot = true;
+        if (pocExecution && pocExecution.steps.length > 0) {
+          const stepShots = renderExecutionStepScreenshots(finding, pocExecution, { outputDir: imagesDir, markdownDir: outputDir });
+          if (stepShots.length > 0) {
+            screenshots.push(...stepShots.map((shot) => ({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 })));
+            wroteShot = true;
+          }
+        }
+        if (!wroteShot) {
+          const shot = renderExploitScreenshot(finding, { outputDir: imagesDir, markdownDir: outputDir });
+          if (shot) {
+            screenshots.push({ alt: shot.alt, relativePath: shot.relativePath, caption: shot.caption, width: 1200 });
+            wroteShot = true;
+          }
         }
       }
-      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange };
+      const ctx: AdvisoryContext = { scanId, screenshots, patchStatus, versionRange, siblingFix, pocExecution };
       const rendered = renderAdvisoryMarkdown(finding, ctx);
       const path = join(outputDir, rendered.filename);
       let state: ResultState = "wrote";
@@ -283,6 +360,8 @@ export function registerDiscloseCommand(program: Command): void {
     .option("--repo <path>", "Local git checkout of the target repo to re-verify findings against")
     .option("--ref <tag>", "Git ref (tag/sha/branch) to check out before verifying — defaults to the repo's current HEAD")
     .option("--drop-fixed", "Move findings whose status is 'fixed' or 'file-removed' into _dropped/ with a reason file instead of drafting an advisory for them", false)
+    .option("--target-url <url>", "Base URL for behavioural PoC execution (required for relative HTTP steps)")
+    .option("--target-env <kvs>", "Comma-separated env pairs for shell PoC steps, e.g. KEY=VALUE,OTHER=VALUE")
     .option("--dry-run", "Show what would be written without writing files", false)
     .action(async (findingId: string | undefined, opts: DiscloseOptions) => {
       await disclose(findingId, opts);

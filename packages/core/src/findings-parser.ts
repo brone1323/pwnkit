@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Finding, Severity } from "@pwnkit/shared";
+import { derivePocStepsFromEvidence } from "./poc-steps.js";
 
 export interface ParseFindingsOptions {
   templatePrefix?: string;
@@ -42,6 +43,19 @@ function parseJsonOutput(output: string, prefix: string): Finding[] {
       return parsed.findings
         .filter((f: any) => f.title && f.severity)
         .map((f: any) => ({
+          ...(() => {
+            const evidence = {
+              request: f.file ?? "",
+              response: f.poc ?? "",
+              analysis: f.description ?? "",
+            };
+            const explicit = Array.isArray(f.poc_steps) ? f.poc_steps : Array.isArray(f.pocSteps) ? f.pocSteps : undefined;
+            const derived = derivePocStepsFromEvidence(evidence);
+            return {
+              evidence,
+              ...(explicit ? { pocSteps: explicit } : derived.length > 0 ? { pocSteps: derived } : {}),
+            };
+          })(),
           id: randomUUID(),
           templateId: `${prefix}-${Date.now()}`,
           title: f.title,
@@ -49,11 +63,6 @@ function parseJsonOutput(output: string, prefix: string): Finding[] {
           severity: (VALID_SEVERITIES.has(f.severity) ? f.severity : "info") as Severity,
           category: (f.category ?? "other") as Finding["category"],
           status: "discovered" as const,
-          evidence: {
-            request: f.file ?? "",
-            response: f.poc ?? "",
-            analysis: f.description ?? "",
-          },
           confidence: undefined,
           timestamp: Date.now(),
         }));
@@ -79,6 +88,13 @@ function parseStructuredBlocks(output: string, prefix: string): Finding[] {
     const description = content.match(/^description:\s*([\s\S]*?)(?=^(?:file|---)|$)/m)?.[1]?.trim() ?? "";
     const file = content.match(/^file:\s*(.+)$/m)?.[1]?.trim() ?? "";
 
+    const evidence = {
+      request: file || "Automated AI analysis",
+      response: description,
+      analysis: `Found by ${prefix} agent`,
+    };
+    const derived = derivePocStepsFromEvidence(evidence);
+
     return {
       id: randomUUID(),
       templateId: `${prefix}-${Date.now()}`,
@@ -87,11 +103,8 @@ function parseStructuredBlocks(output: string, prefix: string): Finding[] {
       severity: (VALID_SEVERITIES.has(severity) ? severity : "info") as Severity,
       category: category as Finding["category"],
       status: "discovered" as const,
-      evidence: {
-        request: file || "Automated AI analysis",
-        response: description,
-        analysis: `Found by ${prefix} agent`,
-      },
+      evidence,
+      ...(derived.length > 0 ? { pocSteps: derived } : {}),
       confidence: undefined,
       timestamp: Date.now(),
     };

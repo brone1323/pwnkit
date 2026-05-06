@@ -3,6 +3,8 @@ import { suggestCwesForCategory, formatCweSection } from "./cwe.js";
 import { suggestCvss } from "./cvss.js";
 import { formatPatchStatusSection, type ReverifyResult } from "./canary.js";
 import { formatVersionRangeLine, type VersionRangeResult } from "./version-range.js";
+import type { SiblingFixCandidate } from "./sibling-fix.js";
+import type { PocExecutionResult } from "./poc-runtime.js";
 
 export interface AdvisoryScreenshot {
   alt: string;
@@ -21,6 +23,8 @@ export interface AdvisoryContext {
   screenshots?: AdvisoryScreenshot[];
   patchStatus?: ReverifyResult;
   versionRange?: VersionRangeResult;
+  siblingFix?: SiblingFixCandidate;
+  pocExecution?: PocExecutionResult;
 }
 
 export interface RenderedAdvisory {
@@ -49,6 +53,29 @@ function indentEvidenceBlock(raw: string, lang = ""): string {
   const trimmed = raw.trim();
   if (!trimmed) return "";
   return "```" + lang + "\n" + trimmed + "\n```";
+}
+
+function renderPocSteps(finding: Finding): string[] {
+  if (!finding.pocSteps || finding.pocSteps.length === 0) return [];
+  const lines: string[] = ["**Step graph:**", ""];
+  for (const [index, step] of finding.pocSteps.entries()) {
+    lines.push(`${index + 1}. **${step.kind}** — ${step.summary} _(id: \`${step.id}\`)_`);
+    if (step.action.type === "shell") {
+      lines.push("", indentEvidenceBlock(step.action.cmd, "bash"));
+    } else if (step.action.type === "http") {
+      const method = step.action.method.toUpperCase();
+      lines.push("", indentEvidenceBlock(`${method} ${step.action.url}${step.action.body ? `\n\n${step.action.body}` : ""}`, "http"));
+    } else if (step.action.type === "docker") {
+      lines.push("", indentEvidenceBlock(`docker run ${step.action.image} ${step.action.args.join(" ")}`.trim(), "bash"));
+    } else {
+      lines.push("", step.action.text);
+    }
+    if (step.expect) {
+      lines.push("", `Expected result: \`${step.expect.type}\``);
+    }
+    lines.push("");
+  }
+  return lines;
 }
 
 export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = {}): RenderedAdvisory {
@@ -88,6 +115,11 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
         ? `**Before:**\n\n\`\`\`${lang}\n${remediation.codeExample.before}\n\`\`\`\n\n**After:**\n\n\`\`\`${lang}\n${remediation.codeExample.after}\n\`\`\``
         : `\`\`\`${lang}\n${remediation.codeExample.after}\n\`\`\``,
     );
+  } else if (ctx.siblingFix) {
+    const ref = `${ctx.siblingFix.fileRef.file}${ctx.siblingFix.fileRef.line ? `:${ctx.siblingFix.fileRef.line}` : ""}`;
+    suggestedFixParts.push(
+      `**Correct pattern already present in the repo at \`${ref}\`** *(extracted by pwnkit):*\n\n\`\`\`${ctx.siblingFix.language}\n${ctx.siblingFix.snippet}\n\`\`\``,
+    );
   }
   const suggestedFix = suggestedFixParts.length > 0
     ? suggestedFixParts.join("\n\n")
@@ -124,6 +156,10 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
   }
 
   out.push("## PoC", "");
+  const pocStepsBlock = renderPocSteps(finding);
+  if (pocStepsBlock.length > 0) {
+    out.push(...pocStepsBlock);
+  }
   if (ctx.screenshots && ctx.screenshots.length > 0) {
     for (const shot of ctx.screenshots) {
       const width = shot.width ? ` width="${shot.width}"` : "";
@@ -141,7 +177,7 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
     out.push("**Response:**", "");
     out.push(indentEvidenceBlock(finding.evidence.response, "http"), "");
   }
-  if (!finding.evidence?.request?.trim() && !finding.evidence?.response?.trim() && (!ctx.screenshots || ctx.screenshots.length === 0)) {
+  if (pocStepsBlock.length === 0 && !finding.evidence?.request?.trim() && !finding.evidence?.response?.trim() && (!ctx.screenshots || ctx.screenshots.length === 0)) {
     out.push("_To fill in: concrete reproduction steps. `pwnkit-cli disclose` will auto-populate this once PoC execution lands (issue #168)._", "");
   }
 
@@ -153,6 +189,11 @@ export function renderAdvisoryMarkdown(finding: Finding, ctx: AdvisoryContext = 
     out.push(formatPatchStatusSection(ctx.patchStatus), "");
   } else {
     out.push("_Pass `--repo <path>` to `pwnkit-cli disclose` to auto-verify this against the target's current HEAD or a specific tag._", "");
+  }
+  if (ctx.pocExecution) {
+    const verdict = ctx.pocExecution.stillExploitable ? "**Behavioral check: exploit still reproducible.**" : "**Behavioral check: exploit no longer reproducible.**";
+    out.push(verdict, "");
+    out.push(`> ${ctx.pocExecution.summary}`, "");
   }
 
   out.push("## Credits", "");

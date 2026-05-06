@@ -101,6 +101,8 @@ export const findings = sqliteTable(
     evidenceRequest: text("evidenceRequest").notNull(),
     evidenceResponse: text("evidenceResponse").notNull(),
     evidenceAnalysis: text("evidenceAnalysis"),
+    pocSteps: text("pocSteps"),
+    pocExecution: text("pocExecution"),
     /**
      * JSON-stringified LayerVerdict[] (see @pwnkit/shared types). NULL until
      * the triage stage runs. Stored as text rather than a join table because

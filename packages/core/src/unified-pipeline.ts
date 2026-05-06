@@ -352,6 +352,15 @@ function buildSummary(findings: Finding[], totalAttacks: number) {
 }
 
 function restorePersistedFinding(row: any): Finding {
+  let pocSteps: Finding["pocSteps"];
+  if (row.pocSteps) {
+    try {
+      const parsed = JSON.parse(row.pocSteps) as unknown;
+      if (Array.isArray(parsed)) pocSteps = parsed as Finding["pocSteps"];
+    } catch {
+      // Ignore malformed legacy rows.
+    }
+  }
   return {
     id: row.id,
     templateId: row.templateId,
@@ -371,6 +380,7 @@ function restorePersistedFinding(row: any): Finding {
       response: row.evidenceResponse,
       analysis: row.evidenceAnalysis ?? undefined,
     },
+    ...(pocSteps ? { pocSteps } : {}),
     timestamp: row.timestamp,
   };
 }

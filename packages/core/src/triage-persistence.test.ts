@@ -73,4 +73,92 @@ describe("triage persistence", () => {
       db.close();
     }
   });
+
+  it("round-trips pocSteps through DB persistence", () => {
+    const { db, scanId } = makeDb();
+    try {
+      const finding = makeFinding();
+      finding.pocSteps = [
+        {
+          id: "setup-1",
+          kind: "setup",
+          summary: "Boot target service",
+          action: { type: "shell", cmd: "docker run demo" },
+          expect: { type: "exit-zero" },
+        },
+        {
+          id: "verify-1",
+          kind: "verify",
+          summary: "Confirm marker in response",
+          action: { type: "http", method: "GET", url: "http://localhost/health" },
+          expect: { type: "body-contains", text: "ok" },
+        },
+      ];
+
+      db.saveFinding(scanId, finding);
+      const persisted = db.getFinding(finding.id) as { pocSteps?: string | null } | undefined;
+      expect(persisted?.pocSteps).toBeTruthy();
+
+      const parsed = JSON.parse(persisted!.pocSteps!) as Finding["pocSteps"];
+      expect(parsed).toEqual(finding.pocSteps);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("backfills legacy evidence fields from pocSteps when request/response are empty", () => {
+    const { db, scanId } = makeDb();
+    try {
+      const finding = makeFinding();
+      finding.evidence = { request: "", response: "", analysis: undefined };
+      finding.pocSteps = [
+        {
+          id: "exploit-1",
+          kind: "exploit",
+          summary: "Call vulnerable endpoint",
+          action: { type: "http", method: "POST", url: "http://localhost/install" },
+          expect: { type: "http-status", status: 200 },
+        },
+      ];
+
+      db.saveFinding(scanId, finding);
+      const persisted = db.getFinding(finding.id) as {
+        evidenceRequest?: string;
+        evidenceResponse?: string;
+        evidenceAnalysis?: string | null;
+      } | undefined;
+
+      expect(persisted?.evidenceRequest).toContain("POST http://localhost/install");
+      expect(persisted?.evidenceAnalysis).toContain("expect http-status");
+      expect(persisted?.evidenceResponse ?? "").toBe("");
+    } finally {
+      db.close();
+    }
+  });
+
+  it("persists PoC execution artifacts alongside a finding", () => {
+    const { db, scanId } = makeDb();
+    try {
+      const finding = makeFinding();
+      db.saveFinding(scanId, finding);
+
+      const execution = {
+        findingId: finding.id,
+        executedAt: new Date().toISOString(),
+        stillExploitable: true,
+        summary: "Executed 2 step(s): 2 passed, 0 failed, 0 skipped.",
+        steps: [
+          { stepId: "exploit-1", predicate: "passed" },
+          { stepId: "verify-1", predicate: "passed" },
+        ],
+      };
+      db.saveFindingPocExecution(finding.id, execution);
+
+      const persisted = db.getFinding(finding.id) as { pocExecution?: string | null } | undefined;
+      expect(persisted?.pocExecution).toBeTruthy();
+      expect(JSON.parse(persisted!.pocExecution!)).toEqual(execution);
+    } finally {
+      db.close();
+    }
+  });
 });

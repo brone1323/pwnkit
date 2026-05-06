@@ -3,7 +3,8 @@ import { mkdtempSync, existsSync, readFileSync, writeFileSync, chmodSync } from 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Finding } from "@pwnkit/shared";
-import { composeExploitSession, renderExploitScreenshot, isFreezeAvailable } from "./screenshots.js";
+import { composeExploitSession, composeStepSession, renderExploitScreenshot, renderExecutionStepScreenshots, isFreezeAvailable } from "./screenshots.js";
+import type { PocExecutionResult } from "./poc-runtime.js";
 import { renderAdvisoryMarkdown } from "./template.js";
 
 function baseFinding(overrides: Partial<Finding> = {}): Finding {
@@ -158,5 +159,65 @@ describe("template integration", () => {
       screenshots: [{ alt: "shot", relativePath: "./images/shot.png" }],
     });
     expect(markdown).not.toContain("To fill in: concrete reproduction steps");
+  });
+});
+
+describe("renderExecutionStepScreenshots", () => {
+  function executionResult(): PocExecutionResult {
+    return {
+      findingId: "finding-abcdef123456",
+      executedAt: new Date().toISOString(),
+      target: { baseUrl: "http://localhost:3000" },
+      stillExploitable: true,
+      summary: "ok",
+      steps: [
+        {
+          stepId: "exploit-1",
+          kind: "exploit",
+          executed: true,
+          httpStatus: 200,
+          httpBody: "pwned",
+          durationMs: 12,
+          predicate: "passed",
+          predicateReason: "status 200",
+          raw: { request: { method: "POST", url: "/install" } },
+        },
+      ],
+    };
+  }
+
+  it("composes step session text with predicate and body", () => {
+    const text = composeStepSession(executionResult().steps[0]!);
+    expect(text).toContain("PoC step: exploit-1");
+    expect(text).toContain("Predicate: passed");
+    expect(text).toContain("pwned");
+  });
+
+  it("renders one PNG per execution step when binary is available", () => {
+    const outputDir = mkdtempSync(join(tmpdir(), "pwnkit-step-shot-"));
+    const stubBinary = join(outputDir, "fake-freeze-step");
+    writeFileSync(stubBinary, `#!/usr/bin/env bash
+while [[ $# -gt 0 ]]; do
+  if [[ "$1" == "-o" ]]; then
+    mkdir -p "$(dirname "$2")"
+    touch "$2"
+    shift 2
+    continue
+  fi
+  shift
+done
+`);
+    chmodSync(stubBinary, 0o755);
+
+    const results = renderExecutionStepScreenshots(baseFinding(), executionResult(), {
+      outputDir,
+      markdownDir: outputDir,
+      binary: stubBinary,
+      available: true,
+    });
+    expect(results).toHaveLength(1);
+    expect(existsSync(results[0]!.path)).toBe(true);
+    expect(results[0]!.relativePath.startsWith("./")).toBe(true);
+    expect(results[0]!.caption).toContain("exploit");
   });
 });
