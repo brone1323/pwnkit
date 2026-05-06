@@ -62,6 +62,10 @@ export interface RunOptions {
   scopeFile?: string;
   /** Opt-out for the scanner-binary suppression gate (pwnkit#217). Threaded into ScanConfig.allowScanners. */
   allowScanners?: boolean;
+  /** Repeatable `--attribution-header NAME=VALUE` (pwnkit#216). */
+  attributionHeaders?: string[];
+  /** `--attribution-ua <token>` (pwnkit#216). */
+  attributionUaToken?: string;
   sessionUiFactory?: (options: {
     target: string;
     depth: string;
@@ -269,6 +273,8 @@ export async function runUnified(opts: RunOptions): Promise<void> {
             scopeFile: opts.scopeFile,
             rateLimit: opts.rateLimit,
             allowScanners: opts.allowScanners,
+            attributionHeaders: opts.attributionHeaders,
+            attributionUaToken: opts.attributionUaToken,
           },
           dbPath: opts.dbPath,
           onEvent: eventHandler,

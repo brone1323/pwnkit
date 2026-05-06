@@ -963,3 +963,126 @@ describe("ToolExecutor — scanner suppression (pwnkit#217)", () => {
     expect(result.error).toMatch(/--allow-scanners/);
   });
 });
+
+// ── Attribution-header injection at the executor surface (pwnkit#216) ──
+//
+// The unit tests in attribution.test.ts cover the helper directly. These
+// integration tests pin that http_request actually attaches the configured
+// headers to its outbound fetch when scope + attribution are wired through
+// ToolContext. We mock global `fetch` so we can inspect the RequestInit
+// the executor passes into it without actually hitting the network.
+
+describe("ToolExecutor — attribution-header injection (pwnkit#216)", () => {
+  it("http_request attaches configured attribution headers on in-scope traffic", async () => {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
+
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response("ok", { status: 200 });
+    }) as any;
+
+    try {
+      const ctx: ToolContext = {
+        target: "https://api.example.com",
+        scanId: "test-attr-1",
+        findings: [],
+        attackResults: [],
+        targetInfo: {},
+        scope,
+        attribution: {
+          headers: { "X-Pentest": "engagement-123" },
+          userAgentToken: "engagement-123",
+        },
+      };
+      const ex = new ToolExecutor(ctx, null);
+      const result = await ex.execute({
+        name: "http_request",
+        arguments: { url: "https://api.example.com/health", method: "GET" },
+      });
+      expect(result.success).toBe(true);
+      expect(calls).toHaveLength(1);
+      const sentHeaders = calls[0].init!.headers as Record<string, string>;
+      expect(sentHeaders["X-Pentest"]).toBe("engagement-123");
+      // UA must contain the engagement token.
+      expect(sentHeaders["User-Agent"]).toMatch(/engagement: engagement-123/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("http_request does NOT attach attribution when no attribution is configured", async () => {
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response("ok", { status: 200 });
+    }) as any;
+
+    try {
+      const ctx: ToolContext = {
+        target: "https://api.example.com",
+        scanId: "test-attr-2",
+        findings: [],
+        attackResults: [],
+        targetInfo: {},
+        // No scope, no attribution → identical to pre-#216 behaviour.
+      };
+      const ex = new ToolExecutor(ctx, null);
+      await ex.execute({
+        name: "http_request",
+        arguments: { url: "https://api.example.com/health", method: "GET" },
+      });
+      const sentHeaders = calls[0].init!.headers as Record<string, string>;
+      expect(sentHeaders["X-Pentest"]).toBeUndefined();
+      // No engagement token configured → no engagement-tagged UA.
+      expect(sentHeaders["User-Agent"]).toBeUndefined();
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+
+  it("submit_form attaches configured attribution headers on in-scope traffic", async () => {
+    // Mirrors the http_request integration test above. submit_form receives
+    // identical applyAttribution wiring, so we pin the same invariant at the
+    // executor surface so a future refactor can't quietly drop it.
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
+
+    const calls: Array<{ url: string; init?: RequestInit }> = [];
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, init?: RequestInit) => {
+      calls.push({ url: String(url), init });
+      return new Response("ok", { status: 200 });
+    }) as any;
+
+    try {
+      const ctx: ToolContext = {
+        target: "https://api.example.com",
+        scanId: "test-attr-form",
+        findings: [],
+        attackResults: [],
+        targetInfo: {},
+        scope,
+        attribution: {
+          headers: { "X-Pentest": "engagement-123" },
+          userAgentToken: "engagement-123",
+        },
+      };
+      const ex = new ToolExecutor(ctx, null);
+      const result = await ex.execute({
+        name: "submit_form",
+        arguments: { url: "https://api.example.com/login", fields: { user: "test" } },
+      });
+      expect(result.success).toBe(true);
+      expect(calls).toHaveLength(1);
+      const sentHeaders = calls[0].init!.headers as Record<string, string>;
+      expect(sentHeaders["X-Pentest"]).toBe("engagement-123");
+      expect(sentHeaders["User-Agent"]).toMatch(/engagement: engagement-123/);
+    } finally {
+      globalThis.fetch = originalFetch;
+    }
+  });
+});

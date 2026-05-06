@@ -5,6 +5,23 @@
 export { loadScope, matchUrl, ScopePolicy, extractUrls } from "./scope/scope.js";
 export type { ScopeJson, ScopeMatch, ScopeRule } from "./scope/scope.js";
 
+// Attribution-header injection (pwnkit#216). Builds on scope ingestion:
+// configures per-engagement headers + UA override that get merged into
+// every in-scope outbound request, so coordinated-disclosure venues can
+// deconflict pwnkit traffic from real attacks.
+export {
+  resolveAttribution,
+  applyAttribution,
+  extractAttributionFromScopeJson,
+  formatUserAgent,
+} from "./scope/attribution.js";
+export type {
+  AttributionConfig,
+  AttributionInputs,
+  AttributionScopeBlock,
+  AttributionScopeJson,
+} from "./scope/attribution.js";
+
 export { scan } from "./scanner.js";
 export type { ScanEvent, ScanListener, ScanEventType } from "./scanner.js";
 export { agenticScan } from "./agentic-scanner.js";

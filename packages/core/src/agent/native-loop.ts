@@ -10,6 +10,7 @@ import type {
 import type { AuthConfig } from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext, AgentRole } from "./types.js";
 import type { ScopePolicy } from "../scope/scope.js";
+import type { AttributionConfig } from "../scope/attribution.js";
 import { ToolExecutor, getToolsForRole } from "./tools.js";
 import { features } from "./features.js";
 import { detectPlaybooks, buildPlaybookInjection } from "./playbooks.js";
@@ -113,6 +114,13 @@ export interface NativeAgentConfig {
    * to false. Only consulted when `scope` is set.
    */
   allowScanners?: boolean;
+  /**
+   * Resolved attribution-header config (pwnkit#216). Same propagation
+   * shape as `scope` — set once at agentic-scanner top-level and passed
+   * through to every fetch site so in-scope traffic is identifiable
+   * without leaking attribution to out-of-scope hosts.
+   */
+  attribution?: AttributionConfig;
 }
 
 export interface NativeAgentLoopOptions {
@@ -198,6 +206,7 @@ export async function runNativeAgentLoop(
     scope: config.scope,
     rateLimiter: config.rateLimiter,
     allowScanners: config.allowScanners,
+    attribution: config.attribution,
   };
 
   const executor = new ToolExecutor(toolCtx, db);

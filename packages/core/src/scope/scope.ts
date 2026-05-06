@@ -30,6 +30,16 @@ export type ScopeRule = string;
 export interface ScopeJson {
   in_scope?: ScopeRule[];
   out_of_scope?: ScopeRule[];
+  /**
+   * Optional attribution block (pwnkit#216). Format and semantics live in
+   * `attribution.ts`; declared here so the JSON schema is co-located with
+   * the rest of the scope file shape. Callers that don't care about
+   * attribution (most of the codebase) can ignore this field.
+   */
+  attribution?: {
+    headers?: Record<string, string>;
+    user_agent_token?: string;
+  };
 }
 
 export interface ScopeMatch {
@@ -48,10 +58,17 @@ interface ParsedRule {
 export class ScopePolicy {
   private readonly inScope: ParsedRule[];
   private readonly outOfScope: ParsedRule[];
+  /**
+   * Original JSON the policy was constructed from. Exposed read-only so
+   * downstream features (pwnkit#216 attribution headers) can pull their
+   * own optional blocks out of the same file without re-reading it.
+   */
+  readonly raw: ScopeJson;
 
   constructor(json: ScopeJson) {
     this.inScope = (json.in_scope ?? []).map(parseRule);
     this.outOfScope = (json.out_of_scope ?? []).map(parseRule);
+    this.raw = json;
   }
 
   /**

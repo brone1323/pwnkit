@@ -17,6 +17,7 @@ import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.
 import type { ScopePolicy } from "../scope/scope.js";
 import { extractUrls } from "../scope/scope.js";
 import { detectScannerBinary } from "../scope/scanner-binaries.js";
+import { applyAttribution, formatUserAgent } from "../scope/attribution.js";
 import { sendPrompt, extractResponseText } from "../http.js";
 import { buildAuthHeaders } from "./prompts.js";
 import type { pwnkitDB } from "@pwnkit/db";
@@ -1255,13 +1256,23 @@ export class ToolExecutor {
     const timer = setTimeout(() => controller.abort(), 30_000);
 
     try {
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json", ...headers },
-        body: body ?? undefined,
-        signal: controller.signal,
-        redirect: "manual",
-      });
+      // Attribution-header injection (pwnkit#216). Merged before the call
+      // so the on-the-wire request carries the engagement identifier on
+      // every in-scope hop. Out-of-scope hosts are already refused above
+      // by validateTargetUrl; applyAttribution defends in depth.
+      const fetchInit = applyAttribution(
+        url,
+        {
+          method,
+          headers: { "Content-Type": "application/json", ...headers },
+          body: body ?? undefined,
+          signal: controller.signal,
+          redirect: "manual",
+        },
+        this.ctx.attribution,
+        this.ctx.scope,
+      )!;
+      const res = await fetch(url, fetchInit);
 
       if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(url, res);
       clearTimeout(timer);
@@ -1272,9 +1283,16 @@ export class ToolExecutor {
         body: text.slice(0, 10_000), // cap response size
       };
 
-      // Persist as run artifact
+      // Persist as run artifact (record the headers actually sent so the
+      // operator can confirm attribution was attached on engagement-tagged
+      // traffic).
       this.persistToolArtifact("http_request", {
-        request: { url, method, headers, body: body?.slice(0, 2_000) },
+        request: {
+          url,
+          method,
+          headers: fetchInit.headers as Record<string, string>,
+          body: body?.slice(0, 2_000),
+        },
         response: { status: output.status, body: output.body.slice(0, 5_000) },
       });
 
@@ -1459,15 +1477,35 @@ export class ToolExecutor {
 
       try {
         const crawlAuthHeaders = buildAuthHeaders(this.ctx.authConfig);
+        // Attribution-header injection (pwnkit#216). Crawler hits every
+        // discovered link, so this is the highest-volume fetch site —
+        // attribution here is what most defenders will see in their logs.
+        // The default `pwnkit-crawler/1.0` UA is replaced with the
+        // engagement-tagged UA inside applyAttribution when configured.
+        const crawlInit = applyAttribution(
+          normalizedUrl,
+          {
+            method: "GET",
+            signal: controller.signal,
+            redirect: "follow",
+            headers: { "User-Agent": "pwnkit-crawler/1.0", ...crawlAuthHeaders },
+          },
+          this.ctx.attribution,
+          this.ctx.scope,
+        )!;
+        // crawl explicitly wants the engagement-tagged UA (not the
+        // generic crawler one) when attribution is configured. We
+        // overwrite here because the attribution path keeps caller UA
+        // for principle-of-least-surprise in other call sites.
+        if (this.ctx.attribution?.userAgentToken) {
+          (crawlInit.headers as Record<string, string>)["User-Agent"] =
+            formatUserAgent(this.ctx.attribution.userAgentToken);
+        }
         // #214: per-host rate limit, acquire before each crawl fetch.
         if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(normalizedUrl);
-        const res = await fetch(normalizedUrl, {
-          method: "GET",
-          signal: controller.signal,
-          redirect: "follow",
-          headers: { "User-Agent": "pwnkit-crawler/1.0", ...crawlAuthHeaders },
-        });
+        const res = await fetch(normalizedUrl, crawlInit);
         if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(normalizedUrl, res);
+
         clearTimeout(timer);
 
         // Redirect-to-out-of-scope refusal (DoD line item). `redirect:
@@ -1590,9 +1628,13 @@ export class ToolExecutor {
     const timer = setTimeout(() => controller.abort(), 10_000);
 
     try {
+      // Attribution-header injection (pwnkit#216). submit_form is one
+      // of the noisier fetch sites in pen-test contexts (login attempts,
+      // CSRF probes), so attribution here is critical for deconfliction.
+      const submitInit = applyAttribution(fetchUrl, fetchOpts, this.ctx.attribution, this.ctx.scope)!;
       // #214: rate-limit the form submission before dispatching.
       if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(fetchUrl);
-      const res = await fetch(fetchUrl, fetchOpts);
+      const res = await fetch(fetchUrl, submitInit);
       if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(fetchUrl, res);
       clearTimeout(timer);
       const text = await res.text();
@@ -1604,7 +1646,7 @@ export class ToolExecutor {
       };
 
       this.persistToolArtifact("submit_form", {
-        request: { url: fetchUrl, method, fields },
+        request: { url: fetchUrl, method, headers: submitInit.headers as Record<string, string>, fields },
         response: { status: output.status, body: output.body.slice(0, 5_000) },
       });
 
@@ -1721,9 +1763,24 @@ export class ToolExecutor {
     // @ts-ignore — playwright is an optional dependency
     const { chromium } = await import("playwright");
     this._browser = await chromium.launch({ headless: true });
+    // Attribution-header injection (pwnkit#216). Playwright doesn't run
+    // through `applyAttribution` — it has its own request pipeline — so
+    // we set `extraHTTPHeaders` on the context, which Chrome attaches to
+    // every outgoing request. The browser only navigates to in-scope
+    // hosts (validateTargetUrl is enforced before goto), so attribution
+    // here is bounded to in-scope traffic in the same way as the fetch
+    // sites. Same UA-override rule: when an engagement token is set, it
+    // replaces the default `pwnkit-browser/1.0`.
+    const attribution = this.ctx.attribution;
+    const browserUa = attribution?.userAgentToken
+      ? formatUserAgent(attribution.userAgentToken)
+      : "pwnkit-browser/1.0";
     const context = await this._browser.newContext({
       ignoreHTTPSErrors: true,
-      userAgent: "pwnkit-browser/1.0",
+      userAgent: browserUa,
+      ...(attribution && Object.keys(attribution.headers).length > 0
+        ? { extraHTTPHeaders: attribution.headers }
+        : {}),
     });
     this._browserPage = await context.newPage();
 
@@ -2412,6 +2469,7 @@ export class ToolExecutor {
     const authHeaders = buildAuthHeaders(this.ctx.authConfig);
     const scope = this.ctx.scope;
     const rateLimiter = this.ctx.rateLimiter;
+    const attribution = this.ctx.attribution;
     const wrappedFetch: FetchLike = async (url, init) => {
       // Scope check (pwnkit#215). runWpFingerprint walks the WP plugin
       // namespace by appending paths to `target`; under same-origin that
@@ -2428,15 +2486,21 @@ export class ToolExecutor {
         ...authHeaders,
         ...(init?.headers ?? {}),
       };
+      // Attribution-header injection (pwnkit#216). wp_fingerprint runs
+      // dozens of plugin probes in a tight loop, so attribution on
+      // every probe is what tells defenders this is engagement traffic
+      // rather than a botnet pulling /wp-content/plugins/* paths.
+      const fetchInit = applyAttribution(
+        url,
+        { method: init?.method ?? "GET", headers, body: init?.body },
+        attribution,
+        scope,
+      )!;
       // #214: each plugin/version probe goes through the per-host bucket.
       // wp_fingerprint can fan out to dozens of probes against a single
       // host — exactly the workload the limiter exists to pace.
       if (rateLimiter) await rateLimiter.acquire(url);
-      const res = await fetch(url, {
-        method: init?.method ?? "GET",
-        headers,
-        body: init?.body,
-      });
+      const res = await fetch(url, fetchInit);
       // Post-redirect scope check (pwnkit#218 review). `fetch` follows
       // redirects by default, so an in-scope WordPress endpoint that
       // 302s to a foreign host would otherwise complete against the

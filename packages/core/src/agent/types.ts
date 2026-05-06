@@ -1,6 +1,7 @@
 import type { Finding, AttackResult, TargetInfo, AuthConfig } from "@pwnkit/shared";
 import type { ScopePolicy } from "../scope/scope.js";
 import type { RateLimiter } from "../scope/rate-limit.js";
+import type { AttributionConfig } from "../scope/attribution.js";
 
 // ── Agent Roles ──
 
@@ -84,6 +85,14 @@ export interface AgentConfig {
    * explicitly permits generic-scanner traffic).
    */
   allowScanners?: boolean;
+  /**
+   * Resolved attribution-header config (pwnkit#216). When set, every
+   * fetch site merges these headers + applies the User-Agent override on
+   * IN-SCOPE requests. Out-of-scope hosts are never tagged. When `scope`
+   * is also undefined, attribution behaves as opt-in: present here means
+   * the operator explicitly configured it (env or CLI) and wants it on.
+   */
+  attribution?: AttributionConfig;
 }
 
 // ── Agent State ──
@@ -122,4 +131,6 @@ export interface ToolContext {
    * suppression gate (pwnkit#217). Only consulted when `scope` is set.
    */
   allowScanners?: boolean;
+  /** See `AgentConfig.attribution` (pwnkit#216). */
+  attribution?: AttributionConfig;
 }

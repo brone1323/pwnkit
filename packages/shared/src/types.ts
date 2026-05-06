@@ -89,6 +89,19 @@ export interface ScanConfig {
    * Has no effect unless `scopeFile` is also set.
    */
   allowScanners?: boolean;
+  /**
+   * Attribution headers from CLI (pwnkit#216). Each entry is `NAME=VALUE`.
+   * Lower precedence than env vars and the scope file's `attribution`
+   * block. Headers are injected ONLY on in-scope outbound traffic so
+   * attribution doesn't leak to non-engagement targets.
+   */
+  attributionHeaders?: string[];
+  /**
+   * Attribution User-Agent token from CLI (pwnkit#216). When set (and not
+   * overridden by env/scope file), the agent's User-Agent on in-scope
+   * traffic becomes `pwnkit/<ver> (engagement: <token>)`.
+   */
+  attributionUaToken?: string;
 }
 
 // ── Attack Templates ──

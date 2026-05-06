@@ -61,6 +61,15 @@ export function registerScanCommand(program: Command): void {
     .option("--auth <json>", "Auth credentials as JSON string or path to JSON file (types: bearer, cookie, basic, header)")
     .option("--scope <path>", "Path to a JSON scope file ({in_scope, out_of_scope} arrays of host / *.domain / cidr rules). Out-of-scope URLs return as ToolResult.error at every fetch site. See pwnkit#215.")
     .option("--allow-scanners", "Disable the generic-scanner suppression gate (pwnkit#217). When --scope is set, the agent refuses to spawn sqlmap/nikto/gobuster/dirb/wfuzz/ffuf/`nmap -sV`/`nmap -A` by default; pass this flag only when the engagement explicitly permits generic-scanner traffic.", false)
+    .option(
+      "--attribution-header <name=value>",
+      "Attribution header to attach to in-scope outbound requests (pwnkit#216). Repeatable: pass `--attribution-header X-A=1 --attribution-header X-B=2`. Lower precedence than the scope file's `attribution.headers` block and PWNKIT_ATTRIBUTION_HEADERS env var. NEVER attached to out-of-scope traffic.",
+      (value: string, prev: string[] = []) => [...prev, value],
+    )
+    .option(
+      "--attribution-ua <token>",
+      "Engagement token to embed in the User-Agent on in-scope traffic (pwnkit#216). Resulting UA: `pwnkit/<ver> (engagement: <token>)`. Lower precedence than the scope file's `attribution.user_agent_token` and PWNKIT_ATTRIBUTION_UA_TOKEN env var.",
+    )
     .option("--api-spec <path>", "Path to OpenAPI 3.x / Swagger 2.0 spec file (JSON or YAML) for pre-loaded endpoint knowledge")
     .option("--export <target>", "Export findings to issue tracker (e.g. github:owner/repo)")
     .option("--race", "Enable best-of-N strategy racing: run multiple attack strategies in parallel", false)
@@ -212,6 +221,28 @@ export function registerScanCommand(program: Command): void {
         }
       }
 
+      // Pre-validate attribution config (pwnkit#216). Same rationale as
+      // the --scope pre-flight: a malformed PWNKIT_ATTRIBUTION_HEADERS
+      // env var or an invalid scope-file `attribution` block is a config
+      // error, and the operator should see it before the scan boots.
+      try {
+        const {
+          loadScope,
+          resolveAttribution,
+          extractAttributionFromScopeJson,
+        } = await import("@pwnkit/core");
+        const policy = scopeFile ? loadScope(scopeFile) : undefined;
+        resolveAttribution({
+          scopeFileBlock: policy ? extractAttributionFromScopeJson(policy.raw) : undefined,
+          env: process.env,
+          cliHeaders: opts.attributionHeader as string[] | undefined,
+          cliUaToken: opts.attributionUa as string | undefined,
+        });
+      } catch (err) {
+        console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+        process.exit(2);
+      }
+
       // Resolve cost ceiling: --cost-ceiling flag wins over PWNKIT_COST_CEILING_USD env.
       let costCeilingUsd: number | undefined;
       const ceilingSource =
@@ -265,6 +296,8 @@ export function registerScanCommand(program: Command): void {
         tui: opts.tui as boolean,
         scopeFile,
         allowScanners: opts.allowScanners as boolean | undefined,
+        attributionHeaders: opts.attributionHeader as string[] | undefined,
+        attributionUaToken: opts.attributionUa as string | undefined,
       });
     });
 }

@@ -55,6 +55,11 @@ import { getCloudSinkConfig, postFinding, postFinalReport } from "./cloud-sink.j
 import { eventBus } from "./events/bus.js";
 import { loadScope, type ScopePolicy } from "./scope/scope.js";
 import { RateLimiter, parseRateLimitFlag } from "./scope/rate-limit.js";
+import {
+  resolveAttribution,
+  extractAttributionFromScopeJson,
+} from "./scope/attribution.js";
+import type { AttributionConfig } from "./scope/attribution.js";
 
 /**
  * Per-scan rate-limiter cache (#214). The limiter is stateful — buckets
@@ -278,6 +283,14 @@ export async function agenticScan(opts: AgenticScanOptions): Promise<ScanReport>
       );
     }
   }
+
+  // Attribution-header config (pwnkit#216). Resolved by every per-stage
+  // helper below via `buildAttributionForConfig(config)` — see that
+  // function for the actual three-source merge. We pre-flight here so a
+  // malformed `attribution` block in the scope file or a malformed
+  // `PWNKIT_ATTRIBUTION_HEADERS` env var fails the scan loudly at boot
+  // instead of crashing inside the discovery agent's first fetch.
+  buildAttributionForConfig(config);
 
   const db = await (async () => {
     try {
@@ -1772,6 +1785,23 @@ function resolveScopeForConfig(config: ScanConfig): ScopePolicy | undefined {
   return policy;
 }
 
+/**
+ * Resolve the attribution config (pwnkit#216) from a ScanConfig. Called
+ * inline at every helper-function call site that constructs an
+ * `AgentConfig`/`NativeAgentConfig`. Reuses the cached `ScopePolicy`
+ * via `resolveScopeForConfig` so the scope file isn't reparsed.
+ * Returns `undefined` when no source contributed anything.
+ */
+function buildAttributionForConfig(config: ScanConfig): AttributionConfig | undefined {
+  const scope = resolveScopeForConfig(config);
+  return resolveAttribution({
+    scopeFileBlock: scope ? extractAttributionFromScopeJson(scope.raw) : undefined,
+    env: process.env,
+    cliHeaders: config.attributionHeaders,
+    cliUaToken: config.attributionUaToken,
+  });
+}
+
 async function runNativeDiscovery(
   runtime: NativeRuntime,
   db: any,
@@ -1805,6 +1835,7 @@ async function runNativeDiscovery(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2027,6 +2058,7 @@ async function runNativeAttack(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2092,6 +2124,7 @@ async function runNativeAttack(
         scope: resolveScopeForConfig(config),
         rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
         costCeilingUsd: config.costCeilingUsd,
         costModel: config.model,
       },
@@ -2307,6 +2340,7 @@ async function runNativeVerify(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
       costCeilingUsd: config.costCeilingUsd,
       costModel: config.model,
     },
@@ -2368,6 +2402,7 @@ async function runLegacyDiscovery(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
     },
     runtime,
     db,
@@ -2434,6 +2469,7 @@ async function runLegacyAttack(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
     },
     runtime,
     db,
@@ -2501,6 +2537,7 @@ async function runLegacyVerify(
       scope: resolveScopeForConfig(config),
       rateLimiter: getOrCreateRateLimiter(config),
       allowScanners: config.allowScanners,
+      attribution: buildAttributionForConfig(config),
     },
     runtime,
     db,
