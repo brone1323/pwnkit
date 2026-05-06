@@ -75,7 +75,7 @@ const pkg = {
   homepage: "https://github.com/PwnKit-Labs/pwnkit",
   repository: { type: "git", url: "git+https://github.com/PwnKit-Labs/pwnkit.git" },
   bugs: { url: "https://github.com/PwnKit-Labs/pwnkit/issues" },
-  license: "MIT",
+  license: rootPkg.license ?? "Apache-2.0",
   keywords: rootPkg.keywords ?? [],
   author: rootPkg.author,
   engines: { node: ">=18" },

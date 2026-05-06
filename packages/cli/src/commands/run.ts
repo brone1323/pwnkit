@@ -321,10 +321,12 @@ export async function runUnified(opts: RunOptions): Promise<void> {
       }
     }
 
-    if (opts.tui && process.stdout.isTTY && process.stdin.isTTY) {
+    if (opts.tui && process.stdout.isTTY && process.stdin.isTTY && !(globalThis as { Bun?: unknown }).Bun) {
       // The post-scan operator TUI was Ink-based; in v0.9.0 we shipped
       // binary-only and dropped Ink. Tell the user where to find the
       // OpenTUI replacement and continue (don't fail the scan).
+      // Gated on `!Bun` because under Bun the OpenTUI replacement is
+      // already available — printing this message there would be wrong.
       console.log("");
       console.log(chalk.gray("  --tui post-scan view is no longer bundled in the npm package."));
       console.log(chalk.gray("  Install the standalone binary for the full OpenTUI experience:"));

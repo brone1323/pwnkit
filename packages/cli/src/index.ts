@@ -91,9 +91,9 @@ async function showInteractiveMenu(): Promise<void> {
   console.log(`  ${chalk.dim("Or via Bun:")}`);
   console.log(`    bun add -g pwnkit-cli`);
   console.log("");
-  console.log(`  ${chalk.dim("Subcommands still work under Node — try:")}`);
-  console.log(`    npx pwnkit-cli scan --target https://example.com`);
-  console.log(`    npx pwnkit-cli --help`);
+  console.log(`  ${chalk.dim("After install, run:")}`);
+  console.log(`    pwnkit scan --target https://example.com`);
+  console.log(`    pwnkit --help`);
   console.log("");
 }
 

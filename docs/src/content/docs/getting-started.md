@@ -17,7 +17,7 @@ This drops a single binary (~75-130 MB depending on platform) into `~/.pwnkit/bi
 
 Supported platforms: **macOS arm64**, **Linux x64**, **Linux arm64**. Windows users: download `pwnkit-windows-x64.exe` directly from the [latest release](https://github.com/PwnKit-Labs/pwnkit/releases/latest). Intel Mac users: install [Bun](https://bun.sh) and compile from source (`scripts/bun-compile.sh`).
 
-> **Why a binary?** The full TUI (mission control + live scan view) is built on OpenTUI, which needs Bun's runtime. Shipping one self-contained binary is simpler than asking users to install Bun first. The npm package (`pwnkit`) still exists but is now a redirect that prints these install instructions and exits.
+> **Why a binary?** The full TUI (mission control + live scan view) is built on OpenTUI, which needs Bun's runtime. Shipping one self-contained binary is simpler than asking users to install Bun first. The npm package (`pwnkit-cli`) still exists but is now a redirect that prints these install instructions and exits.
 
 ## Set up an API key
 
