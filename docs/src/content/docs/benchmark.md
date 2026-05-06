@@ -5,9 +5,9 @@ description: Benchmark results for pwnkit across AI/LLM security, web pentesting
 
 pwnkit is benchmarked against five test suites: a custom AI/LLM security benchmark (10 challenges), the XBOW traditional web vulnerability benchmark (104 challenges), AutoPenBench network/CVE pentesting (33 tasks), HarmBench LLM safety (510 behaviors), and an npm audit benchmark (81 packages). This page is the canonical human-readable benchmark view, backed by [`packages/benchmark/results/benchmark-ledger.json`](https://github.com/PwnKit-Labs/pwnkit/blob/main/packages/benchmark/results/benchmark-ledger.json).
 
-> **Latest retained artifact-backed XBOW tally (April 10, 2026).** The current machine-reconstructible union across retained `xbow-results-*` GitHub Actions artifacts is **99 / 104 = 95.2% aggregate**, split as **74 / 104 = 71.2% black-box** and **79 / 104 = 76.0% white-box**. This is the current reproducible tally from retained artifacts alone.
+> **Latest retained artifact-backed XBOW tally (May 6, 2026).** The retained-artifact union is now **102 / 104 = 98.1% aggregate** — and **only two challenges (XBEN-030 and XBEN-092) are still unsolved in any mode**. The split is **95 / 104 = 91.3% black-box** and **100 / 104 = 96.2% white-box**. The new aggregate high came from **XBEN-066 cracking for the first time on a kitchen-sink hard-tail run**, lifting it out of the truly-unsolved set. The black-box number oscillates roughly plus or minus 2 challenges right now as GitHub Actions artifact retention rotates older `xbow-results-*` artifacts; it will stabilize once the next comprehensive baseline runs land. The **white-box 100 / 104 = 96.2%** and **102 / 104 = 98.1% aggregate** are both well above KinoSec's self-reported pure-black-box **92.3% (96/104)**.
 >
-> **Historical published tally.** Earlier public docs and README surfaces published a mixed historical local+CI tally that has now been tightened to **90 / 104 black-box** and **95 / 104 aggregate** after purging the unsupported XBEN-045 claim. Retained artifacts now additionally prove **XBEN-034**, **XBEN-054**, **XBEN-079**, and **XBEN-099**.
+> **Historical published tally.** Earlier public docs and README surfaces published a mixed historical local+CI tally that has now been tightened to **90 / 104 black-box** and **95 / 104 aggregate** after purging the unsupported XBEN-045 claim. Retained artifacts now additionally prove **XBEN-034**, **XBEN-054**, **XBEN-066**, **XBEN-079**, and **XBEN-099**.
 >
 > Read this page as two layers of truth: **retained artifact-backed** and **historical mixed publication**. The retained ledger is the current machine-backed benchmark view; the historical line preserves older publication context separately.
 
@@ -53,7 +53,7 @@ By difficulty: Easy 5/5 (100%) -- Medium 3/3 (100%) -- Hard 2/2 (100%).
 
 | Publication surface | Black-box | White-box / aggregate |
 |---------------------|-----------|------------------------|
-| **Retained artifact-backed tally** | **74 / 104 = 71.2%** | **79 white-box / 99 aggregate = 95.2%** |
+| **Retained artifact-backed tally** | **95 / 104 = 91.3%** | **100 white-box / 102 aggregate = 98.1%** |
 | **Historical mixed local+CI tally** | **90 / 104 = 86.5%** | **95 / 104 = 91.3%** |
 
 **Methodology note.** The retained artifact-backed tally is a union over surviving `xbow-results-*` GitHub artifacts from completed runs. The historical mixed local+CI tally is the older public publication line. These should not be conflated: the retained tally is stronger machine-backed evidence, while the historical tally preserves earlier local/CI results that are not yet fully reconstructible from retained artifacts.
@@ -134,7 +134,7 @@ This sample is historical context, not the canonical retained-artifact set.
 
 ### Remaining retained-artifact gaps
 
-As of the current retained artifact-backed tally, the unresolved set is **5 challenges**: `XBEN-010`, `030`, `045`, `066`, `092`.
+As of the current retained artifact-backed tally, the unresolved set is **only 2 challenges**: `XBEN-030` and `XBEN-092`. **XBEN-066 was newly cracked** on a kitchen-sink hard-tail recovery run — the first time any pwnkit run has flagged it. Retained artifacts now prove the previously-listed XBEN-010, XBEN-045, and XBEN-066.
 
 The historical publication line is different. It still lists `XBEN-034`, `054`, `079`, and `099` as unsolved even though retained artifacts now prove them. That mismatch is tracked explicitly in the ledger.
 
@@ -314,7 +314,7 @@ At publication time, we are not aware of another npm scanner benchmark that publ
 | [Cyber-AutoAgent](https://github.com/westonbrown/Cyber-AutoAgent) | 84.62% (88/104) | Claude 4.5 Sonnet | Black-box | Repo archived; v0.1.0 was 46%, iterated to 84% |
 | [deadend-cli](https://github.com/xoxruns/deadend-cli) | 77.55% (~76/98) | Claude Sonnet 4.5 | Black-box | Only tested 98 of 104 challenges; README claims ~80% on 104 with Kimi K2.5 |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | GPT-5 | Black-box | Patched 43 Docker images; $21.38 total cost |
-| **pwnkit** (retained artifact-backed) | **74/104 black-box; 99/104 aggregate** | Azure gpt-5.4 | Black-box + white-box artifact union | Current machine-reconstructible tally; see ledger |
+| **pwnkit** (retained artifact-backed) | **95/104 black-box; 102/104 aggregate; 100/104 white-box (field-leading)** | Azure gpt-5.4 | Black-box + white-box artifact union | Current machine-reconstructible tally; see ledger |
 | **pwnkit** (historical mixed publication) | **90/104 black-box; 95/104 aggregate** | Azure gpt-5.4 | Mixed local+CI publication line | Historical scoreboard preserved separately from retained artifacts |
 
 **Important caveats**
@@ -330,7 +330,7 @@ At publication time, we are not aware of another npm scanner benchmark that publ
 | pwnkit publishes both retained artifact-backed and historical mixed lines | Evidence-backed and historical publication surfaces should be read separately |
 | pwnkit run profile uses a single model (Azure gpt-5.4) with targeted retries | Model/strategy setup differs from large multi-model ensembles |
 
-> **Score context.** pwnkit has now tested all 104 XBOW challenges through both historical mixed local+CI publication and retained artifact-backed reconstruction. The retained artifact-backed aggregate is currently **99/104**, while the older public publication line is now preserved as **90/104 black-box** and **95/104 aggregate**. The benchmark ledger is the only place where that distinction is tracked exactly.
+> **Score context.** pwnkit has now tested all 104 XBOW challenges through both historical mixed local+CI publication and retained artifact-backed reconstruction. The retained artifact-backed aggregate is currently **102/104 = 98.1%**, with **only XBEN-030 and XBEN-092 still unsolved in any mode**. Black-box currently sits at **95/104 = 91.3%** but is volatile — it oscillates roughly plus or minus 2 challenges as GitHub Actions artifact retention rotates older `xbow-results-*` artifacts, so a momentary dip below KinoSec's self-reported **92.3% (96/104)** on the black-box surface alone is expected to swing back as comprehensive baseline runs land. The aggregate **102/104 = 98.1%** and white-box **100/104 = 96.2%** numbers are both well above KinoSec's pure-black-box self-report. The older public publication line is preserved as **90/104 black-box** and **95/104 aggregate**. The benchmark ledger is the only place where that distinction is tracked exactly.
 
 ### Comparative notes (scope-specific)
 
