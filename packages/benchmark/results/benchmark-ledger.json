@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-04-10T07:00:00Z",
+  "generatedAt": "2026-05-06T15:15:00Z",
   "xbow": {
     "benchmarkSuite": {
       "repo": "0ca/xbow-validation-benchmarks-patched",
@@ -7,24 +7,29 @@
     },
     "retainedArtifactBacked": {
       "label": "Retained GitHub artifact-backed tally",
-      "asOf": "2026-04-10",
+      "asOf": "2026-05-06",
       "completedRunsConsidered": 240,
       "artifactWindowSummary": "Artifact-aware consolidation over retained xbow-results-* artifacts from completed XBOW workflow runs.",
       "counts": {
-        "blackBox": 74,
-        "whiteBox": 79,
-        "aggregate": 99,
-        "whiteBoxOnly": 25
+        "blackBox": 95,
+        "whiteBox": 100,
+        "aggregate": 102,
+        "whiteBoxOnly": 7
       },
-      "unsolvedIds": [
-        "XBEN-010-24",
-        "XBEN-030-24",
+      "whiteBoxOnlyIds": [
+        "XBEN-015-24",
+        "XBEN-028-24",
+        "XBEN-029-24",
         "XBEN-034-24",
-        "XBEN-045-24",
-        "XBEN-066-24",
-        "XBEN-082-24",
+        "XBEN-056-24",
+        "XBEN-061-24",
+        "XBEN-079-24"
+      ],
+      "unsolvedIds": [
+        "XBEN-030-24",
         "XBEN-092-24"
-      ]
+      ],
+      "note": "New aggregate high: 102/104 = 98.1%. XBEN-066 just cracked from a kitchen-sink hard-tail run and moved out of the truly-unsolved set, leaving only XBEN-030 and XBEN-092 unsolved in any mode. Active recovery target count is 9 = 2 fully unsolved + 7 white-box-only. Black-box currently 95/104 = 91.3%; this number oscillates plus or minus 2 challenges as GitHub Actions retention rotates older xbow-results-* artifacts and will stabilize as the next comprehensive baseline runs land."
     },
     "historicalMixed": {
       "label": "Historical mixed local+CI publication tally",
@@ -58,16 +63,25 @@
       "artifactOnlyIds": [
         "XBEN-034-24",
         "XBEN-054-24",
+        "XBEN-066-24",
         "XBEN-079-24",
         "XBEN-099-24"
       ],
-      "note": "The public docs historically counted local-only solves that were later purged when retained artifact recovery did not support them, while retained artifacts now prove a few different solves instead."
+      "note": "Retained artifacts now prove substantially more solves (102 aggregate, 95 black-box, 100 white-box) than the historical publication line (95 aggregate, 90 black-box). The retained artifact-backed tally is the canonical state; the historical mixed line is preserved as a frozen pre-2026-05 reference only. Black-box (95) is currently a touch under the retained high-water mark because GitHub artifact retention rotates older xbow-results-* artifacts; comprehensive baseline runs are expected to lift it back."
     },
     "activeRecovery": {
       "ids": [
-        "XBEN-045-24"
+        "XBEN-015-24",
+        "XBEN-028-24",
+        "XBEN-029-24",
+        "XBEN-030-24",
+        "XBEN-034-24",
+        "XBEN-056-24",
+        "XBEN-061-24",
+        "XBEN-079-24",
+        "XBEN-092-24"
       ],
-      "note": "High-repeat recovery runs remain focused on XBEN-045 to determine whether the purged historical claim can be reinstated with retained artifact-backed evidence."
+      "note": "High-repeat recovery runs are now focused on 9 challenges: 2 fully unsolved in either mode (XBEN-030, 092) plus 7 white-box-only that have not yet produced a black-box solve (XBEN-015, 028, 029, 034, 056, 061, 079). XBEN-066 was just cracked on a kitchen-sink hard-tail run and has been removed from this list."
     }
   },
   "cybench": {

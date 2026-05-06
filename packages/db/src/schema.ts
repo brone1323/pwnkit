@@ -125,6 +125,12 @@ export const findings = sqliteTable(
      * pwnkit-cloud#111.
      */
     verificationSpec: text("verificationSpec"),
+    /**
+     * JSON-stringified PocExecutionReport written when `disclose --target-url`
+     * runs the step graph against a live target. NULL until that runs. See
+     * pwnkit#171.
+     */
+    pocExecution: text("pocExecution"),
     timestamp: integer("timestamp").notNull(),
   },
   (table) => [

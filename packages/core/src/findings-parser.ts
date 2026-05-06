@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { Finding, Severity } from "@pwnkit/shared";
+import { derivePocStepsFromEvidence } from "./poc-steps.js";
 
 export interface ParseFindingsOptions {
   templatePrefix?: string;
@@ -41,27 +42,33 @@ function parseJsonOutput(output: string, prefix: string): Finding[] {
     if (parsed.findings && Array.isArray(parsed.findings)) {
       return parsed.findings
         .filter((f: any) => f.title && f.severity)
-        .map((f: any) => ({
-          id: randomUUID(),
-          templateId: `${prefix}-${Date.now()}`,
-          title: f.title,
-          description: f.description ?? "",
-          severity: (VALID_SEVERITIES.has(f.severity) ? f.severity : "info") as Severity,
-          category: (f.category ?? "other") as Finding["category"],
-          status: "discovered" as const,
-          evidence: {
+        .map((f: any) => {
+          const evidence = {
             request: f.file ?? "",
             response: f.poc ?? "",
             analysis: f.description ?? "",
-          },
-          // Pass-through with clamping when the upstream JSON schema includes
-          // `confidence`. Downstream cloud-sink also clamps; this is defence
-          // in depth so an agent runtime that reports a wild value (1.5,
-          // -0.2, NaN) never escapes the OSS engine. Absent → undefined,
-          // which the cloud column accepts as NULL.
-          confidence: clampConfidence(f.confidence),
-          timestamp: Date.now(),
-        }));
+          };
+          const explicitSteps = Array.isArray(f.poc_steps) ? f.poc_steps : Array.isArray(f.pocSteps) ? f.pocSteps : undefined;
+          const derivedSteps = derivePocStepsFromEvidence(evidence);
+          return {
+            id: randomUUID(),
+            templateId: `${prefix}-${Date.now()}`,
+            title: f.title,
+            description: f.description ?? "",
+            severity: (VALID_SEVERITIES.has(f.severity) ? f.severity : "info") as Severity,
+            category: (f.category ?? "other") as Finding["category"],
+            status: "discovered" as const,
+            evidence,
+            ...(explicitSteps ? { pocSteps: explicitSteps } : derivedSteps.length > 0 ? { pocSteps: derivedSteps } : {}),
+            // Pass-through with clamping when the upstream JSON schema includes
+            // `confidence`. Downstream cloud-sink also clamps; this is defence
+            // in depth so an agent runtime that reports a wild value (1.5,
+            // -0.2, NaN) never escapes the OSS engine. Absent → undefined,
+            // which the cloud column accepts as NULL.
+            confidence: clampConfidence(f.confidence),
+            timestamp: Date.now(),
+          };
+        });
     }
   } catch {
     // Not valid JSON
@@ -97,6 +104,13 @@ function parseStructuredBlocks(output: string, prefix: string): Finding[] {
     const description = content.match(/^description:\s*([\s\S]*?)(?=^(?:file|---)|$)/m)?.[1]?.trim() ?? "";
     const file = content.match(/^file:\s*(.+)$/m)?.[1]?.trim() ?? "";
 
+    const evidence = {
+      request: file || "Automated AI analysis",
+      response: description,
+      analysis: `Found by ${prefix} agent`,
+    };
+    const derivedSteps = derivePocStepsFromEvidence(evidence);
+
     return {
       id: randomUUID(),
       templateId: `${prefix}-${Date.now()}`,
@@ -105,11 +119,8 @@ function parseStructuredBlocks(output: string, prefix: string): Finding[] {
       severity: (VALID_SEVERITIES.has(severity) ? severity : "info") as Severity,
       category: category as Finding["category"],
       status: "discovered" as const,
-      evidence: {
-        request: file || "Automated AI analysis",
-        response: description,
-        analysis: `Found by ${prefix} agent`,
-      },
+      evidence,
+      ...(derivedSteps.length > 0 ? { pocSteps: derivedSteps } : {}),
       confidence: undefined,
       timestamp: Date.now(),
     };
