@@ -59,9 +59,30 @@ The raw data underlying this post is private competitive intel and is not republ
 
 A few things stand out before we even get to AI policy. The paid/VDP split is roughly 50/50, which contradicts a common assumption that "most HackerOne programs pay." Half of the visible inventory is unpaid. Submission-state `paused` accounts for nearly a quarter — programs that exist on paper but cannot currently receive reports. Gold Standard Safe Harbor adoption sits at 29% almost five years after the GSSH wording was published; the supermajority of programs still rely on bespoke legal language with weaker researcher protections.
 
+```mermaid
+xychart-beta
+  title "Programs by payout type (n=590)"
+  x-axis ["Paid (offers bounties)", "VDP (no bounty)"]
+  y-axis "Programs" 0 --> 320
+  bar [292, 298]
+```
+
+*Caption: paid programs and VDPs split almost exactly evenly across the public directory. The popular framing "HackerOne is a bounty platform" is half wrong — half the addressable inventory pays nothing for a valid finding, which means an automated pipeline that ignores `offers_bounties` will spend triage and verification budget on the half that cannot reciprocate.*
+
 ### Automation-policy distribution
 
 This is the headline finding.
+
+```mermaid
+pie showData
+  title H1 program automation policy (n=590)
+  "Silent on automation (no language)" : 259
+  "Discouraged or cautious" : 198
+  "Bans automated tooling" : 131
+  "Explicitly allows (rate-limited)" : 2
+```
+
+*Caption: the four-way split of automation policy across 590 public programs. The shock value is the bottom slice — only two programs out of 590 (0.34%) explicitly invite automated scanning. The other 99.66% either ban, discourage, or stay silent. Under the May 2026 CoC update, "silent" is not implicit consent, which means the addressable surface is closer to 200 programs at the cautious-or-allow boundary, not 590.*
 
 | Policy verdict | Count | % of 590 |
 |----------------|-------|----------|
@@ -75,6 +96,8 @@ Two programs out of 590 explicitly allow automation. That is the upper bound on 
 The `silent` bucket is the most interesting. 44% of programs simply do not address the question. Under the May 2026 CoC update, silence is *not* implicit consent — the platform-level rules still apply, and any researcher operating an automated tool against a silent program is one report-quality complaint away from a Final Warning. In practice the silent bucket is "AI-tolerable but not AI-explicit," and the operational risk depends entirely on whether your reports look hand-crafted enough to pass triage.
 
 ### A finding on the platform itself
+
+> **23 of 292 paid programmes (7.9%)** advertise bounties on the front page but return **zero usable in-scope assets** through the structured-scopes API endpoint. A scope-aware tool that follows the API contract will skip them entirely; a scope-blind tool that scrapes policy text will hit them and likely violate program rules. The asymmetry penalises the honest case.
 
 While iterating the scope-fetch loop we noticed something we did not expect: **23 paid bounty programmes return zero programmatically usable in-scope assets via the structured-scopes endpoint.** The breakdown:
 
