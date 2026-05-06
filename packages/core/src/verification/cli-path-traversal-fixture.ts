@@ -77,6 +77,7 @@ interface CapturedCommand {
 
 const FIXTURE_ID = "fixture:cli-path-traversal";
 const DEFAULT_TIMEOUT_MS = 10_000;
+const SIGKILL_GRACE_MS = 1_000;
 const CAPTURE_BYTES = 1024 * 1024;
 const EXCERPT_BYTES = 4 * 1024;
 
@@ -114,23 +115,37 @@ async function runCommand(
     let stderr = "";
     let settled = false;
     let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let killTimer: ReturnType<typeof setTimeout> | undefined;
 
     const child = spawn(argv[0], argv.slice(1), {
       cwd: options.cwd,
       stdio: ["ignore", "pipe", "pipe"],
     });
 
-    const timer = setTimeout(() => {
-      timedOut = true;
-      child.kill("SIGTERM");
-    }, options.timeoutMs);
-
     const finish = (result: CapturedCommand) => {
       if (settled) return;
       settled = true;
-      clearTimeout(timer);
+      if (timer) clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       resolveCommand(result);
     };
+
+    timer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      killTimer = setTimeout(() => {
+        if (settled) return;
+        child.kill("SIGKILL");
+        finish({
+          exitCode: null,
+          stdout,
+          stderr,
+          timedOut,
+          error: `command timed out after ${options.timeoutMs}ms and did not exit after SIGTERM`,
+        });
+      }, SIGKILL_GRACE_MS);
+    }, options.timeoutMs);
 
     child.stdout?.on("data", (chunk: Buffer) => {
       stdout = appendCapped(stdout, chunk);
@@ -355,6 +370,8 @@ export async function runCliPathTraversalReplayFixture(
     artifacts.export_ref = exportDir;
   }
   let server: Server | undefined;
+  let argv: string[] = [];
+  let command: CapturedCommand | undefined;
 
   try {
     await mkdir(exportDir, { recursive: true });
@@ -366,7 +383,7 @@ export async function runCliPathTraversalReplayFixture(
         "cli-path-traversal fixture requires commandArgv for the real CLI under test",
       );
     }
-    const argv = expandCommandArgv(options.commandArgv, {
+    argv = expandCommandArgv(options.commandArgv, {
       apiUrl: fixture.baseUrl,
       exportDir,
       fixtureMode,
@@ -389,7 +406,7 @@ export async function runCliPathTraversalReplayFixture(
       "utf8",
     );
 
-    const command = await runCommand(argv, {
+    command = await runCommand(argv, {
       cwd: sandboxRoot,
       timeoutMs,
     });
@@ -447,7 +464,16 @@ export async function runCliPathTraversalReplayFixture(
       engine_version: options.engineVersion ?? "unknown",
       started_at: startedAt,
       completed_at: new Date().toISOString(),
-      commands: [],
+      commands: command
+        ? [
+            {
+              argv,
+              exit_code: command.exitCode,
+              stdout_excerpt: excerpt(command.stdout),
+              stderr_excerpt: excerpt(command.stderr),
+            },
+          ]
+        : [],
       assertions: [],
       artifacts,
       summary: summaryFor("error"),

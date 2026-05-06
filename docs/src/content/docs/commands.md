@@ -414,8 +414,8 @@ the selected export root while staying inside the sandbox.
 |------|-------------|---------|
 | `--finding <path>` | Finding JSON with `pocSteps` to replay | |
 | `--target <path>` | Optional `PocExecutionTarget` JSON for PoC steps | |
-| `--fixture <name>` | Built-in deterministic fixture. Supported: `cli-path-traversal` | |
-| `--fixture-command <json>` | JSON argv array for the CLI under test. Supports `{{apiUrl}}`, `{{exportDir}}`, and `{{fixtureMode}}` placeholders | |
+| `--fixture <name>` | Built-in deterministic fixture. Supported: `cli-path-traversal`; this fixture requires `--fixture-command` | |
+| `--fixture-command <json>` | JSON argv array for the CLI under test. Required when `--fixture=cli-path-traversal`. Supports `{{apiUrl}}`, `{{exportDir}}`, and `{{fixtureMode}}` placeholders | |
 | `--fixture-mode <mode>` | Fixture behavior: `vulnerable` or `patched` | `vulnerable` |
 | `--retain-artifacts` | Keep the fixture sandbox and log files | `false` |
 | `--artifact-dir <path>` | Use a specific fixture sandbox root | |

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { runCliPathTraversalReplayFixture } from "./cli-path-traversal-fixture.js";
@@ -159,5 +159,51 @@ describe("runCliPathTraversalReplayFixture", () => {
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }
+  });
+
+  it("preserves command output when post-command artifact writes fail", async () => {
+    const sandbox = mkdtempSync(join(tmpdir(), "pwnkit-fixture-postcmd-error-"));
+    const cliRoot = mkdtempSync(join(tmpdir(), "pwnkit-fixture-cli-"));
+    try {
+      mkdirSync(join(sandbox, "stdout.log"));
+      const cliPath = writeTestExportCli(cliRoot);
+
+      const result = await runCliPathTraversalReplayFixture({
+        commandArgv: testExportCliArgv(cliPath),
+        artifactDir: sandbox,
+        retainArtifacts: true,
+        engineVersion: "test",
+      });
+
+      expect(result.status).toBe("error");
+      expect(result.commands).toHaveLength(1);
+      expect(result.commands[0].argv).toContain(cliPath);
+      expect(result.commands[0].exit_code).toBe(0);
+      expect(result.commands[0].stdout_excerpt).toContain("escaped-marker");
+      expect(result.error_reason).toBeTruthy();
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+      rmSync(cliRoot, { recursive: true, force: true });
+    }
+  });
+
+  it("finishes when a command ignores SIGTERM past the timeout", async () => {
+    const result = await runCliPathTraversalReplayFixture({
+      commandArgv: [
+        process.execPath,
+        "--input-type=module",
+        "-e",
+        "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000);",
+      ],
+      timeoutMs: 200,
+      engineVersion: "test",
+    });
+
+    expect(result.status).toBe("not_reproduced");
+    expect(result.commands).toHaveLength(1);
+    expect(result.commands[0].exit_code).toBeNull();
+    expect(result.assertions.find((a) => a.kind === "command_exit_zero")?.detail).toContain(
+      "did not exit after SIGTERM",
+    );
   });
 });

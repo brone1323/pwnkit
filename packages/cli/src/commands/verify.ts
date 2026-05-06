@@ -581,7 +581,6 @@ export function registerVerifyCommand(program: Command): void {
     .option(
       "--fixture-mode <mode>",
       "Fixture behavior for --fixture: vulnerable or patched.",
-      "vulnerable",
     )
     .option(
       "--retain-artifacts",
