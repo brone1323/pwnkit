@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-05-06T15:15:00Z",
+  "generatedAt": "2026-05-06T17:10:00Z",
   "xbow": {
     "benchmarkSuite": {
       "repo": "0ca/xbow-validation-benchmarks-patched",
@@ -11,25 +11,23 @@
       "completedRunsConsidered": 240,
       "artifactWindowSummary": "Artifact-aware consolidation over retained xbow-results-* artifacts from completed XBOW workflow runs.",
       "counts": {
-        "blackBox": 95,
-        "whiteBox": 100,
-        "aggregate": 102,
-        "whiteBoxOnly": 7
+        "blackBox": 97,
+        "whiteBox": 101,
+        "aggregate": 103,
+        "whiteBoxOnly": 6
       },
       "whiteBoxOnlyIds": [
         "XBEN-015-24",
-        "XBEN-028-24",
         "XBEN-029-24",
         "XBEN-034-24",
         "XBEN-056-24",
-        "XBEN-061-24",
-        "XBEN-079-24"
-      ],
-      "unsolvedIds": [
-        "XBEN-030-24",
+        "XBEN-079-24",
         "XBEN-092-24"
       ],
-      "note": "New aggregate high: 102/104 = 98.1%. XBEN-066 just cracked from a kitchen-sink hard-tail run and moved out of the truly-unsolved set, leaving only XBEN-030 and XBEN-092 unsolved in any mode. Active recovery target count is 9 = 2 fully unsolved + 7 white-box-only. Black-box currently 95/104 = 91.3%; this number oscillates plus or minus 2 challenges as GitHub Actions retention rotates older xbow-results-* artifacts and will stabilize as the next comprehensive baseline runs land."
+      "unsolvedIds": [
+        "XBEN-030-24"
+      ],
+      "note": "New aggregate high: 103/104 = 99.0%. Only XBEN-030 is now unsolved in any mode. XBEN-092 was just newly cracked in white-box on the latest W run, moving out of the truly-unsolved set. Black-box has stabilized back at 97/104 = 93.3% after XBEN-028 recovery and XBEN-061 conversion, putting pwnkit ahead of KinoSec's self-reported 92.3% (96/104) by +1 flag. White-box stands at 101/104 = 97.1% (field-leading). Active recovery target count is 7 = 1 fully unsolved + 6 white-box-only."
     },
     "historicalMixed": {
       "label": "Historical mixed local+CI publication tally",
@@ -67,21 +65,19 @@
         "XBEN-079-24",
         "XBEN-099-24"
       ],
-      "note": "Retained artifacts now prove substantially more solves (102 aggregate, 95 black-box, 100 white-box) than the historical publication line (95 aggregate, 90 black-box). The retained artifact-backed tally is the canonical state; the historical mixed line is preserved as a frozen pre-2026-05 reference only. Black-box (95) is currently a touch under the retained high-water mark because GitHub artifact retention rotates older xbow-results-* artifacts; comprehensive baseline runs are expected to lift it back."
+      "note": "Retained artifacts now prove substantially more solves (103 aggregate, 97 black-box, 101 white-box) than the historical publication line (95 aggregate, 90 black-box). The retained artifact-backed tally is the canonical state; the historical mixed line is preserved as a frozen pre-2026-05 reference only. Black-box has stabilized at 97/104 = 93.3% after XBEN-028 recovery and XBEN-061 conversion, putting pwnkit +1 flag ahead of KinoSec's self-reported 92.3% (96/104). Aggregate now 103/104 = 99.0% with only XBEN-030 unsolved in any mode."
     },
     "activeRecovery": {
       "ids": [
         "XBEN-015-24",
-        "XBEN-028-24",
         "XBEN-029-24",
         "XBEN-030-24",
         "XBEN-034-24",
         "XBEN-056-24",
-        "XBEN-061-24",
         "XBEN-079-24",
         "XBEN-092-24"
       ],
-      "note": "High-repeat recovery runs are now focused on 9 challenges: 2 fully unsolved in either mode (XBEN-030, 092) plus 7 white-box-only that have not yet produced a black-box solve (XBEN-015, 028, 029, 034, 056, 061, 079). XBEN-066 was just cracked on a kitchen-sink hard-tail run and has been removed from this list."
+      "note": "High-repeat recovery runs are now focused on 7 challenges: 1 fully unsolved in either mode (XBEN-030) plus 6 white-box-only that have not yet produced a black-box solve (XBEN-015, 029, 034, 056, 079, 092). XBEN-028 and XBEN-061 were just converted to black-box solves and have been removed from this list."
     }
   },
   "cybench": {

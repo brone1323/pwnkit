@@ -11,13 +11,13 @@ The current thesis is unchanged from earlier in the year:
 2. Make the outputs operationally useful for real teams.
 3. Then add orchestration and control-plane UX on top.
 
-What has changed is that the trust layer is now real. The retained artifact-backed XBOW aggregate is now 99/104, while the older mixed local+CI publication line remains documented separately. Most of the next-quarter work is about taking that capability and making it operationally easy to live with — for one developer running a single review, for a CI pipeline gating PRs, and for a security team running a continuous campaign.
+What has changed is that the trust layer is now real. The retained artifact-backed XBOW aggregate is now 103/104 = 99.0% (only XBEN-030 unsolved in any mode), while the older mixed local+CI publication line remains documented separately. Most of the next-quarter work is about taking that capability and making it operationally easy to live with — for one developer running a single review, for a CI pipeline gating PRs, and for a security team running a continuous campaign.
 
 ## Recently shipped (April 2026)
 
 These are the things that landed since the last public roadmap snapshot. They should not be in the "Now" column anymore — they are done.
 
-- **Retained artifact-backed XBOW aggregate at 99 / 104.** The machine-recoverable artifact window now proves more unique solves than the older public mixed local+CI tally, though the set composition is different and still being reconciled on the benchmark page.
+- **Retained artifact-backed XBOW aggregate at 103 / 104.** The machine-recoverable artifact window now proves more unique solves than the older public mixed local+CI tally, though the set composition is different and still being reconciled on the benchmark page. Only XBEN-030 remains unsolved in any mode.
 - **Historical public XBOW publication still tracked separately.** The older mixed local+CI publication line now sits at 90/104 black-box and 95/104 aggregate after purging unsupported claim residue, and it is not the only current source of truth.
 - **Cost ceiling enforcement.** Scans abort cleanly when a per-run USD budget is exceeded, instead of silently spending past it.
 - **Direct OSV advisory lookup in the npm audit pipeline.** No more relying on `npm audit` alone for known-CVE coverage.
@@ -49,7 +49,7 @@ This is a small, falsifiable change. If it lands XBEN-079 it almost certainly ca
 
 **Goal:** replace single-shot benchmark anecdotes with measured per-attempt success rates and confidence intervals.
 
-**Why:** the v1 sweep produced a single solve on XBEN-061 with a `handoff,no-hiw,no-evidence` combo that looked like a generalisable winning configuration. The v2 sweep ran the same combo against the same challenge as a regression test the next afternoon. **It failed.** The v1 solve was noise inside a 20–40% per-attempt success rate, not a signal worth defaulting on. This remains the methodology lesson even after the retained artifact-backed aggregate moved to 99/104: a single solve is still an anecdote, and any configuration recommendation that comes from a single solve is unsafe to promote.
+**Why:** the v1 sweep produced a single solve on XBEN-061 with a `handoff,no-hiw,no-evidence` combo that looked like a generalisable winning configuration. The v2 sweep ran the same combo against the same challenge as a regression test the next afternoon. **It failed.** The v1 solve was noise inside a 20–40% per-attempt success rate, not a signal worth defaulting on. This remains the methodology lesson even after the retained artifact-backed aggregate moved to 103/104: a single solve is still an anecdote, and any configuration recommendation that comes from a single solve is unsafe to promote.
 
 **Deliverables:**
 
