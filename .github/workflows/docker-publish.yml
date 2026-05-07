@@ -29,23 +29,24 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Log in to GHCR
-        # The image is published under the personal `peaktwilight` namespace
-        # (`ghcr.io/peaktwilight/pwnkit`). The default `GITHUB_TOKEN` is scoped
-        # to the `PwnKit-Labs` org and cannot push to a personal-account
-        # namespace, so we authenticate with a personal access token
-        # (`write:packages`) supplied via the `GHCR_PEAKTWILIGHT_TOKEN`
-        # repository secret. See PR description for setup instructions.
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
-          username: peaktwilight
-          password: ${{ secrets.GHCR_PEAKTWILIGHT_TOKEN }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image name
+        id: image
+        run: |
+          set -euo pipefail
+          OWNER="$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')"
+          echo "name=ghcr.io/${OWNER}/pwnkit" >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/peaktwilight/pwnkit
+          images: ${{ steps.image.outputs.name }}
           tags: |
             type=raw,value=latest,enable={{is_default_branch}}
             type=raw,value=latest,enable=${{ github.event_name == 'workflow_dispatch' }}
@@ -55,7 +56,7 @@ jobs:
           labels: |
             org.opencontainers.image.title=pwnkit
             org.opencontainers.image.description=AI-powered agentic security scanner
-            org.opencontainers.image.source=https://github.com/peaktwilight/pwnkit
+            org.opencontainers.image.source=https://github.com/PwnKit-Labs/pwnkit
             org.opencontainers.image.licenses=Apache-2.0
 
       - name: Build and push
