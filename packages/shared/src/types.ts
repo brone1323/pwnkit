@@ -70,6 +70,16 @@ export interface ScanConfig {
    * before the agent boots; out-of-scope target = hard exit.
    */
   scopeFile?: string;
+  /**
+   * Per-host token-bucket rate-limit specification (#214). Accepts a
+   * plain rps (`"5"` / `"10:25"` for rps:burst) or a comma-separated
+   * mixture of per-host overrides plus a default
+   * (`"api.example.com=5,*.example.com=3:6,2"`). When unset, scan
+   * applies a conservative 5 rps default; set to disable
+   * (semantically: `"0"` is rejected as invalid — a missing flag is
+   * the way to disable, when we add an opt-out).
+   */
+  rateLimit?: string;
 }
 
 // ── Attack Templates ──

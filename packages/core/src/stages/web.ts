@@ -1,5 +1,26 @@
 import { randomUUID } from "node:crypto";
-import type { AttackResult, AttackOutcome, Finding, ScanContext, TargetInfo } from "@pwnkit/shared";
+import type { AttackResult, AttackOutcome, Finding, ScanConfig, ScanContext, TargetInfo } from "@pwnkit/shared";
+import { RateLimiter, parseRateLimitFlag } from "../scope/rate-limit.js";
+
+/**
+ * Per-scan rate-limiter cache (#214). Keyed on ScanConfig identity so
+ * every `requestUrl` call inside a single scan shares one set of
+ * per-host buckets — critical for 429 cool-off propagation across
+ * baseline checks, CORS probes, and sensitive-path scans, all of
+ * which hit the same target host.
+ *
+ * Default 5 rps when `config.rateLimit` is unset, matching the issue's
+ * "default conservative" guidance and the agentic-scanner default.
+ */
+const RATE_LIMITER_CACHE = new WeakMap<ScanConfig, RateLimiter>();
+function getStageRateLimiter(config: ScanConfig): RateLimiter {
+  let rl = RATE_LIMITER_CACHE.get(config);
+  if (!rl) {
+    rl = new RateLimiter(parseRateLimitFlag(config.rateLimit ?? "", 5));
+    RATE_LIMITER_CACHE.set(config, rl);
+  }
+  return rl;
+}
 
 interface WebProbeResponse {
   url: string;
@@ -25,6 +46,7 @@ export async function runWebDiscoveryProbe(
       Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
     },
     timeout: ctx.config.timeout,
+    rateLimiter: getStageRateLimiter(ctx.config),
   });
 
   return {
@@ -45,6 +67,7 @@ export async function runBaselineWebChecks(ctx: ScanContext): Promise<WebCheckRe
       Accept: "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
     },
     timeout: ctx.config.timeout,
+    rateLimiter: getStageRateLimiter(ctx.config),
   });
 
   results.push(
@@ -110,12 +133,14 @@ async function runCorsCheck(
       method: "OPTIONS",
       headers,
       timeout: ctx.config.timeout,
+      rateLimiter: getStageRateLimiter(ctx.config),
     });
   } catch {
     response = await requestUrl(ctx.config.target, {
       method: "GET",
       headers: { Origin: EVIL_ORIGIN },
       timeout: ctx.config.timeout,
+      rateLimiter: getStageRateLimiter(ctx.config),
     });
   }
 
@@ -199,6 +224,7 @@ async function runSensitivePathChecks(ctx: ScanContext): Promise<WebCheckResult>
         method: "GET",
         headers: { Accept: "*/*" },
         timeout: ctx.config.timeout,
+        rateLimiter: getStageRateLimiter(ctx.config),
       });
 
       const contentType = response.headers["content-type"]?.toLowerCase() ?? "";
@@ -332,6 +358,8 @@ async function requestUrl(
     method: string;
     headers?: Record<string, string>;
     timeout?: number;
+    /** Optional shared rate limiter; threaded through from ScanContext. */
+    rateLimiter?: RateLimiter;
   },
 ): Promise<WebProbeResponse> {
   const start = Date.now();
@@ -339,12 +367,15 @@ async function requestUrl(
   const timer = setTimeout(() => controller.abort(), options.timeout ?? 30_000);
 
   try {
+    // #214: pace per-host before each baseline / CORS / sensitive-path probe.
+    if (options.rateLimiter) await options.rateLimiter.acquire(url);
     const response = await fetch(url, {
       method: options.method,
       headers: options.headers,
       redirect: "manual",
       signal: controller.signal,
     });
+    if (options.rateLimiter) options.rateLimiter.noteResponse(url, response);
 
     const body = await response.text();
     const headers: Record<string, string> = {};

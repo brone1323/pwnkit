@@ -1246,6 +1246,10 @@ export class ToolExecutor {
     const authHeaders = buildAuthHeaders(this.ctx.authConfig);
     const headers = { ...authHeaders, ...(args.headers as Record<string, string>) ?? {} };
 
+    // Per-host rate limit (#214). Acquire token BEFORE the network call;
+    // park the host bucket on 429 via `noteResponse` AFTER the response.
+    if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(url);
+
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 30_000);
 
@@ -1258,6 +1262,7 @@ export class ToolExecutor {
         redirect: "manual",
       });
 
+      if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(url, res);
       clearTimeout(timer);
       const text = await res.text();
       const output = {
@@ -1453,12 +1458,15 @@ export class ToolExecutor {
 
       try {
         const crawlAuthHeaders = buildAuthHeaders(this.ctx.authConfig);
+        // #214: per-host rate limit, acquire before each crawl fetch.
+        if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(normalizedUrl);
         const res = await fetch(normalizedUrl, {
           method: "GET",
           signal: controller.signal,
           redirect: "follow",
           headers: { "User-Agent": "pwnkit-crawler/1.0", ...crawlAuthHeaders },
         });
+        if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(normalizedUrl, res);
         clearTimeout(timer);
 
         // Redirect-to-out-of-scope refusal (DoD line item). `redirect:
@@ -1581,7 +1589,10 @@ export class ToolExecutor {
     const timer = setTimeout(() => controller.abort(), 10_000);
 
     try {
+      // #214: rate-limit the form submission before dispatching.
+      if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(fetchUrl);
       const res = await fetch(fetchUrl, fetchOpts);
+      if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(fetchUrl, res);
       clearTimeout(timer);
       const text = await res.text();
 
@@ -2276,10 +2287,14 @@ export class ToolExecutor {
     const timer = setTimeout(() => controller.abort(), 15_000);
 
     try {
+      // #214: rate-limit DDG search; share a bucket with any other
+      // duckduckgo.com requests this scan happens to make.
+      if (this.ctx.rateLimiter) await this.ctx.rateLimiter.acquire(url);
       const res = await fetch(url, {
         headers: { "User-Agent": "pwnkit/1.0" },
         signal: controller.signal,
       });
+      if (this.ctx.rateLimiter) this.ctx.rateLimiter.noteResponse(url, res);
       clearTimeout(timer);
 
       if (!res.ok) {
@@ -2375,6 +2390,7 @@ export class ToolExecutor {
     // Build an auth-aware fetch wrapper that reuses the scan's credentials.
     const authHeaders = buildAuthHeaders(this.ctx.authConfig);
     const scope = this.ctx.scope;
+    const rateLimiter = this.ctx.rateLimiter;
     const wrappedFetch: FetchLike = async (url, init) => {
       // Scope check (pwnkit#215). runWpFingerprint walks the WP plugin
       // namespace by appending paths to `target`; under same-origin that
@@ -2391,6 +2407,10 @@ export class ToolExecutor {
         ...authHeaders,
         ...(init?.headers ?? {}),
       };
+      // #214: each plugin/version probe goes through the per-host bucket.
+      // wp_fingerprint can fan out to dozens of probes against a single
+      // host — exactly the workload the limiter exists to pace.
+      if (rateLimiter) await rateLimiter.acquire(url);
       const res = await fetch(url, {
         method: init?.method ?? "GET",
         headers,
@@ -2410,6 +2430,7 @@ export class ToolExecutor {
           );
         }
       }
+      if (rateLimiter) rateLimiter.noteResponse(url, res);
       return {
         ok: res.ok,
         status: res.status,

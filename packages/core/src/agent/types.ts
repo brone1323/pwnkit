@@ -1,5 +1,6 @@
 import type { Finding, AttackResult, TargetInfo, AuthConfig } from "@pwnkit/shared";
 import type { ScopePolicy } from "../scope/scope.js";
+import type { RateLimiter } from "../scope/rate-limit.js";
 
 // ── Agent Roles ──
 
@@ -65,6 +66,14 @@ export interface AgentConfig {
    * this; scope is additive, never substitutive.
    */
   scope?: ScopePolicy;
+  /**
+   * Per-host rate limiter for outbound HTTP. When set, every fetch
+   * chokepoint (`http_request`, `crawl`, `submit_form`, `web_search`,
+   * `wp_fingerprint`) acquires a token before the network call and
+   * pipes the response back via `noteResponse` so 429 honours.
+   * See `scope/rate-limit.ts` (#214).
+   */
+  rateLimiter?: RateLimiter;
 }
 
 // ── Agent State ──
@@ -96,4 +105,6 @@ export interface ToolContext {
    * with `ToolResult.error`.
    */
   scope?: ScopePolicy;
+  /** Per-host rate limiter; see AgentConfig.rateLimiter. */
+  rateLimiter?: RateLimiter;
 }

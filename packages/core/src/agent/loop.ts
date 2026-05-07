@@ -40,6 +40,7 @@ export async function runAgentLoop(opts: AgentLoopOptions): Promise<AgentState> 
     scopePath: config.scopePath,
     persistFindings: db !== null,
     scope: config.scope,
+    rateLimiter: config.rateLimiter,
   };
 
   const executor = new ToolExecutor(toolCtx, db);

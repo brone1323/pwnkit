@@ -88,6 +88,11 @@ export interface NativeAgentConfig {
   /** Authentication credentials to inject into tool context */
   authConfig?: AuthConfig;
   /**
+   * Per-host token-bucket rate limiter (#214). Threaded into the
+   * ToolContext so every fetch chokepoint paces against it.
+   */
+  rateLimiter?: import("../scope/rate-limit.js").RateLimiter;
+  /**
    * Hard cost ceiling in USD. When set, the loop checks the running
    * estimated cost after every tool-call turn and aborts cleanly when
    * the ceiling is exceeded. Partial findings collected so far are
@@ -186,6 +191,7 @@ export async function runNativeAgentLoop(
     persistFindings: db !== null,
     authConfig: config.authConfig,
     scope: config.scope,
+    rateLimiter: config.rateLimiter,
   };
 
   const executor = new ToolExecutor(toolCtx, db);
