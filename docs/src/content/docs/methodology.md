@@ -113,6 +113,84 @@ margin = (z * sqrt(p(1-p)/n + z²/(4n²))) / (1 + z²/n)
 CI95   = [center - margin, center + margin]
 ```
 
+## Single-config vs aggregate-of-configs
+
+The three methodologies above all assume one configuration — same model,
+same solver, same feature stack — applied to each challenge. There is a
+second axis that matters once an evaluator runs the same benchmark under
+*multiple* configurations (different models, different solver
+strategies, different prompt variants) and wants to roll those
+attempts up into a single headline number.
+
+There are two natural ways to do that:
+
+- **Single-config** — pick one configuration, run it once per challenge,
+  report the result. Whatever number comes out is the score for *that
+  configuration*. If you change models, you get a different cohort and
+  a different number.
+- **Aggregate (best-of-N union over configs)** — run the benchmark under
+  K different configurations (often dozens of traces per challenge in
+  total) and count a challenge as solved if *any* configuration ever
+  flagged it. The headline is the union; per-attempt cost is summed
+  across configs.
+
+Both are honest measurements. They answer different questions:
+
+- "What can I expect out of this single setup on a fresh run?" — that's
+  the single-config number, and it's what most buyers are actually
+  asking.
+- "What is the ceiling of what this stack of agents and models, taken
+  together, can solve?" — that's the aggregate number, and it is the
+  more impressive headline.
+
+A single-config 80% and an aggregate 97% are not comparable; they answer
+different questions on the same benchmark. Treating them as if they
+were is the trap.
+
+### Why pwnkit reports two numbers on the same benchmark
+
+For XBOW, pwnkit publishes both:
+
+- A **per-model cohort** number: 93/95 = 97.9% on the gpt-5.4 cohort —
+  the single-config single-shot solve rate for the model we currently
+  run in CI. This is the number that answers "how does pwnkit perform
+  next Tuesday on this exact model."
+- A **retained artifact-backed aggregate** number: 103/104 = 99.0% — the
+  union of every flag that has been independently re-verified from a
+  retained CI artifact within the live retention window. This is the
+  ceiling claim, and the one we can re-prove from disk.
+
+The two numbers exist because they are answering different questions
+about the same raw data. We surface both so a reader picking the lower
+one for a head-to-head comparison can do so without needing to ask.
+
+### Why $/flag is a useful comparison axis when published
+
+A solve-rate number with no cost attached invites the reasonable
+question "how much compute did that take?" — an agent that hits 95% at
+$50 a run is not the same product as an agent that hits 95% at $0.50 a
+run, even when the percentages match.
+
+`$/flag` (or equivalently, average `$/run` divided by the per-run solve
+rate) is the most useful single-number cost axis for an autonomous
+pentest agent because:
+
+- It is normalized to outcomes, not effort. Two configs that spend the
+  same average compute but solve at different rates have different
+  `$/flag`.
+- It lets a buyer convert a benchmark percentage into a budget. A
+  100-target external scan at `$X/flag` has a knowable expected cost.
+- It is the natural denominator when comparing best-of-N aggregates: an
+  aggregate that hits 99% by spending 10× the compute of a single-config
+  97% has a worse `$/flag`, and that fact only shows up when cost is
+  reported.
+
+pwnkit publishes `$/flag` (currently $5.20/flag at $0.48/run on the
+gpt-5.4 XBOW cohort) on the [benchmark page](/benchmark/) alongside the
+solve-rate numbers, and treats it as a first-class comparison axis. We
+encourage other evaluators to do the same; benchmark numbers without a
+cost denominator are difficult to compare across stacks.
+
 ## What pwnkit publishes
 
 pwnkit publishes the **per-attempt success rate** with its 95% Wilson
