@@ -32,12 +32,20 @@ import {
   registerIngestCommand,
   registerDiscloseCommand,
   registerVerifyCommand,
+  registerUpgradeCommand,
 } from "./commands/index.js";
 import { detectAndRoute } from "./routing.js";
 import { preloadBanner } from "./ui/banner.js";
+import { maybeNotifyUpdate } from "./utils/update-check.js";
 
 // Start loading cfonts in the background so it's ready when the banner prints
 void preloadBanner();
+
+// Fire-and-forget update check. Once-per-day GH API call; no-ops in CI,
+// pipes, or when PWNKIT_NO_UPDATE_CHECK / PWNKIT_OFFLINE is set. Never
+// blocks the actual command — we explicitly `void` the promise so it
+// runs concurrently with whatever subcommand the user invoked.
+void maybeNotifyUpdate(VERSION);
 
 const program = new Command();
 
@@ -64,6 +72,7 @@ registerEvalCommand(program);
 registerIngestCommand(program);
 registerDiscloseCommand(program);
 registerVerifyCommand(program);
+registerUpgradeCommand(program);
 
 // ── Interactive menu ──
 //
@@ -99,7 +108,7 @@ async function showInteractiveMenu(): Promise<void> {
 
 // ── Entry point ──
 const userArgs = process.argv.slice(2);
-const knownCommands = ["scan", "resume", "replay", "history", "findings", "review", "audit", "doctor", "dashboard", "tui", "watch", "orchestrate", "db", "mcp-server", "eval", "ingest", "disclose", "verify", "help"];
+const knownCommands = ["scan", "resume", "replay", "history", "findings", "review", "audit", "doctor", "dashboard", "tui", "watch", "orchestrate", "db", "mcp-server", "eval", "ingest", "disclose", "verify", "upgrade", "help"];
 
 if (userArgs.length === 0) {
   showInteractiveMenu().catch((err) => {

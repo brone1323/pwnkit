@@ -16,4 +16,5 @@ export { registerEvalCommand } from "./eval.js";
 export { registerIngestCommand } from "./ingest.js";
 export { registerDiscloseCommand } from "./disclose.js";
 export { registerVerifyCommand } from "./verify.js";
+export { registerUpgradeCommand } from "./upgrade.js";
 export { runUnified } from "./run.js";
