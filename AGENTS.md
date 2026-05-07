@@ -102,6 +102,24 @@ Subagent B's design from 2026-05-06 session:
 
 The bash subprocess egress is an acknowledged gap (subprocesses bypass node's fetch). Real fix is egress-proxy on runner; mitigation in the meantime is the URL-extraction pre-flight.
 
+## Generic-scanner-traffic suppression (pwnkit#217)
+
+When `--scope` is loaded, the engagement is presumed to be a coordinated-disclosure run, and most venue policies forbid the named generic scanners because they fingerprint themselves on the wire (`User-Agent: sqlmap/1.7`, `User-Agent: gobuster/3.6`, etc.). `bash` (`shellExec`) refuses to spawn:
+
+- `sqlmap` (and `python -m sqlmap`)
+- `nikto`
+- `gobuster`
+- `dirb`
+- `wfuzz` (and `python -m wfuzz`)
+- `ffuf`
+- `nmap -sV` and `nmap -A` (service / OS fingerprinting)
+
+Plain `nmap -p ... host` is allowed — port scanning is policy-orthogonal. Detection runs against every pipeline / `&&` / `||` / `;` segment and recognises bare, absolute, relative, env-prefixed, and quoted invocations (`"sqlmap"`, `/usr/bin/sqlmap`, `./sqlmap`, `HTTP_PROXY=… sqlmap`, `echo … | sqlmap`).
+
+`--allow-scanners` overrides the gate for engagements that explicitly permit those tools. The flag has no effect unless `--scope` is also set (no scope = no gate).
+
+The shell-first agent does NOT need these binaries to find vulnerabilities — `http_request` and `crawl` give it the fine-grained probe surface most venue policies welcome.
+
 ## Repo conventions
 
 - `packages/core` — agent loop, tools, runtime, scanner, disclose, db

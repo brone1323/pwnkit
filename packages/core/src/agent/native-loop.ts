@@ -108,6 +108,11 @@ export interface NativeAgentConfig {
    * TOP of this; scope is additive, never substitutive.
    */
   scope?: ScopePolicy;
+  /**
+   * Generic-scanner-traffic suppression opt-out (pwnkit#217). Defaults
+   * to false. Only consulted when `scope` is set.
+   */
+  allowScanners?: boolean;
 }
 
 export interface NativeAgentLoopOptions {
@@ -192,6 +197,7 @@ export async function runNativeAgentLoop(
     authConfig: config.authConfig,
     scope: config.scope,
     rateLimiter: config.rateLimiter,
+    allowScanners: config.allowScanners,
   };
 
   const executor = new ToolExecutor(toolCtx, db);

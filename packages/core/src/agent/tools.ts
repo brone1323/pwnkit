@@ -16,6 +16,7 @@ import type {
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.js";
 import type { ScopePolicy } from "../scope/scope.js";
 import { extractUrls } from "../scope/scope.js";
+import { detectScannerBinary } from "../scope/scanner-binaries.js";
 import { sendPrompt, extractResponseText } from "../http.js";
 import { buildAuthHeaders } from "./prompts.js";
 import type { pwnkitDB } from "@pwnkit/db";
@@ -1637,6 +1638,26 @@ export class ToolExecutor {
             success: false,
             output: null,
             error: `bash refused: command references out-of-scope URL '${url}' (${verdict.reason})`,
+          };
+        }
+      }
+
+      // Generic-scanner-traffic suppression (pwnkit#217). When scope is
+      // loaded the engagement is presumed to be a coordinated-disclosure
+      // run, and most venue policies explicitly forbid the named
+      // generic scanners (sqlmap/nikto/gobuster/…) because they
+      // fingerprint themselves on the wire. The shell-first agent has
+      // `http_request` + `crawl` for the actual probing it needs to do.
+      // `--allow-scanners` (threaded down as `ctx.allowScanners`)
+      // overrides this gate for engagements that explicitly permit
+      // those tools.
+      if (!this.ctx.allowScanners) {
+        const hit = detectScannerBinary(command);
+        if (hit) {
+          return {
+            success: false,
+            output: null,
+            error: `bash refused: ${hit.reason}`,
           };
         }
       }

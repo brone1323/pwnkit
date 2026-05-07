@@ -821,3 +821,145 @@ describe("ToolExecutor — scope enforcement (pwnkit#215)", () => {
     expect(result.error).toMatch(/evil\.com/);
   });
 });
+
+// pwnkit#217. Generic-scanner-traffic suppression. When scope is loaded
+// the agent must refuse `sqlmap`, `nikto`, `gobuster`, `dirb`, `wfuzz`,
+// `ffuf`, and the noisy nmap modes (`-sV`, `-A`). The unit tests for
+// the detector live in `scope/scanner-binaries.test.ts`; these tests
+// verify the wiring at the `ToolExecutor` boundary — i.e. that the
+// scope-loaded gate fires, the `--allow-scanners` opt-out (threaded
+// in as `ctx.allowScanners`) actually overrides, and that pass-through
+// is preserved when scope is absent.
+
+describe("ToolExecutor — scanner suppression (pwnkit#217)", () => {
+  async function makeCtx(opts: { withScope: boolean; allowScanners?: boolean }) {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = opts.withScope
+      ? ScopePolicy.fromJson({ in_scope: ["*.example.com"] })
+      : undefined;
+    const ctx: ToolContext = {
+      target: "https://api.example.com",
+      scanId: `test-scanner-${Math.random().toString(36).slice(2)}`,
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+      allowScanners: opts.allowScanners,
+    };
+    return ctx;
+  }
+
+  const blacklistedInvocations: Array<{ label: string; command: string; binary: string }> = [
+    { label: "sqlmap", command: "sqlmap -u https://api.example.com/?id=1 --batch", binary: "sqlmap" },
+    { label: "nikto", command: "nikto -h https://api.example.com", binary: "nikto" },
+    { label: "gobuster", command: "gobuster dir -u https://api.example.com -w wordlist.txt", binary: "gobuster" },
+    { label: "dirb", command: "dirb https://api.example.com", binary: "dirb" },
+    { label: "wfuzz", command: "wfuzz -c -z file,wordlist.txt https://api.example.com/FUZZ", binary: "wfuzz" },
+    { label: "ffuf", command: "ffuf -u https://api.example.com/FUZZ -w wordlist.txt", binary: "ffuf" },
+    { label: "nmap -sV", command: "nmap -sV api.example.com", binary: "nmap -sV" },
+    { label: "nmap -A", command: "nmap -A api.example.com", binary: "nmap -A" },
+  ];
+
+  for (const { label, command, binary } of blacklistedInvocations) {
+    it(`bash refuses ${label} when scope is loaded`, async () => {
+      const ctx = await makeCtx({ withScope: true });
+      const ex = new ToolExecutor(ctx, null);
+      const result = await ex.execute({ name: "bash", arguments: { command } });
+      expect(result.success).toBe(false);
+      expect(result.error).toMatch(/bash refused/);
+      expect(result.error).toContain(binary);
+    });
+  }
+
+  it("bash passes scanner commands through when no scope is loaded", async () => {
+    // Without scope, the gate is silent — the command attempts to run.
+    // We can't actually exec sqlmap in a unit test (and shouldn't), but
+    // we can verify the failure mode is NOT the scanner gate. If the
+    // binary is missing the bash exec returns `success:false` with an
+    // exit-code or "command not found" error — anything other than the
+    // "bash refused: 'sqlmap' is a generic vulnerability scanner"
+    // message is acceptable here.
+    const ctx = await makeCtx({ withScope: false });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "sqlmap --version" },
+    });
+    if (!result.success) {
+      expect(result.error).not.toMatch(/generic vulnerability scanner/);
+    }
+  });
+
+  it("bash passes scanner commands through when allowScanners=true even with scope", async () => {
+    const ctx = await makeCtx({ withScope: true, allowScanners: true });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "sqlmap --version" },
+    });
+    if (!result.success) {
+      // The gate is bypassed — failure must come from somewhere else.
+      expect(result.error).not.toMatch(/generic vulnerability scanner/);
+      expect(result.error).not.toMatch(/bash refused: 'sqlmap'/);
+    }
+  });
+
+  it("bash still allows non-scanner commands when scope is loaded", async () => {
+    // bash availability varies across CI / dev platforms (Windows boxes
+    // running these tests don't ship bash by default). What we can pin
+    // platform-independently is that the failure mode for `echo hello`
+    // when scope is loaded is NOT the scanner gate. If bash IS available
+    // the command runs and we confirm "hello" in the output; if bash
+    // isn't, the failure must come from spawn / exec, not the gate.
+    const ctx = await makeCtx({ withScope: true });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "echo hello" },
+    });
+    if (result.success) {
+      expect(String(result.output)).toContain("hello");
+    } else {
+      expect(result.error).not.toMatch(/generic vulnerability scanner/);
+      expect(result.error).not.toMatch(/generic-scanner/);
+    }
+  });
+
+  it("bash still allows plain `nmap` (port scan) when scope is loaded", async () => {
+    // nmap with no fingerprint flags is allowed — this is the carve-out
+    // documented in the issue body. The actual exec will fail in CI if
+    // nmap isn't installed, but the gate must NOT be the failure mode.
+    const ctx = await makeCtx({ withScope: true });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "nmap --version" },
+    });
+    if (!result.success) {
+      expect(result.error).not.toMatch(/generic-scanner/);
+      expect(result.error).not.toMatch(/bash refused: 'nmap/);
+    }
+  });
+
+  it("bash refuses `python3 -m sqlmap` (module form)", async () => {
+    const ctx = await makeCtx({ withScope: true });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "python3 -m sqlmap -u https://api.example.com/" },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toContain("python -m sqlmap");
+  });
+
+  it("the scanner-gate error names --allow-scanners as the override", async () => {
+    const ctx = await makeCtx({ withScope: true });
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "ffuf -u https://api.example.com/FUZZ -w w.txt" },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/--allow-scanners/);
+  });
+});

@@ -80,6 +80,15 @@ export interface ScanConfig {
    * the way to disable, when we add an opt-out).
    */
   rateLimit?: string;
+  /**
+   * Generic-scanner-traffic suppression opt-out (pwnkit#217). Default
+   * `false`. When scope is loaded the agent refuses to spawn `sqlmap`,
+   * `nikto`, `gobuster`, `dirb`, `wfuzz`, `ffuf`, and `nmap -sV` /
+   * `nmap -A`. Setting this to `true` disables that gate (use only
+   * when the engagement explicitly permits generic-scanner traffic).
+   * Has no effect unless `scopeFile` is also set.
+   */
+  allowScanners?: boolean;
 }
 
 // ── Attack Templates ──
