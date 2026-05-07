@@ -1,4 +1,5 @@
 import type { Finding, AttackResult, TargetInfo, AuthConfig } from "@pwnkit/shared";
+import type { ScopePolicy } from "../scope/scope.js";
 
 // ── Agent Roles ──
 
@@ -55,6 +56,15 @@ export interface AgentConfig {
   attachTargetToolsMcp?: boolean;
   dbPath?: string;
   authConfig?: AuthConfig;
+  /**
+   * Programmatic engagement scope (pwnkit#215). When set, every URL the
+   * agent touches — http_request, submit_form, browser navigate, crawl,
+   * shellExec URL extraction, wp_fingerprint, web_search inputs — is
+   * checked against this policy and out-of-scope URLs return as
+   * `ToolResult.error`. Same-origin checks remain enforced ON TOP of
+   * this; scope is additive, never substitutive.
+   */
+  scope?: ScopePolicy;
 }
 
 // ── Agent State ──
@@ -80,4 +90,10 @@ export interface ToolContext {
   scopePath?: string;
   persistFindings?: boolean;
   authConfig?: AuthConfig;
+  /**
+   * See `AgentConfig.scope`. When present, every URL-touching tool
+   * runs `policy.match()` before egress and refuses out-of-scope URLs
+   * with `ToolResult.error`.
+   */
+  scope?: ScopePolicy;
 }

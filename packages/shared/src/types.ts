@@ -61,6 +61,15 @@ export interface ScanConfig {
    * undefined → no ceiling, behavior unchanged.
    */
   costCeilingUsd?: number;
+  /**
+   * Path to a JSON scope file (pwnkit#215). Format: `{ "in_scope": [...],
+   * "out_of_scope": [...] }` with rules of the form `host`, `*.domain`,
+   * or `cidr/prefix`. When set, every URL the agent touches is checked
+   * against this policy and out-of-scope URLs return as
+   * `ToolResult.error`. The CLI pre-validates `--target` is in scope
+   * before the agent boots; out-of-scope target = hard exit.
+   */
+  scopeFile?: string;
 }
 
 // ── Attack Templates ──

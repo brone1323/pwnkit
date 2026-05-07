@@ -14,6 +14,8 @@ import type {
   VerificationBehaviorStep,
 } from "@pwnkit/shared";
 import type { ToolDefinition, ToolCall, ToolResult, ToolContext } from "./types.js";
+import type { ScopePolicy } from "../scope/scope.js";
+import { extractUrls } from "../scope/scope.js";
 import { sendPrompt, extractResponseText } from "../http.js";
 import { buildAuthHeaders } from "./prompts.js";
 import type { pwnkitDB } from "@pwnkit/db";
@@ -842,7 +844,7 @@ function isLocalHostname(hostname: string): boolean {
   return normalized === "localhost" || normalized.endsWith(".localhost");
 }
 
-function validateTargetUrl(baseUrl: string, requestedUrl: string): string {
+function validateTargetUrl(baseUrl: string, requestedUrl: string, scope?: ScopePolicy): string {
   const base = new URL(baseUrl);
   const candidate = new URL(requestedUrl, base);
 
@@ -861,6 +863,17 @@ function validateTargetUrl(baseUrl: string, requestedUrl: string): string {
 
   if (candidateIsLocal && !baseIsLocal) {
     throw new Error(`Local/internal http_request blocked: ${candidate.hostname}`);
+  }
+
+  // Programmatic scope enforcement (pwnkit#215). Additive on top of the
+  // existing same-origin / private-network guards above — scope cannot
+  // loosen those, only further restrict. When `scope` is undefined the
+  // behaviour is identical to the pre-#215 implementation.
+  if (scope) {
+    const verdict = scope.match(candidate.toString());
+    if (!verdict.allowed) {
+      throw new Error(`Scope violation blocked: ${verdict.reason}`);
+    }
   }
 
   return candidate.toString();
@@ -1227,7 +1240,7 @@ export class ToolExecutor {
   }
 
   private async httpRequest(args: Record<string, unknown>): Promise<ToolResult> {
-    const url = validateTargetUrl(this.ctx.target, args.url as string);
+    const url = validateTargetUrl(this.ctx.target, args.url as string, this.ctx.scope);
     const method = (args.method as string) ?? "POST";
     const body = args.body as string | undefined;
     const authHeaders = buildAuthHeaders(this.ctx.authConfig);
@@ -1392,6 +1405,13 @@ export class ToolExecutor {
       return { success: false, output: null, error: `Unsupported protocol: ${resolved.protocol}` };
     }
 
+    if (this.ctx.scope) {
+      const verdict = this.ctx.scope.match(resolved.toString());
+      if (!verdict.allowed) {
+        return { success: false, output: null, error: `crawl refused: ${verdict.reason}` };
+      }
+    }
+
     const originHost = resolved.hostname;
     const visited = new Set<string>();
     const results: Array<{
@@ -1419,6 +1439,15 @@ export class ToolExecutor {
       } catch { continue; }
       if (parsed.hostname !== originHost) continue;
 
+      // Scope enforcement (pwnkit#215). Same-origin already restricts the
+      // crawl to one host, but if that host is out of scope we still must
+      // refuse — operators sometimes scan dev.example.com against a scope
+      // that only allows prod.example.com.
+      if (this.ctx.scope) {
+        const verdict = this.ctx.scope.match(normalizedUrl);
+        if (!verdict.allowed) continue;
+      }
+
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -1431,6 +1460,14 @@ export class ToolExecutor {
           headers: { "User-Agent": "pwnkit-crawler/1.0", ...crawlAuthHeaders },
         });
         clearTimeout(timer);
+
+        // Redirect-to-out-of-scope refusal (DoD line item). `redirect:
+        // "follow"` means res.url is the FINAL URL after any 3xx hops;
+        // we drop the page if we ended up somewhere off-scope.
+        if (this.ctx.scope) {
+          const finalVerdict = this.ctx.scope.match(res.url || normalizedUrl);
+          if (!finalVerdict.allowed) continue;
+        }
 
         const contentType = res.headers.get("content-type") ?? "";
         if (!contentType.includes("html") && !contentType.includes("text")) {
@@ -1509,7 +1546,7 @@ export class ToolExecutor {
     // Validate URL against same-origin policy (same as http_request)
     let resolved: URL;
     try {
-      const validated = validateTargetUrl(this.ctx.target, rawUrl);
+      const validated = validateTargetUrl(this.ctx.target, rawUrl, this.ctx.scope);
       resolved = new URL(validated);
     } catch (err) {
       return { success: false, output: null, error: err instanceof Error ? err.message : `Invalid URL: ${rawUrl}` };
@@ -1571,6 +1608,27 @@ export class ToolExecutor {
     const command = (args.command as string)?.trim();
     if (!command) {
       return { success: false, output: null, error: "Command is required" };
+    }
+
+    // Programmatic scope pre-flight (pwnkit#215). The bash subprocess can
+    // reach out to anywhere — we don't have an egress proxy yet (issue
+    // is acknowledged in the DoD), so the best we can do is grep the
+    // command for obvious URLs and refuse if any are out of scope. This
+    // catches the common case (`curl https://evil.com/x`); a cleverer
+    // agent that hides the URL behind base64 / DNS / a temp file is NOT
+    // caught here, and that gap is documented as a follow-up.
+    if (this.ctx.scope) {
+      const urls = extractUrls(command);
+      for (const url of urls) {
+        const verdict = this.ctx.scope.match(url);
+        if (!verdict.allowed) {
+          return {
+            success: false,
+            output: null,
+            error: `bash refused: command references out-of-scope URL '${url}' (${verdict.reason})`,
+          };
+        }
+      }
     }
 
     // Per-call requested timeout (caller arg) is clamped against the wallclock
@@ -1685,13 +1743,31 @@ export class ToolExecutor {
           // Validate against same-origin policy (same as http_request/submit_form)
           let url: string;
           try {
-            url = validateTargetUrl(this.ctx.target, rawNavUrl);
+            url = validateTargetUrl(this.ctx.target, rawNavUrl, this.ctx.scope);
           } catch (err) {
             return { success: false, output: null, error: err instanceof Error ? err.message : `Invalid URL: ${rawNavUrl}` };
           }
           const response = await page.goto(url, { timeout: ACTION_TIMEOUT, waitUntil: "domcontentloaded" });
+          // Post-navigation scope re-check (pwnkit#218 review).
+          // `validateTargetUrl` only vets the requested URL; `page.goto`
+          // follows redirects, so an in-scope URL that 302s off-origin
+          // leaves the browser sitting on a foreign page that subsequent
+          // click/content/evaluate calls would then operate on. Compare
+          // the post-navigation URL against scope and refuse if it
+          // drifted off-host before returning success.
+          const finalUrl = page.url();
+          if (this.ctx.scope && finalUrl) {
+            const verdict = this.ctx.scope.match(finalUrl);
+            if (!verdict.allowed) {
+              return {
+                success: false,
+                output: null,
+                error: `navigate refused: redirected to out-of-scope URL '${finalUrl}' (${verdict.reason})`,
+              };
+            }
+          }
           result = {
-            url: page.url(),
+            url: finalUrl,
             status: response?.status() ?? null,
             title: await page.title(),
             dialogs: [...this._browserDialogs],
@@ -1813,6 +1889,10 @@ export class ToolExecutor {
         .map((n) => TOOL_DEFINITIONS[n])
         .filter((t): t is ToolDefinition => t !== undefined);
 
+      // pwnkit#218 review: propagate scope + auth to the spawned loop so
+      // the sub-agent's bash/http_request gates use the same policy as
+      // the parent. Without this, a parent scan locked to in-scope hosts
+      // could spawn a child that hits arbitrary URLs via bash/curl.
       const state = await runNativeAgentLoop({
         config: {
           role: "attack",
@@ -1821,6 +1901,8 @@ export class ToolExecutor {
           maxTurns,
           target: this.ctx.target,
           scanId: this.ctx.scanId + "-sub",
+          scope: this.ctx.scope,
+          authConfig: this.ctx.authConfig,
         },
         runtime: rt,
         db: null,
@@ -2288,11 +2370,23 @@ export class ToolExecutor {
     }
 
     // Same-origin enforcement: only probe the scan target.
-    const base = validateTargetUrl(this.ctx.target, this.ctx.target);
+    const base = validateTargetUrl(this.ctx.target, this.ctx.target, this.ctx.scope);
 
     // Build an auth-aware fetch wrapper that reuses the scan's credentials.
     const authHeaders = buildAuthHeaders(this.ctx.authConfig);
+    const scope = this.ctx.scope;
     const wrappedFetch: FetchLike = async (url, init) => {
+      // Scope check (pwnkit#215). runWpFingerprint walks the WP plugin
+      // namespace by appending paths to `target`; under same-origin that
+      // can't escape the host, but if the host itself is out-of-scope —
+      // e.g. operator passed --scope without including the WP target —
+      // we refuse here rather than fetching anyway.
+      if (scope) {
+        const verdict = scope.match(url);
+        if (!verdict.allowed) {
+          throw new Error(`wp_fingerprint scope violation: ${verdict.reason}`);
+        }
+      }
       const headers = {
         ...authHeaders,
         ...(init?.headers ?? {}),
@@ -2302,6 +2396,20 @@ export class ToolExecutor {
         headers,
         body: init?.body,
       });
+      // Post-redirect scope check (pwnkit#218 review). `fetch` follows
+      // redirects by default, so an in-scope WordPress endpoint that
+      // 302s to a foreign host would otherwise complete against the
+      // foreign target and the body would be returned to the caller.
+      // Re-validate the final `res.url` against scope and refuse if it
+      // drifted off-host.
+      if (scope && res.url && res.url !== url) {
+        const verdict = scope.match(res.url);
+        if (!verdict.allowed) {
+          throw new Error(
+            `wp_fingerprint refused: redirect to out-of-scope URL '${res.url}' (${verdict.reason})`,
+          );
+        }
+      }
       return {
         ok: res.ok,
         status: res.status,

@@ -59,6 +59,7 @@ export function registerScanCommand(program: Command): void {
     .option("--model <model>", "LLM model to use")
     .option("--repo <path>", "Source code path for white-box scanning (read code before attacking)")
     .option("--auth <json>", "Auth credentials as JSON string or path to JSON file (types: bearer, cookie, basic, header)")
+    .option("--scope <path>", "Path to a JSON scope file ({in_scope, out_of_scope} arrays of host / *.domain / cidr rules). Out-of-scope URLs return as ToolResult.error at every fetch site. See pwnkit#215.")
     .option("--api-spec <path>", "Path to OpenAPI 3.x / Swagger 2.0 spec file (JSON or YAML) for pre-loaded endpoint knowledge")
     .option("--export <target>", "Export findings to issue tracker (e.g. github:owner/repo)")
     .option("--race", "Enable best-of-N strategy racing: run multiple attack strategies in parallel", false)
@@ -173,6 +174,39 @@ export function registerScanCommand(program: Command): void {
         }
       }
 
+      // Validate --scope flag if provided. We intentionally fail HARD
+      // here rather than soft-warning: a coordinated-disclosure scan with
+      // a missing or malformed scope file is exactly the configuration
+      // error that should block the scan from starting (see pwnkit#215).
+      let scopeFile: string | undefined;
+      if (opts.scope) {
+        scopeFile = String(opts.scope);
+        if (!existsSync(scopeFile)) {
+          console.error(chalk.red(`--scope: file not found: ${scopeFile}`));
+          process.exit(2);
+        }
+        // Pre-validate that the file parses and the target is in scope.
+        // We re-read inside the core runner anyway, but doing it here
+        // gives the operator a clear error before the LLM/runtime cost
+        // of starting a scan is incurred.
+        try {
+          const { loadScope } = await import("@pwnkit/core");
+          const policy = loadScope(scopeFile);
+          const verdict = policy.match(String(opts.target));
+          if (!verdict.allowed) {
+            console.error(
+              chalk.red(
+                `--target ${opts.target} is out of scope per ${scopeFile}: ${verdict.reason}`,
+              ),
+            );
+            process.exit(2);
+          }
+        } catch (err) {
+          console.error(chalk.red(err instanceof Error ? err.message : String(err)));
+          process.exit(2);
+        }
+      }
+
       // Resolve cost ceiling: --cost-ceiling flag wins over PWNKIT_COST_CEILING_USD env.
       let costCeilingUsd: number | undefined;
       const ceilingSource =
@@ -210,6 +244,7 @@ export function registerScanCommand(program: Command): void {
         egats: opts.egats as boolean | undefined,
         costCeilingUsd,
         tui: opts.tui as boolean,
+        scopeFile,
       });
     });
 }
