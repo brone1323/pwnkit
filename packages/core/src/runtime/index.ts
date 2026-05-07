@@ -12,6 +12,7 @@ export type {
 } from "./types.js";
 export { LlmApiRuntime } from "./llm-api.js";
 export { ProcessRuntime } from "./process.js";
+export { CliNativeRuntime } from "./cli-native.js";
 export { OpenRouterRuntime, DEFAULT_ENSEMBLE_MODELS } from "./openrouter.js";
 export type { OpenRouterConfig } from "./openrouter.js";
 export {
