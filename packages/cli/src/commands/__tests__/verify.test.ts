@@ -54,6 +54,7 @@ const verificationResultSchema = z.object({
       detail: z.string(),
     }),
   ),
+  artifacts: z.record(z.string()),
   summary: z.string(),
   error_reason: z.union([z.string(), z.null()]),
 });
@@ -90,6 +91,59 @@ function writeFinding(finding: Finding): string {
   const path = join(tmpRoot, "finding.json");
   writeFileSync(path, JSON.stringify(finding, null, 2), "utf8");
   return path;
+}
+
+function writeTestExportCli(): string {
+  const path = join(tmpRoot, "test-export-cli.mjs");
+  writeFileSync(
+    path,
+    `#!/usr/bin/env node
+import { mkdir, writeFile } from "node:fs/promises";
+import { dirname, resolve, sep } from "node:path";
+
+function parseArgs(argv) {
+  const out = {};
+  for (let i = 0; i < argv.length; i += 2) out[argv[i].slice(2)] = argv[i + 1];
+  return out;
+}
+function isInside(root, candidate) {
+  return candidate === root || candidate.startsWith(root + sep);
+}
+
+const args = parseArgs(process.argv.slice(2));
+const body = await fetch(new URL("/company/export", args.api)).then((r) => r.json());
+const root = resolve(args.output);
+await mkdir(root, { recursive: true });
+let blocked = false;
+for (const [name, content] of Object.entries(body.files || {})) {
+  const destination = resolve(root, name);
+  if (args.mode === "patched" && !isInside(root, destination)) {
+    console.error("blocked path traversal: " + name);
+    blocked = true;
+    continue;
+  }
+  await mkdir(dirname(destination), { recursive: true });
+  await writeFile(destination, String(content), "utf8");
+  console.log("wrote " + destination);
+}
+if (blocked) process.exitCode = 1;
+`,
+    { encoding: "utf8", mode: 0o755 },
+  );
+  return path;
+}
+
+function testExportCliArgv(): string[] {
+  return [
+    process.execPath,
+    writeTestExportCli(),
+    "--api",
+    "{{apiUrl}}",
+    "--output",
+    "{{exportDir}}",
+    "--mode",
+    "{{fixtureMode}}",
+  ];
 }
 
 // ── Fake spawn helper ───────────────────────────────────────────────────────
@@ -327,6 +381,78 @@ describe("runVerify", () => {
     writeFileSync(outPath, JSON.stringify(outcome.result, null, 2), "utf8");
     const parsed: VerificationResult = JSON.parse(readFileSync(outPath, "utf8"));
     expect(verificationResultSchema.parse(parsed)).toEqual(parsed);
+  });
+
+  it("runs the built-in cli-path-traversal fixture and reports reproduced", async () => {
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      fixtureCommand: testExportCliArgv(),
+      fixtureMode: "vulnerable",
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result.status).toBe("reproduced");
+    expect(outcome.result.finding_id).toBe("fixture:cli-path-traversal");
+    expect(outcome.result.commands).toHaveLength(1);
+    expect(outcome.result.assertions.find((a) => a.kind === "filesystem_exists")?.passed).toBe(true);
+    expect(outcome.result.assertions.find((a) => a.kind === "path_outside_export_root")?.passed).toBe(true);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("runs the patched cli-path-traversal fixture as the negative control", async () => {
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      fixtureCommand: testExportCliArgv(),
+      fixtureMode: "patched",
+    });
+
+    expect(outcome.exitCode).toBe(1);
+    expect(outcome.result.status).toBe("not_reproduced");
+    expect(outcome.result.commands[0].stderr_excerpt).toContain("blocked path traversal");
+    expect(outcome.result.assertions.find((a) => a.kind === "filesystem_exists")?.passed).toBe(false);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("retains fixture artifacts when requested", async () => {
+    const artifactDir = join(tmpRoot, "retained-fixture");
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+      fixtureCommand: testExportCliArgv(),
+      retainArtifacts: true,
+      artifactDir,
+    });
+
+    expect(outcome.exitCode).toBe(0);
+    expect(outcome.result.artifacts.sandbox_ref).toBe(artifactDir);
+    expect(outcome.result.artifacts.harness_ref).toBeTruthy();
+    expect(existsSync(outcome.result.artifacts.harness_ref)).toBe(true);
+    expect(existsSync(outcome.result.artifacts.stdout_ref)).toBe(true);
+    expect(existsSync(outcome.result.artifacts.stderr_ref)).toBe(true);
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("requires --fixture-command when --fixture is set", async () => {
+    const outcome = await runVerify({
+      fixture: "cli-path-traversal",
+    });
+
+    expect(outcome.exitCode).toBe(3);
+    expect(outcome.result.status).toBe("error");
+    expect(outcome.result.error_reason).toBe("--fixture-command is required with --fixture");
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
+  });
+
+  it("rejects --fixture-mode when --fixture is not set", async () => {
+    const findingPath = writeFinding(makeFinding());
+    const outcome = await runVerify({
+      findingPath,
+      fixtureMode: "patched",
+    });
+
+    expect(outcome.exitCode).toBe(3);
+    expect(outcome.result.status).toBe("error");
+    expect(outcome.result.error_reason).toBe("--fixture-mode is only supported with --fixture");
+    expect(verificationResultSchema.parse(outcome.result)).toEqual(outcome.result);
   });
 });
 
