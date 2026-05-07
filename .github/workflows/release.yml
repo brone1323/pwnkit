@@ -8,24 +8,15 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
 
 jobs:
-  publish-npm:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          registry-url: https://registry.npmjs.org
-      - run: corepack enable && corepack prepare pnpm@9 --activate
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm build
-      - run: npm publish --provenance --access public
-        working-directory: dist
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+  # ── npm publishing happens via .github/workflows/npm-publish.yml ──
+  #
+  # That workflow builds `dist-npm/` (a tiny shim, ~13 KB) via
+  # `scripts/build-npm-shim.mjs` and publishes it manually. From v0.9.0
+  # onwards the npm package is a redirect, not the engine. The previous
+  # auto-publish step here tried to publish the full bundle (~2.6 MB) on
+  # every release-published event and raced with `npm-publish.yml`,
+  # producing a 403 when the shim got there first. Removed entirely so
+  # there's exactly one canonical npm publish path.
 
   # Per-platform standalone binaries uploaded as Release assets.
   # Consumed by install.sh, which resolves platform at runtime and
