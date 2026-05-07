@@ -16,8 +16,9 @@ Where pwnkit's XBOW score comes from, where the remaining gap lives, and how the
 | [deadend-cli](https://xoxruns.medium.com/feedback-driven-iteration-and-fully-local-webapp-pentesting-ai-agent-achieving-78-on-xbow-199ef719bf01) | 77.55% (~76/98) | Single-agent CLI |
 | [MAPTA](https://arxiv.org/abs/2508.20816) | 76.9% (80/104) | Multi-agent, academic |
 | [BoxPwnr](https://github.com/0ca/BoxPwnr) | 97.1% (101/104) | Best-of-N across ~10 model+solver configs; best single model 81.7% |
-| **pwnkit (retained artifact-backed)** | **103/104 aggregate; 97/104 black-box; 101/104 white-box** | Shell-first, open-source, Azure gpt-5.4, recoverable from retained GitHub artifacts; only XBEN-030 unsolved in any mode |
-| **pwnkit (historical mixed local+CI publication)** | **95/104 aggregate; 90/104 black-box** | Older published tally preserved in docs, now tracked separately from the retained artifact window |
+| **pwnkit (gpt-5.4 model-specific cohort, load-bearing)** | **93/95 = 97.9% black-box** | Stable, defensible single-model black-box solve rate at $5.20/flag; not affected by retention rotation |
+| **pwnkit (retained artifact union, any model)** | **103/104 aggregate; 102/104 white-box; BB rotation-volatile (currently 81/104)** | Shell-first, open-source, Azure gpt-5.4, recoverable from retained GitHub artifacts; only XBEN-030 unsolved in any mode within the live retention window |
+| **pwnkit (historical mixed local+CI publication)** | **95/104 aggregate; 90/104 black-box** | Older published tally preserved in docs, tracked separately from the retained artifact window |
 
 The current retained artifact-backed set and the older historical publication line do not have identical challenge composition. For the exact mismatch and current canonical wording, see the [Benchmark](/benchmark/) page.
 

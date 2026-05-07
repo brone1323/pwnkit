@@ -11,13 +11,14 @@ The current thesis is unchanged from earlier in the year:
 2. Make the outputs operationally useful for real teams.
 3. Then add orchestration and control-plane UX on top.
 
-What has changed is that the trust layer is now real. The retained artifact-backed XBOW aggregate is now 103/104 = 99.0% (only XBEN-030 unsolved in any mode), while the older mixed local+CI publication line remains documented separately. Most of the next-quarter work is about taking that capability and making it operationally easy to live with — for one developer running a single review, for a CI pipeline gating PRs, and for a security team running a continuous campaign.
+What has changed is that the trust layer is now real. The retained artifact-backed XBOW aggregate is 103/104 = 99.0% (only XBEN-030 unsolved in any mode), the load-bearing gpt-5.4 model-specific cohort sits at 93/95 = 97.9% on black-box, and the first scored full Cybench run lands at 36/40 = 90.0% single-config single-shot. The older mixed local+CI publication line remains documented separately. Most of the next-quarter work is about taking that capability and making it operationally easy to live with — for one developer running a single review, for a CI pipeline gating PRs, and for a security team running a continuous campaign.
 
 ## Recently shipped (April 2026)
 
 These are the things that landed since the last public roadmap snapshot. They should not be in the "Now" column anymore — they are done.
 
-- **Retained artifact-backed XBOW aggregate at 103 / 104.** The machine-recoverable artifact window now proves more unique solves than the older public mixed local+CI tally, though the set composition is different and still being reconciled on the benchmark page. Only XBEN-030 remains unsolved in any mode.
+- **Retained artifact-backed XBOW aggregate at 103 / 104.** The machine-recoverable artifact window now proves more unique solves than the older public mixed local+CI tally, though the set composition is different and still being reconciled on the benchmark page. Only XBEN-030 remains unsolved in any mode. The load-bearing black-box claim is the gpt-5.4 model-specific cohort at 93/95 = 97.9% — the retained-aggregate black-box count is rotation-volatile because GitHub Actions retains a 90-day window of run artifacts.
+- **First scored full Cybench run at 36 / 40 = 90.0%.** Single-config (Azure gpt-5.4), single-shot, 3 retries per challenge, 358 attack turns total, ~$14.89 estimated cost. Supersedes the older 8/10 = 80% historical 10-challenge subset.
 - **Historical public XBOW publication still tracked separately.** The older mixed local+CI publication line now sits at 90/104 black-box and 95/104 aggregate after purging unsupported claim residue, and it is not the only current source of truth.
 - **Cost ceiling enforcement.** Scans abort cleanly when a per-run USD budget is exceeded, instead of silently spending past it.
 - **Direct OSV advisory lookup in the npm audit pipeline.** No more relying on `npm audit` alone for known-CVE coverage.

@@ -164,13 +164,22 @@ is a no-op on npm-bench).
 
 ## Benchmarks
 
+- **Cybench (first scored full 40-challenge run):** **90.0% (36/40)** — single-config
+  Azure gpt-5.4, single-shot, 3 retries per challenge. BoxPwnr's published 40/40 = 100%
+  is best-of-N across ~10 model+solver configs; pwnkit's 36/40 is single-config single-shot.
+- **XBOW gpt-5.4 model-specific cohort (load-bearing):** **97.9% (93/95)** —
+  the stable, defensible black-box solve rate on the 95 challenges where pwnkit has a
+  retained gpt-5.4 attempt within the live CI window. Not affected by retention rotation.
 - **XBOW retained artifact-backed aggregate:** **99.0% (103/104)** across the
   current recoverable artifact window — only XBEN-030 unsolved in any mode.
-- **XBOW retained artifact-backed black-box:** **93.3% (97/104)** (field-leading vs KinoSec's 92.3%).
-- **XBOW retained artifact-backed white-box:** **97.1% (101/104)** (field-leading).
+- **XBOW retained artifact-backed white-box:** **98.1% (102/104)** (field-leading).
+- **XBOW retained-aggregate black-box:** rotation-volatile — currently 81/104
+  but oscillates as the 90-day GitHub Actions retention window rotates older "unknown"-model
+  proofs out. Use the gpt-5.4 cohort number above as the stable headline.
 - **XBOW historical mixed local+CI publication:** **86.5% black-box (90/104)**
   and **91.3% aggregate (95 of 104)**, tracked separately from the retained
   artifact tally on the [Benchmark](/benchmark/) page.
+- **gpt-5.4 cost on XBOW:** ~$0.48 / run, $5.20 / flag.
 - **AI/LLM regression suite:** 10/10 on the self-authored suite covering
   prompt injection, jailbreaks, system-prompt extraction, PII leakage,
   encoding bypass, multi-turn escalation, MCP SSRF.

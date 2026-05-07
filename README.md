@@ -12,9 +12,9 @@
 <!-- Row 1 — the proof: what the agent actually does on public benchmarks.
      Bold crimson e63946 across all three so they read as one wall of impact. -->
 <p align="center">
- <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/XBOW%20retained%20artifacts-99.0%25%20(103%2F104)-e63946?style=flat-square&labelColor=2b2d42" alt="XBOW retained artifact-backed aggregate" /></a>
- <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/XBOW%20historical%20published-91.3%25%20(95%2F104)-e63946?style=flat-square&labelColor=2b2d42" alt="XBOW historical mixed local+CI tally" /></a>
- <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/Cybench-80%25%20(8%2F10)-e63946?style=flat-square&labelColor=2b2d42" alt="Cybench score" /></a>
+ <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/XBOW%20aggregate-99.0%25%20(103%2F104)-e63946?style=flat-square&labelColor=2b2d42" alt="XBOW retained artifact-backed aggregate" /></a>
+ <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/XBOW%20gpt--5.4%20cohort-97.9%25%20(93%2F95)-e63946?style=flat-square&labelColor=2b2d42" alt="XBOW gpt-5.4 model-specific cohort" /></a>
+ <a href="https://docs.pwnkit.com/benchmark"><img src="https://img.shields.io/badge/Cybench-90.0%25%20(36%2F40)-e63946?style=flat-square&labelColor=2b2d42" alt="Cybench full 40-challenge score" /></a>
 </p>
 
 <!-- Row 2 — identity, install, license, build. Coordinated muted palette
@@ -126,13 +126,15 @@ pwnkit https://example.com
 ## Snapshot
 
 - XBOW retained artifact-backed aggregate: 103/104 = 99.0% (only XBEN-030 unsolved in any mode)
-- XBOW retained artifact-backed black-box: 97/104 = 93.3% (back to leading KinoSec by +1 flag)
-- XBOW retained artifact-backed white-box: 101/104 = 97.1% (field-leading)
+- XBOW gpt-5.4 cohort (load-bearing black-box claim): 93/95 = 97.9% — the stable, defensible per-model solve rate, not affected by retention rotation
+- XBOW retained artifact-backed white-box: 102/104 = 98.1% (field-leading)
+- XBOW retained-aggregate black-box: oscillates with the 90-day GitHub Actions retention window (currently 81/104) — the model-specific cohort above is the load-bearing surface
 - XBOW historical mixed local+CI publication: 95/104 aggregate and 90/104 black-box
-- Cybench: 8/10 = 80%
+- Cybench: 36/40 = 90.0% — first scored full 40-challenge run, single-config (Azure gpt-5.4), single-shot. BoxPwnr's published 40/40 = 100% is best-of-N across ~10 configs.
+- gpt-5.4 cost on XBOW: ~$0.48/run, $5.20/flag
 - AI / LLM regression set: 10/10
 
-The benchmark docs page is the canonical benchmark surface. It distinguishes the current retained artifact-backed tally from the older mixed local+CI publication line and lists the remaining challenge-set mismatches explicitly.
+The benchmark docs page is the canonical benchmark surface. It distinguishes the model-specific stable cohort from the rotation-volatile retained aggregate and the older mixed local+CI publication line, and it lists remaining challenge-set mismatches explicitly.
 
 ## GitHub Action
 

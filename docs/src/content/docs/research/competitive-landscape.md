@@ -3,9 +3,11 @@ title: Competitive Landscape
 description: Side-by-side comparison of pwnkit against other autonomous pentesting agents on the XBOW benchmark, with methodology caveats.
 ---
 
-How pwnkit compares against other autonomous pentesting agents on the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Numbers are each project's public self-reports — cross-project scores are protocol-sensitive and shouldn't be treated as a matched-conditions leaderboard. Current as of April 2026.
+How pwnkit compares against other autonomous pentesting agents on the [XBOW validation suite](https://github.com/xbow-engineering/validation-benchmarks) (104 Docker CTF challenges). Numbers are each project's public self-reports — cross-project scores are protocol-sensitive and shouldn't be treated as a matched-conditions leaderboard. Current as of May 2026.
 
-> **pwnkit status (May 2026):** the current retained artifact-backed XBOW tally is **103/104 = 99.0% aggregate**, with **97/104 = 93.3% black-box** (+1 flag ahead of KinoSec) and **101/104 = 97.1% white-box** (field-leading) recoverable from GitHub artifacts alone. Only XBEN-030 is unsolved in any mode. Older public docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Results](/benchmark/) for the exact distinction and challenge-set mismatch.
+> **pwnkit status (May 2026, wave 2 reframe):** the load-bearing black-box claim is the **gpt-5.4 model-specific cohort at 93/95 = 97.9%** — the stable, defensible per-model solve rate, undamaged by retention rotation. The retained artifact-backed aggregate (any model) is **103/104 = 99.0%** with white-box at **102/104 = 98.1%** (field-leading); only XBEN-030 is unsolved in any mode within the live retention window. The retained-aggregate black-box count (currently 81/104) is rotation-volatile because GitHub Actions retains a 90-day window of run artifacts; older "unknown"-model proofs age out as new gpt-5.4 sweeps occupy the window — the gpt-5.4 cohort number is the right surface for pure-black-box comparison. Cost: gpt-5.4 ≈ **$0.48 / run, $5.20 / flag** on XBOW. Older docs also preserve a historical mixed local+CI publication line of **90/104 black-box** and **95/104 aggregate**; see [Results](/benchmark/) for the exact distinction and challenge-set mismatch.
+>
+> **Cybench (May 2026):** first scored full 40-challenge run at **36/40 = 90.0%** single-config (Azure gpt-5.4), single-shot. BoxPwnr's published 40/40 = 100% is best-of-N across ~10 model+solver configs.
 
 For pwnkit's own score breakdown see [Results](/benchmark/); for the Shannon-specific gap analysis see [XBOW Analysis](/research/xbow-analysis/).
 
@@ -60,9 +62,11 @@ Endor Labs' triage accuracy comes from forcing neural + rules to agree. pwnkit h
 
 Implementation: `packages/core/src/triage/multi-modal.ts`.
 
-### Artifact-backed XBOW aggregate now reaches 103/104
+### Artifact-backed XBOW aggregate at 103/104, with a per-model black-box cohort at 97.9%
 
-BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's retained artifact-backed aggregate is now **103/104 = 99.0%** with only XBEN-030 unsolved in any mode, but with a different methodology and challenge-set composition than the older **95/104 aggregate** mixed-publication line. The benchmark page is the canonical place where those distinctions are spelled out.
+BoxPwnr's headline 97.1% is a best-of-N aggregate across ~10 model+solver configurations (527 traces / 104 challenges ≈ 5 attempts each). Their **best single model (GLM-5 + `single_loop`) scores 81.7%**. pwnkit's retained artifact-backed aggregate is **103/104 = 99.0%** with only XBEN-030 unsolved in any mode within the live retention window. The load-bearing black-box surface is the **gpt-5.4 model-specific cohort at 93/95 = 97.9%** — a single-model single-shot solve rate, not a best-of-N aggregate, comparable head-to-head with BoxPwnr's 81.7% best-single-model number. Cost: ~$0.48 per run, $5.20 per flag.
+
+The retained-aggregate black-box count is rotation-volatile (currently 81/104) because the 90-day GitHub Actions artifact retention window rotates older "unknown"-model proofs out as new gpt-5.4 sweeps land. The gpt-5.4 cohort number is the stable claim; the historical mixed local+CI publication line preserves an older **95/104 aggregate** and **90/104 black-box** for continuity. The benchmark page is the canonical place where those distinctions are spelled out.
 
 ## The meta-finding
 
